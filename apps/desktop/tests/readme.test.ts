@@ -25,7 +25,7 @@ describe("桌面端 README 文档", () => {
     expect(content).toContain("http://localhost:1420");
   });
 
-  it("记录本地 SQLite schema 与待同步队列", () => {
+  it("记录本地 SQLite schema 与同步基线", () => {
     const content = readme();
 
     expect(content).toContain("sync_state");
@@ -34,18 +34,15 @@ describe("桌面端 README 文档", () => {
     expect(content).toContain("TaskRepository.getSyncState()");
     expect(content).toContain("TaskRepository.recordSyncRun()");
     expect(content).toContain("baseVersion");
-    expect(content).toContain("summarizePendingLocalChanges()");
-    expect(content).toContain("待同步变更");
   });
 
-  it("记录 WebDAV runner 装配与 sync-done 刷新边界", () => {
+  it("记录 WebDAV runner 装配与同步结果展示", () => {
     const content = readme();
 
     expect(content).toContain("createWebdavRuntime()");
     expect(content).toContain("WebdavTaskSyncRunner.runOnce()");
     expect(content).toContain("立即同步");
     expect(content).toContain("WebdavSettingsCard");
-    expect(content).toContain("sync-done");
     expect(content).toContain("@tauri-apps/plugin-store");
     expect(content).toContain("https://dav.jianguoyun.com/dav");
   });
