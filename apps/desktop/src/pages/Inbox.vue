@@ -3,6 +3,12 @@ import { onMounted, ref } from "vue";
 import { Check, Loader2, Pencil, RefreshCw, Save, Trash2, X } from "lucide-vue-next";
 import { useTaskRepository } from "../data/TaskRepositoryContext";
 import type { Task, TaskPriority, UpdateTaskInput } from "../domain/tasks";
+import { buildEditableContextMenuItems, useContextMenu } from "../components/contextMenu";
+
+const contextMenu = useContextMenu();
+function onEditableContextMenu(event: MouseEvent) {
+  contextMenu.show(event, buildEditableContextMenuItems(event));
+}
 
 interface DraftTask {
   title: string;
@@ -158,11 +164,13 @@ function displayError(value: string) {
           <input
             v-model="draft.title"
             :aria-label="`编辑 ${task.title} 标题`"
+            @contextmenu="onEditableContextMenu"
           />
           <input
             v-model="draft.notes"
             :aria-label="`编辑 ${task.title} 备注`"
             placeholder="备注"
+            @contextmenu="onEditableContextMenu"
           />
           <select
             v-model.number="draft.priority"
@@ -177,6 +185,7 @@ function displayError(value: string) {
             v-model="draft.dueAtInput"
             :aria-label="`编辑 ${task.title} 截止时间`"
             type="datetime-local"
+            @contextmenu="onEditableContextMenu"
           />
           <input
             v-model="draft.estimateInput"
@@ -185,6 +194,7 @@ function displayError(value: string) {
             min="1"
             step="1"
             placeholder="min"
+            @contextmenu="onEditableContextMenu"
           />
           <button type="submit" :aria-label="`保存 ${task.title}`">
             <Save :size="16" aria-hidden="true" />
