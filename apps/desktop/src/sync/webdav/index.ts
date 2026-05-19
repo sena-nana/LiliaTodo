@@ -34,3 +34,14 @@ export {
   type DevicePullPosition,
   type PullCursor,
 } from "./cursor";
+export {
+  DEFAULT_IDLE_DEBOUNCE_MS,
+  DEFAULT_PULL_INTERVAL_MS,
+  createWebdavSyncScheduler,
+  type SchedulerTimers,
+  type SyncReason,
+  type SyncRunReport,
+  type TimerHandle,
+  type WebdavSyncScheduler,
+  type WebdavSyncSchedulerOptions,
+} from "./scheduler";
