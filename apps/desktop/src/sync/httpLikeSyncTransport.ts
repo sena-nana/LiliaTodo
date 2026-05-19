@@ -1,3 +1,4 @@
+// TODO(AP-01 → BE-12)：当前 transport 仅服务本地 in-memory router 链路；阶段 3 由 webdav transport 替换。
 import type { ApiRouter } from "../../../api/src";
 import type {
   DeltaPullRequest,

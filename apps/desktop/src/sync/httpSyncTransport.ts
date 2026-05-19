@@ -1,3 +1,4 @@
+// TODO(AP-01 → BE-12)：真实 HTTP transport 一期不会接通，阶段 3 改由 backend/transport 与 webdav 落地；保留以避免破坏现有测试与契约描述。
 import type {
   DeltaPullRequest,
   DeltaPullResponse,
