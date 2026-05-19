@@ -4,18 +4,18 @@ import {
   type RouterHistory,
 } from "vue-router";
 import AppShell from "./layouts/AppShell.vue";
-import Login from "./pages/Login.vue";
 import Today from "./pages/Today.vue";
 import Inbox from "./pages/Inbox.vue";
 import Calendar from "./pages/Calendar.vue";
-import Settings from "./pages/Settings.vue";
 import Widget from "./pages/Widget.vue";
+import SettingsShell from "./pages/SettingsShell.vue";
+import SyncSettings from "./pages/settings/SyncSettings.vue";
+import AboutSettings from "./pages/settings/AboutSettings.vue";
 
 export function createMomoRouter(history: RouterHistory = createWebHistory()) {
   return createRouter({
     history,
     routes: [
-      { path: "/login", component: Login },
       { path: "/widget", component: Widget },
       {
         path: "/",
@@ -25,7 +25,15 @@ export function createMomoRouter(history: RouterHistory = createWebHistory()) {
           { path: "today", component: Today },
           { path: "inbox", component: Inbox },
           { path: "calendar", component: Calendar },
-          { path: "settings", component: Settings },
+        ],
+      },
+      {
+        path: "/settings-shell",
+        component: SettingsShell,
+        children: [
+          { path: "", redirect: "/settings-shell/sync" },
+          { path: "sync", component: SyncSettings },
+          { path: "about", component: AboutSettings },
         ],
       },
       { path: "/:pathMatch(.*)*", redirect: "/today" },
