@@ -12,8 +12,8 @@
 // 输出新的 entity 列表；删除型 op 把对应 entity 从 snapshot 移除。
 // 语义冲突沿 mergeOpsForEntity 通道收集，由 caller 决定如何呈现给用户。
 
-import type { Op } from "../../backend/contracts/op";
-import type { Entity } from "../../backend/contracts/entity";
+import type { Op } from "../types/op";
+import type { Entity } from "../types/entity";
 import {
   groupOpsByEntity,
   mergeOpsForEntity,

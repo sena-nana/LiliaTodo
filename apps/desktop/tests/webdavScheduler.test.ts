@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { Op } from "../src/backend/contracts/op";
+import type { Op } from "../src/sync/types/op";
 import {
   createWebdavSyncScheduler,
   DEFAULT_IDLE_DEBOUNCE_MS,

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Op } from "../src/backend/contracts/op";
+import type { Op } from "../src/sync/types/op";
 import { createWebdavLayout } from "../src/sync/webdav/paths";
 import {
   DEFAULT_SNAPSHOT_OPLOG_THRESHOLD,

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Entity } from "../src/backend/contracts/entity";
+import type { Entity } from "../src/sync/types/entity";
 import type { LocalChange } from "../src/data/taskRepository";
 import {
   entityToTask,

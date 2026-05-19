@@ -13,7 +13,7 @@
 //                                     # MVP 暂用 JSONL（每行一个 entity），
 //                                     # 加固期再切到 .tar.zst（保留命名空间）。
 //
-// 与未来的服务端 sync 命名空间共用同一份格式，未来切换 transport 时数据零迁移。
+// 与 sync/types 共享同一份数据格式，未来切换 provider 时数据零迁移。
 
 export const WEBDAV_DEFAULT_ROOT = "/momo";
 

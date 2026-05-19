@@ -3,7 +3,7 @@
 // 边界约定（强约束，未来若引入 ESLint 通过 no-restricted-imports 强化）：
 // - 业务页面只允许 import 自 `backend`（本文件）或 `backend/namespaces/*`；
 // - 严禁业务侧 import `backend/transport/*`，所有调用必须经命名空间层；
-// - WebDAV 同步层（阶段 3）允许 import `backend/contracts/{entity,op}`，不得 import 其它子模块；
+// - WebDAV 同步层共享数据格式已迁至 `sync/types/{entity,op}`，不再依赖 backend 子目录；
 // - `backend/contracts/*` 一旦冻结，破坏性改动必须升 major 并改对应 capability version。
 
 import {

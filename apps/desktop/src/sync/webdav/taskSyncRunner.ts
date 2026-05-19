@@ -12,7 +12,7 @@
 //   - 中间步骤失败时 saveSyncState 仅记录 lastError，不滚动 serverCursor，避免漏拉。
 
 import type { TaskRepository } from "../../data/taskRepository";
-import type { Op } from "../../backend/contracts/op";
+import type { Op } from "../types/op";
 import {
   mergeOpsAcrossEntities,
   type EntityWithUnknownPayload,

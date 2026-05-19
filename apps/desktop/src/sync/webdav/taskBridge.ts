@@ -12,8 +12,8 @@
 //   - LocalChange.createdAt 直接作为 op.ts（LWW 主键），保证本地与远端时钟一致；
 //   - actor 默认为 deviceId；未来若引入多用户登录可改为 user id。
 
-import type { Entity } from "../../backend/contracts/entity";
-import type { Op } from "../../backend/contracts/op";
+import type { Entity } from "../types/entity";
+import type { Op } from "../types/op";
 import type { LocalChange } from "../../data/taskRepository";
 import type {
   Task,

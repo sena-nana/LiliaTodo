@@ -1,9 +1,9 @@
 // BE-12：WebDAV 同步层数据序列化。
 // Entity 文件用 pretty JSON；Op 一条一行的 JSONL，便于 append-only 与流式回放。
-// 严格走 backend/contracts 的格式，避免与未来服务端 transport 出现两份解析逻辑。
+// 严格走 sync/types 的共享格式，避免与未来其它同步 provider 出现两份解析逻辑。
 
-import type { Entity } from "../../backend/contracts/entity";
-import type { Op, OpKind, OpTarget } from "../../backend/contracts/op";
+import type { Entity } from "../types/entity";
+import type { Op, OpKind, OpTarget } from "../types/op";
 
 const OP_KINDS = new Set<OpKind>(["put", "patch", "delete"]);
 

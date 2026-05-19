@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { Entity } from "../src/backend/contracts/entity";
-import type { Op } from "../src/backend/contracts/op";
+import type { Entity } from "../src/sync/types/entity";
+import type { Op } from "../src/sync/types/op";
 import type {
   LocalChange,
   RecordSyncRunInput,
