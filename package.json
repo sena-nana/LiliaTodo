@@ -14,8 +14,8 @@
     "verify:desktop:test": "yarn --cwd apps/desktop test",
     "verify:desktop:build": "yarn --cwd apps/desktop build",
     "verify:tauri": "cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml",
-    "verify:schema": "node apps/desktop/node_modules/typescript/bin/tsc -p packages/schema/tsconfig.json",
-    "verify:contracts": "node apps/desktop/node_modules/typescript/bin/tsc -p packages/contracts/tsconfig.json"
+    "verify:schema": "node node_modules/typescript/bin/tsc -p packages/schema/tsconfig.json",
+    "verify:contracts": "node node_modules/typescript/bin/tsc -p packages/contracts/tsconfig.json"
   },
   "packageManager": "yarn@4.14.1"
 }

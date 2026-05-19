@@ -128,11 +128,6 @@ function displayError(value: string) {
 
 <template>
   <section class="page">
-    <header class="page__head">
-      <h1>收件箱</h1>
-      <span class="page__sub">未分类任务 · 无截止时间的本地队列</span>
-    </header>
-
     <div v-if="loading" class="card state">
       <Loader2 class="spin" :size="18" aria-hidden="true" />
       <p>正在加载收件箱...</p>

@@ -236,36 +236,42 @@ function displayError(value: string) {
 <style scoped>
 .form {
   display: grid;
-  gap: 8px;
+  gap: 6px;
 }
 .field {
   display: grid;
-  grid-template-columns: 96px 1fr;
+  grid-template-columns: 88px 1fr;
   align-items: center;
   gap: 8px;
 }
+.field span {
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 600;
+}
 .field input {
-  padding: 4px 8px;
-  border: 1px solid var(--c-border, #ccc);
-  border-radius: 4px;
-  background: var(--c-input-bg, transparent);
-  color: inherit;
+  height: 32px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
 }
 .form__actions {
   display: flex;
   gap: 8px;
-  margin-top: 8px;
+  margin-top: 6px;
 }
 .ok {
-  color: var(--c-ok, #2c8a3f);
+  color: var(--ok);
   margin-top: 4px;
 }
 .err {
-  color: var(--c-err, #c0392b);
+  color: var(--err);
   margin-top: 4px;
 }
 .muted {
-  color: var(--c-muted, #888);
+  color: var(--text-muted);
   margin-top: 4px;
 }
 .spin {

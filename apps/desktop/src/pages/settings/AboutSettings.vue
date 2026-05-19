@@ -17,10 +17,6 @@ onMounted(async () => {
 
 <template>
   <section class="page">
-    <header class="page__head">
-      <h1>关于</h1>
-      <span class="page__sub">应用信息</span>
-    </header>
     <div class="card">
       <ul class="kv">
         <li><span>应用名称</span> {{ appName }}</li>
