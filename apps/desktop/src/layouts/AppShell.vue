@@ -1,25 +1,20 @@
 <script setup lang="ts">
 import { ref } from "vue";
-import { RouterLink, RouterView } from "vue-router";
-import { PanelTopOpen } from "lucide-vue-next";
-import { openWidgetWindow } from "../window/widgetWindow";
+import { RouterView } from "vue-router";
 import TitleBar from "../components/TitleBar.vue";
+import ActivityBar from "./ActivityBar.vue";
+import SecondaryPanel from "./SecondaryPanel.vue";
+import { openSettingsWindow } from "../window/settingsWindow";
 
-const nav = [
-  { to: "/today", label: "今日" },
-  { to: "/inbox", label: "收件箱" },
-  { to: "/calendar", label: "日历" },
-  { to: "/settings", label: "设置" },
-];
+const settingsError = ref<string | null>(null);
 
-const widgetError = ref<string | null>(null);
-
-async function onOpenWidget() {
-  widgetError.value = null;
+async function onOpenSettings() {
+  settingsError.value = null;
   try {
-    await openWidgetWindow();
+    await openSettingsWindow();
   } catch (e) {
-    widgetError.value = String(e);
+    settingsError.value = String(e);
+    console.error("[settings-window]", e);
   }
 }
 </script>
@@ -27,32 +22,10 @@ async function onOpenWidget() {
 <template>
   <div class="shell">
     <TitleBar />
-    <aside class="shell__sidebar">
-      <nav class="shell__nav">
-        <RouterLink
-          v-for="item in nav"
-          :key="item.to"
-          :to="item.to"
-          class="shell__nav-item"
-          active-class="is-active"
-        >
-          {{ item.label }}
-        </RouterLink>
-      </nav>
-      <div class="shell__footer">
-        <button
-          type="button"
-          class="shell__widget-button"
-          @click="onOpenWidget"
-        >
-          <PanelTopOpen :size="16" aria-hidden="true" />
-          打开小组件
-        </button>
-        <p v-if="widgetError" class="shell__error">{{ widgetError }}</p>
-        <RouterLink to="/login" class="shell__nav-item">退出登录</RouterLink>
-      </div>
-    </aside>
+    <ActivityBar @open-settings="onOpenSettings" />
+    <SecondaryPanel />
     <main class="shell__main">
+      <p v-if="settingsError" class="err">{{ settingsError }}</p>
       <RouterView />
     </main>
   </div>
