@@ -2,6 +2,7 @@
   "name": "@momo/api",
   "private": true,
   "version": "0.1.0",
+  "deprecated": "AP-01：Momo 不再自营后端，本包仅作 Vitest mock 与阶段 3 替换前的过渡同步骨架，不接受新功能。",
   "type": "module",
   "scripts": {
     "build": "tsc -p tsconfig.json"

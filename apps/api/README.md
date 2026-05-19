@@ -1,4 +1,13 @@
-# Momo API / Sync 骨架
+# Momo API / Sync 骨架（已降级 · Deprecated）
+
+> **状态变更（AP-01）**：Momo 自身不再承担后端执行能力。本目录的 TypeScript 骨架不再演进，仅保留两类用途：
+>
+> - **Vitest mock**：作为 desktop 测试的本地内存实现，验证 sync / notification / task 契约语义。
+> - **过渡期本地同步运行器**：[apps/desktop/src/sync/localSyncRunner.ts](../desktop/src/sync/localSyncRunner.ts) 暂时仍以 in-memory router 形态跑通本地同步，**阶段 3 将整体替换为 `apps/desktop/src/sync/webdav/` 实现**。
+>
+> 未来真正的服务端能力由独立项目承接（详见 `plans/服务端规划.md`），与本目录无关。本目录不再新增功能，也不会接 OIDC / Postgres / WebSocket / 真实 HTTP 服务。
+
+---
 
 这是路线图 BE-02 / BE-03 / BE-04 / BE-11 前的最小 TypeScript 服务骨架，用于把共享契约接到可测试的服务层。
 

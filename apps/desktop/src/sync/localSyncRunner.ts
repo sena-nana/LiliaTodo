@@ -1,3 +1,5 @@
+// TODO(AP-01 → BE-12)：本运行器目前借 apps/api 内存 router 跑通本地同步骨架；
+// 阶段 3 将整体替换为 apps/desktop/src/sync/webdav/ 实现，届时移除对 ../../../api/src 的运行时依赖。
 import {
   createApiRouter,
   createInMemorySyncStore,

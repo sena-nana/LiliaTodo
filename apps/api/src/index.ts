@@ -1,3 +1,4 @@
+// AP-01 状态：本模块已降级为 Vitest mock + 阶段 3 替换前的过渡同步骨架；不再演进，详见 README。
 import {
   SYNC_CONTRACT_VERSION,
   createNotification,
