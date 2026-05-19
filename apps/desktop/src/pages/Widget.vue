@@ -42,8 +42,8 @@ function formatToday() {
 
 <template>
   <main class="widget">
-    <header class="widget__header">
-      <div>
+    <header class="widget__header" data-tauri-drag-region>
+      <div data-tauri-drag-region>
         <h1>Momo 小组件</h1>
         <p>{{ formatToday() }}</p>
       </div>

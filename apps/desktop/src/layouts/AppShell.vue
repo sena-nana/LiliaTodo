@@ -3,6 +3,7 @@ import { ref } from "vue";
 import { RouterLink, RouterView } from "vue-router";
 import { PanelTopOpen } from "lucide-vue-next";
 import { openWidgetWindow } from "../window/widgetWindow";
+import TitleBar from "../components/TitleBar.vue";
 
 const nav = [
   { to: "/today", label: "今日" },
@@ -25,8 +26,8 @@ async function onOpenWidget() {
 
 <template>
   <div class="shell">
+    <TitleBar />
     <aside class="shell__sidebar">
-      <div class="shell__brand">Momo</div>
       <nav class="shell__nav">
         <RouterLink
           v-for="item in nav"
