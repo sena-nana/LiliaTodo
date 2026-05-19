@@ -3,13 +3,7 @@ import {
   SYNC_CONTRACT_VERSION,
   createDeltaPullRequest,
   createDeltaPushRequest,
-  createListSyncEventsRequest,
-  createListNotificationsRequest,
-  createAcknowledgeNotificationRequest,
-  createNotification,
   createListTaskConflictsRequest,
-  createResolveTaskConflictRequest,
-  createSyncEvent,
   createTaskConflict,
   type LocalChangeDto,
 } from "../../../packages/contracts/src";
@@ -82,27 +76,6 @@ describe("同步契约", () => {
     });
   });
 
-  it("构造带版本的冲突解决请求", () => {
-    expect(
-      createResolveTaskConflictRequest({
-        workspaceId: "local",
-        deviceId: "desktop-1",
-        conflictId: "conflict-1",
-        strategy: "server_wins",
-        resolvedBy: "user-1",
-        note: "Keep server copy",
-      }),
-    ).toEqual({
-      contractVersion: SYNC_CONTRACT_VERSION,
-      workspaceId: "local",
-      deviceId: "desktop-1",
-      conflictId: "conflict-1",
-      strategy: "server_wins",
-      resolvedBy: "user-1",
-      note: "Keep server copy",
-    });
-  });
-
   it("构造带版本的冲突列表请求", () => {
     expect(
       createListTaskConflictsRequest({
@@ -113,107 +86,6 @@ describe("同步契约", () => {
       contractVersion: SYNC_CONTRACT_VERSION,
       workspaceId: "local",
       deviceId: "desktop-1",
-    });
-  });
-
-  it("构造实时同步事件 envelope 和补拉请求", () => {
-    expect(
-      createSyncEvent({
-        id: "event-1",
-        workspaceId: "local",
-        sequence: 7,
-        type: "task.changed",
-        taskId: "task-1",
-        changeId: "change-1",
-        payload: { title: "Updated" },
-        now: new Date("2026-05-16T07:00:00.000Z"),
-      }),
-    ).toEqual({
-      id: "event-1",
-      workspaceId: "local",
-      sequence: 7,
-      type: "task.changed",
-      taskId: "task-1",
-      changeId: "change-1",
-      payload: { title: "Updated" },
-      createdAt: "2026-05-16T07:00:00.000Z",
-    });
-
-    expect(
-      createListSyncEventsRequest({
-        workspaceId: "local",
-        deviceId: "desktop-1",
-        afterSequence: 6,
-        limit: 25,
-      }),
-    ).toEqual({
-      contractVersion: SYNC_CONTRACT_VERSION,
-      workspaceId: "local",
-      deviceId: "desktop-1",
-      afterSequence: 6,
-      limit: 25,
-    });
-  });
-
-  it("构造本地通知队列 envelope 和确认请求", () => {
-    expect(
-      createNotification({
-        id: "notification-1",
-        workspaceId: "local",
-        type: "conflict.raised",
-        title: "同步冲突需要处理",
-        body: "任务在两处发生变更",
-        sourceEventId: "event-3",
-        taskId: "task-1",
-        changeId: "change-3",
-        conflictId: "conflict-change-3",
-        payload: { reason: "任务版本冲突" },
-        now: new Date("2026-05-16T08:00:00.000Z"),
-      }),
-    ).toEqual({
-      id: "notification-1",
-      workspaceId: "local",
-      type: "conflict.raised",
-      status: "queued",
-      title: "同步冲突需要处理",
-      body: "任务在两处发生变更",
-      sourceEventId: "event-3",
-      taskId: "task-1",
-      changeId: "change-3",
-      conflictId: "conflict-change-3",
-      payload: { reason: "任务版本冲突" },
-      createdAt: "2026-05-16T08:00:00.000Z",
-      acknowledgedAt: null,
-    });
-
-    expect(
-      createListNotificationsRequest({
-        workspaceId: "local",
-        deviceId: "desktop-1",
-        status: "queued",
-        limit: 10,
-      }),
-    ).toEqual({
-      contractVersion: SYNC_CONTRACT_VERSION,
-      workspaceId: "local",
-      deviceId: "desktop-1",
-      status: "queued",
-      limit: 10,
-    });
-
-    expect(
-      createAcknowledgeNotificationRequest({
-        workspaceId: "local",
-        deviceId: "desktop-1",
-        notificationId: "notification-1",
-        acknowledgedBy: "user-1",
-      }),
-    ).toEqual({
-      contractVersion: SYNC_CONTRACT_VERSION,
-      workspaceId: "local",
-      deviceId: "desktop-1",
-      notificationId: "notification-1",
-      acknowledgedBy: "user-1",
     });
   });
 });

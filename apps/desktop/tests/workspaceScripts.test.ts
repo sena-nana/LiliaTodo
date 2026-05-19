@@ -17,9 +17,9 @@ describe("工作区验证脚本", () => {
       "verify:tauri": "cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml",
       "verify:schema": "node apps/desktop/node_modules/typescript/bin/tsc -p packages/schema/tsconfig.json",
       "verify:contracts": "node apps/desktop/node_modules/typescript/bin/tsc -p packages/contracts/tsconfig.json",
-      "verify:api": "node apps/desktop/node_modules/typescript/bin/tsc -p apps/api/tsconfig.json",
       verify:
-        "npm run verify:desktop:test && npm run verify:desktop:build && npm run verify:tauri && npm run verify:schema && npm run verify:contracts && npm run verify:api",
+        "npm run verify:desktop:test && npm run verify:desktop:build && npm run verify:tauri && npm run verify:schema && npm run verify:contracts",
     });
+    expect(packageJson.scripts["verify:api"]).toBeUndefined();
   });
 });
