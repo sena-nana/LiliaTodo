@@ -66,7 +66,7 @@ npm install
 ## 共享契约
 
 - `packages/contracts` 定义 Task DTO、LocalChange DTO、Delta Push/Pull 请求响应类型，供未来真接入后端时复用。
-- `apps/api` 仅保留协议骨架与 Vitest mock，实现层暂停演进；详见 `apps/api/README.md`。
+- 旧的 `apps/api` 内存契约骨架已在阶段 80 整体下线；接入服务端时直接基于 `packages/contracts` 的 DTO 重新搭建即可。
 
 ## 手动验收
 
