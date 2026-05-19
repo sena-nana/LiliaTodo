@@ -6,7 +6,6 @@ import { describe, expect, it } from "vitest";
 const desktopRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const checklistPath = resolve(desktopRoot, "docs/notification-acceptance.md");
 const apiReadmePath = resolve(desktopRoot, "../../apps/api/README.md");
-const desktopReadmePath = resolve(desktopRoot, "README.md");
 
 describe("通知验收清单", () => {
   it("记录 BE-11 本地通知边界", () => {
@@ -36,11 +35,9 @@ describe("通知验收清单", () => {
     expect(checklist).toContain("默认设置页路由保持在本地模拟");
   });
 
-  it("从 API 和桌面端 README 链接清单", () => {
+  it("从 API README 链接清单（通知属于内存契约范畴，桌面 README 不再引用）", () => {
     const apiReadme = readFileSync(apiReadmePath, "utf-8");
-    const desktopReadme = readFileSync(desktopReadmePath, "utf-8");
 
     expect(apiReadme).toContain("docs/notification-acceptance.md");
-    expect(desktopReadme).toContain("docs/notification-acceptance.md");
   });
 });

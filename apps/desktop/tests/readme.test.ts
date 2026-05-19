@@ -4,81 +4,76 @@ import { dirname, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 describe("桌面端 README 文档", () => {
-  it("记录本地同步队列与验证入口", () => {
-    const readmePath = resolve(
-      dirname(fileURLToPath(import.meta.url)),
-      "../README.md",
-    );
-    const readme = readFileSync(readmePath, "utf-8");
+  const readmePath = resolve(
+    dirname(fileURLToPath(import.meta.url)),
+    "../README.md",
+  );
+  const readme = () => readFileSync(readmePath, "utf-8");
 
-    expect(readme).toContain("Tauri 2 + Vue 3 + TypeScript");
-    expect(readme).toContain("本地数据");
-    expect(readme).toContain("共享契约");
-    expect(readme).toContain("本地同步前置层");
-    expect(readme).toContain("手动验收");
-    expect(readme).toContain("本地同步边界");
-    expect(readme).toContain("当前限制");
-    expect(readme).toContain("sync_state");
-    expect(readme).toContain("sync_runs");
-    expect(readme).toContain("task_sync_versions");
-    expect(readme).toContain("TaskRepository.getSyncState()");
-    expect(readme).toContain("TaskRepository.recordSyncRun()");
-    expect(readme).toContain("baseVersion");
-    expect(readme).toContain("buildDeltaPushFromPendingChanges()");
-    expect(readme).toContain("applyDeltaPushResponse()");
-    expect(readme).toContain("applyDeltaPullResponse()");
-    expect(readme).toContain("runLocalSyncSimulation()");
-    expect(readme).toContain("createLocalSyncRunner()");
-    expect(readme).toContain("createSyncRunner()");
-    expect(readme).toContain("createHttpLikeSyncTransport()");
-    expect(readme).toContain("createHttpSyncTransport()");
-    expect(readme).toContain("createRemoteSyncConfig()");
-    expect(readme).toContain("createRemoteSyncRunner()");
-    expect(readme).toContain("createDefaultSettingsSyncRuntime()");
-    expect(readme).toContain("VITE_MOMO_SYNC_BASE_URL");
-    expect(readme).toContain("VITE_MOMO_SYNC_TOKEN");
-    expect(readme).toContain("未配置 HTTP 同步 baseUrl");
-    expect(readme).toContain("已完成同步");
-    expect(readme).toContain("待同步变更");
-    expect(readme).toContain("同步历史");
-    expect(readme).toContain("同步冲突");
-    expect(readme).toContain("同步拒绝");
-    expect(readme).toContain("已应用拉取结果");
-    expect(readme).toContain("远程同步配置");
-    expect(readme).toContain("本地同步模拟");
-    expect(readme).toContain("http://localhost:1420/settings");
-    expect(readme).toContain("docs/local-sync-acceptance.md");
-    expect(readme).toContain("docs/realtime-events-acceptance.md");
-    expect(readme).toContain("docs/notification-acceptance.md");
-    expect(readme).toContain("npm run verify");
+  it("记录前端优先 + WebDAV 同步主路径", () => {
+    const content = readme();
+
+    expect(content).toContain("Tauri 2 + Vue 3 + TypeScript");
+    expect(content).toContain("WebDAV（坚果云优先）");
+    expect(content).toContain("前端优先工具");
+    expect(content).toContain("本地数据");
+    expect(content).toContain("共享契约");
+    expect(content).toContain("WebDAV 同步（坚果云优先）");
+    expect(content).toContain("手动验收");
+    expect(content).toContain("当前限制");
+    expect(content).toContain("npm run verify");
+    expect(content).toContain("http://localhost:1420");
   });
 
-  it("记录实时事件与通知边界仍停留在本地模拟", () => {
-    const readmePath = resolve(
-      dirname(fileURLToPath(import.meta.url)),
-      "../README.md",
-    );
-    const readme = readFileSync(readmePath, "utf-8");
+  it("记录本地 SQLite schema 与待同步队列", () => {
+    const content = readme();
 
-    expect(readme).toContain("BE-04 本地边界验收清单");
-    expect(readme).toContain("GET /sync/events");
-    expect(readme).toContain("不会启动 WebSocket server");
-    expect(readme).toContain("不接 Redis/event bus");
-    expect(readme).toContain("不接生产后端");
-    expect(readme).toContain("不做通知投递");
-    expect(readme).toContain("BE-11 Notification 骨架");
-    expect(readme).toContain("NotificationDto");
-    expect(readme).toContain("createNotificationApi()");
-    expect(readme).toContain("createInMemoryNotificationStore()");
-    expect(readme).toContain("不做 push delivery");
-    expect(readme).toContain("不做 email delivery");
-    expect(readme).toContain("不做 in-app delivery channel");
-    expect(readme).toContain("不启动 background worker");
-    expect(readme).toContain("通知事件投影边界");
-    expect(readme).toContain("projectSyncEventToNotification()");
-    expect(readme).toContain("enqueueNotificationsFromSyncEvents()");
-    expect(readme).toContain("队列来源边界");
-    expect(readme).toContain("默认设置页路由保持在本地模拟");
-    expect(readme).not.toContain("下一步建议围绕 HTTP transport 增加认证 header / base URL 配置边界");
+    expect(content).toContain("sync_state");
+    expect(content).toContain("sync_runs");
+    expect(content).toContain("task_sync_versions");
+    expect(content).toContain("TaskRepository.getSyncState()");
+    expect(content).toContain("TaskRepository.recordSyncRun()");
+    expect(content).toContain("baseVersion");
+    expect(content).toContain("summarizePendingLocalChanges()");
+    expect(content).toContain("待同步变更");
+  });
+
+  it("记录 WebDAV runner 装配与 sync-done 刷新边界", () => {
+    const content = readme();
+
+    expect(content).toContain("createWebdavRuntime()");
+    expect(content).toContain("WebdavTaskSyncRunner.runOnce()");
+    expect(content).toContain("立即同步");
+    expect(content).toContain("WebdavSettingsCard");
+    expect(content).toContain("sync-done");
+    expect(content).toContain("@tauri-apps/plugin-store");
+    expect(content).toContain("https://dav.jianguoyun.com/dav");
+  });
+
+  it("记录手动验收路径和当前限制", () => {
+    const content = readme();
+
+    expect(content).toContain("docs/local-sync-acceptance.md");
+    expect(content).toContain("npm run tauri dev");
+    expect(content).toContain("登录是纯前端跳转占位");
+    expect(content).toContain("由独立服务端项目承接");
+    expect(content).toContain("WebDAV 同步当前只支持手动触发");
+    expect(content).toContain("尚未实现 Android 端");
+  });
+
+  it("不再引用已下线的本地模拟和 BE-* 命名的旧路线", () => {
+    const content = readme();
+
+    expect(content).not.toContain("本地同步模拟");
+    expect(content).not.toContain("运行本地同步模拟");
+    expect(content).not.toContain("远程同步配置");
+    expect(content).not.toContain("VITE_MOMO_SYNC_BASE_URL");
+    expect(content).not.toContain("VITE_MOMO_SYNC_TOKEN");
+    expect(content).not.toContain("createLocalSyncRunner()");
+    expect(content).not.toContain("createRemoteSyncRunner()");
+    expect(content).not.toContain("BE-01");
+    expect(content).not.toContain("BE-04");
+    expect(content).not.toContain("BE-11");
+    expect(content).not.toContain("IF-01");
   });
 });

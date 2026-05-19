@@ -2,7 +2,11 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/vue
 import { createMemoryHistory } from "vue-router";
 import { describe, expect, it, vi } from "vitest";
 import type { Component } from "vue";
-import { TaskRepositoryKey } from "../src/data/TaskRepositoryContext";
+import {
+  TaskRepositoryKey,
+  WebdavSecretsStoreKey,
+  WebdavSyncControllerKey,
+} from "../src/data/TaskRepositoryContext";
 import type {
   DatabaseStats,
   LocalChange,
@@ -11,13 +15,12 @@ import type {
   TaskRepository,
 } from "../src/data/taskRepository";
 import type { CreateTaskInput, Task, TodayTaskGroups } from "../src/domain/tasks";
+import type { WebdavSyncController } from "../src/sync/defaultSettingsSyncRuntime";
 import type {
-  LocalSyncSimulationResult,
-  PendingConflictSummary,
-  SyncRunnerRunOnceResult,
-  SyncRunSummary,
-} from "../src/sync/syncClient";
-import type { RemoteSyncConfig } from "../src/sync/remoteSyncConfig";
+  WebdavRunOnceResult,
+  WebdavRuntimeResolution,
+  WebdavSecretsStore,
+} from "../src/sync/webdav";
 import Today from "../src/pages/Today.vue";
 import Inbox from "../src/pages/Inbox.vue";
 import Calendar from "../src/pages/Calendar.vue";
@@ -382,7 +385,7 @@ describe("桌面端 MVP 页面", () => {
     expect(repository.listRecentSyncRuns).toHaveBeenCalledTimes(2);
   });
 
-  it("在设置页显示待同步本地变更摘要并在同步后刷新", async () => {
+  it("在设置页显示待同步本地变更摘要", async () => {
     const repository = fakeRepository({
       pendingChanges: [
         localChange({
@@ -398,53 +401,8 @@ describe("桌面端 MVP 页面", () => {
         }),
       ],
     });
-    vi.mocked(repository.listPendingChanges)
-      .mockResolvedValueOnce([
-        localChange({
-          id: "change-1",
-          entityId: "task-1",
-          action: "task.update",
-          payload: {
-            id: "task-1",
-            baseVersion: 4,
-            patch: { title: "Draft plan" },
-            updatedAt: "2026-05-16T10:00:00.000Z",
-          },
-        }),
-      ])
-      .mockResolvedValueOnce([]);
-    const runnerResult: SyncRunnerRunOnceResult = {
-      ok: true,
-      result: {
-        request: {
-          contractVersion: 1,
-          workspaceId: "local",
-          deviceId: "desktop-1",
-          changes: [],
-          clientSentAt: "2026-05-16T12:00:00.000Z",
-        },
-        push: {
-          acceptedChangeIds: ["change-1"],
-          rejectedChanges: [],
-          conflicts: [],
-          serverCursor: "cursor-1",
-          summary: {
-            status: "all-synced",
-            message: "已同步 1 个本地变更",
-            acceptedCount: 1,
-            rejectedCount: 0,
-            conflictCount: 0,
-            serverCursor: "cursor-1",
-          },
-        },
-        pendingConflictCount: 0,
-        pendingConflicts: [],
-      },
-    };
 
-    renderWithRepository(Settings, repository, {
-      props: { onRunLocalSyncSimulation: vi.fn().mockResolvedValue(runnerResult) },
-    });
+    renderWithRepository(Settings, repository);
 
     expect(await screen.findByText("待同步变更")).toBeInTheDocument();
     const pendingRow = screen.getByText("change-1").closest("li");
@@ -455,12 +413,6 @@ describe("桌面端 MVP 页面", () => {
     ).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /mark/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /delete change/i })).not.toBeInTheDocument();
-
-    await fireEvent.click(screen.getByRole("button", { name: "运行本地同步模拟" }));
-
-    expect(await screen.findByText("同步状态")).toBeInTheDocument();
-    await waitFor(() => expect(repository.listPendingChanges).toHaveBeenCalledTimes(2));
-    await waitFor(() => expect(screen.queryByText("change-1")).not.toBeInTheDocument());
   });
 
   it("待同步本地变更加载失败时仍保持设置状态可见", async () => {
@@ -497,363 +449,22 @@ describe("桌面端 MVP 页面", () => {
     expect(repository.listPendingChanges).toHaveBeenCalledTimes(2);
   });
 
-  it("在设置页显示禁用的远程同步配置", async () => {
-    const repository = fakeRepository();
-    const remoteSyncConfig: RemoteSyncConfig = {
-      enabled: false,
-      reason: "未配置远程同步 base URL",
-    };
-
-    renderWithRepository(Settings, repository, {
-      props: { remoteSyncConfig },
-    });
-
-    expect(
-      await screen.findByText(/远程同步配置（旧 HTTP 通路）/),
-    ).toBeInTheDocument();
-    expect(screen.getByText("已禁用")).toBeInTheDocument();
-    expect(screen.getByText("未配置远程同步 base URL")).toBeInTheDocument();
-  });
-
-  it("在设置页显示启用的远程同步配置且不暴露 token", async () => {
-    const repository = fakeRepository();
-    const remoteSyncConfig: RemoteSyncConfig = {
-      enabled: true,
-      baseUrl: "https://api.example.test/momo",
-      headers: async () => ({ authorization: "Bearer secret-token" }),
-    };
-
-    renderWithRepository(Settings, repository, {
-      props: { remoteSyncConfig },
-    });
-
-    expect(
-      await screen.findByText(/远程同步配置（旧 HTTP 通路）/),
-    ).toBeInTheDocument();
-    expect(screen.getByText("已启用")).toBeInTheDocument();
-    expect(screen.getByText("https://api.example.test/momo")).toBeInTheDocument();
-    expect(screen.getByText("已配置")).toBeInTheDocument();
-    const syncActionRow = screen.getByText("同步动作").closest("li");
-    expect(syncActionRow).not.toBeNull();
-    expect(
-      within(syncActionRow as HTMLElement).getByText(/本地模拟/),
-    ).toBeInTheDocument();
-    expect(screen.queryByText("secret-token")).not.toBeInTheDocument();
-  });
-
-  it("在设置页显示只读待处理同步冲突摘要", async () => {
+  it("WebDAV 立即同步成功后刷新设置页顶层卡片", async () => {
     const repository = fakeRepository({
-      pendingChanges: [
-        localChange({
-          id: "change-4",
-          entityId: "task-1",
-          action: "task.update",
-          payload: {
-            id: "task-1",
-            baseVersion: 4,
-            patch: { title: "Local title" },
-            updatedAt: "2026-05-16T12:00:00.000Z",
-          },
-          createdAt: "2026-05-16T12:00:30.000Z",
-        }),
-      ],
-    });
-    const conflicts: PendingConflictSummary[] = [
-      {
-        id: "conflict-1",
-        taskId: "task-1",
-        changeId: "change-4",
-        reason: "任务版本冲突",
-        createdAt: "2026-05-16T12:01:00.000Z",
-        serverTaskTitle: "Server title",
-        serverTaskVersion: 5,
-        clientPayloadSummary: 'patch: {"title":"Local title"}',
+      stats: {
+        databasePath: "sqlite:momo.db",
+        totalTasks: 4,
+        activeTasks: 2,
+        completedTasks: 1,
+        pendingLocalChanges: 2,
       },
-    ];
-
-    renderWithRepository(Settings, repository, {
-      props: { pendingConflicts: conflicts },
-    });
-
-    expect(await screen.findByText("同步冲突")).toBeInTheDocument();
-    const conflictRow = screen.getByText("Server title").closest("li");
-    expect(conflictRow).not.toBeNull();
-    expect(within(conflictRow as HTMLElement).getByText("v5")).toBeInTheDocument();
-    expect(
-      within(conflictRow as HTMLElement).getByText('patch: {"title":"Local title"}'),
-    ).toBeInTheDocument();
-    await waitFor(() =>
-      expect(
-        within(conflictRow as HTMLElement).getByText("task.update"),
-      ).toBeInTheDocument(),
-    );
-    expect(within(conflictRow as HTMLElement).getByText("task:task-1")).toBeInTheDocument();
-    expect(
-      within(conflictRow as HTMLElement).getByText(
-        "本地变更创建于 2026-05-16T12:00:30.000Z",
-      ),
-    ).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /resolve/i })).not.toBeInTheDocument();
-  });
-
-  it("在设置页显示只读同步运行摘要", async () => {
-    const repository = fakeRepository();
-    const syncSummary: SyncRunSummary = {
-      status: "has-rejections",
-      message: "1 个本地变更需要重试或修复",
-      acceptedCount: 2,
-      rejectedCount: 1,
-      conflictCount: 0,
-      serverCursor: "cursor-4",
-    };
-
-    renderWithRepository(Settings, repository, {
-      props: { syncSummary },
-    });
-
-    expect(await screen.findByText("同步状态")).toBeInTheDocument();
-    expect(screen.getByText("1 个本地变更需要重试或修复")).toBeInTheDocument();
-    expect(screen.getByText("has-rejections")).toBeInTheDocument();
-    expect(screen.getByText("cursor-4")).toBeInTheDocument();
-
-    const acceptedRow = screen.getByText("已接受").closest("li");
-    const rejectedRow = screen.getByText("已拒绝").closest("li");
-    const conflictRow = screen.getByText("冲突").closest("li");
-    expect(within(acceptedRow as HTMLElement).getByText("2")).toBeInTheDocument();
-    expect(within(rejectedRow as HTMLElement).getByText("1")).toBeInTheDocument();
-    expect(within(conflictRow as HTMLElement).getByText("0")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /retry/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /resolve/i })).not.toBeInTheDocument();
-  });
-
-  it("本地同步模拟后显示只读同步拒绝详情", async () => {
-    const repository = fakeRepository({
-      pendingChanges: [
-        localChange({
-          id: "change-2",
-          entityId: "task-2",
-          action: "task.update",
-          payload: {
-            id: "task-2",
-            baseVersion: 3,
-            patch: { title: "Rejected edit" },
-            updatedAt: "2026-05-16T10:00:00.000Z",
-          },
-          createdAt: "2026-05-16T10:01:00.000Z",
-        }),
-      ],
-    });
-    const runnerResult: SyncRunnerRunOnceResult = {
-      ok: true,
-      result: {
-        request: {
-          contractVersion: 1,
-          workspaceId: "local",
-          deviceId: "desktop-1",
-          changes: [],
-          clientSentAt: "2026-05-16T12:00:00.000Z",
-        },
-        push: {
-          acceptedChangeIds: [],
-          rejectedChanges: [{ id: "change-2", reason: "Invalid payload" }],
-          conflicts: [],
-          serverCursor: "cursor-1",
-          summary: {
-            status: "has-rejections",
-            message: "1 个本地变更需要重试或修复",
-            acceptedCount: 0,
-            rejectedCount: 1,
-            conflictCount: 0,
-            serverCursor: "cursor-1",
-          },
-        },
-        pendingConflictCount: 0,
-        pendingConflicts: [],
+      syncState: {
+        serverCursor: "cursor-before",
+        lastSyncedAt: "2026-05-16T11:59:00.000Z",
+        lastError: "previous error",
+        updatedAt: "2026-05-16T11:59:00.000Z",
       },
-    };
-
-    renderWithRepository(Settings, repository, {
-      props: { onRunLocalSyncSimulation: vi.fn().mockResolvedValue(runnerResult) },
     });
-
-    await fireEvent.click(
-      await screen.findByRole("button", { name: "运行本地同步模拟" }),
-    );
-
-    expect(await screen.findByText("同步拒绝")).toBeInTheDocument();
-    const rejectionRow = screen.getByText("change-2").closest("li");
-    expect(rejectionRow).not.toBeNull();
-    expect(
-      within(rejectionRow as HTMLElement).getByText("Invalid payload"),
-    ).toBeInTheDocument();
-    expect(within(rejectionRow as HTMLElement).getByText("task.update")).toBeInTheDocument();
-    expect(within(rejectionRow as HTMLElement).getByText("task:task-2")).toBeInTheDocument();
-    expect(
-      within(rejectionRow as HTMLElement).getByText('patch: {"title":"Rejected edit"}'),
-    ).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /retry rejected/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /delete rejected/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /force/i })).not.toBeInTheDocument();
-  });
-
-  it("在设置页运行注入的本地同步模拟", async () => {
-    const repository = fakeRepository();
-    const onRunLocalSyncSimulation = vi.fn().mockResolvedValue({
-      request: {
-        contractVersion: 1,
-        workspaceId: "local",
-        deviceId: "desktop-1",
-        changes: [],
-        clientSentAt: "2026-05-16T12:00:00.000Z",
-      },
-      push: {
-        acceptedChangeIds: [],
-        rejectedChanges: [],
-        conflicts: [],
-        serverCursor: "cursor-3",
-        summary: {
-          status: "all-synced",
-          message: "已完成同步",
-          acceptedCount: 0,
-          rejectedCount: 0,
-          conflictCount: 0,
-          serverCursor: "cursor-3",
-        },
-      },
-      pendingConflictCount: 0,
-      pendingConflicts: [],
-    } satisfies LocalSyncSimulationResult);
-
-    renderWithRepository(Settings, repository, {
-      props: { onRunLocalSyncSimulation },
-    });
-
-    await fireEvent.click(
-      await screen.findByRole("button", { name: "运行本地同步模拟" }),
-    );
-
-    expect(onRunLocalSyncSimulation).toHaveBeenCalledTimes(1);
-    expect(await screen.findByText("同步状态")).toBeInTheDocument();
-    expect(screen.getByText("已完成同步")).toBeInTheDocument();
-    expect(screen.getByText("cursor-3")).toBeInTheDocument();
-  });
-
-  it("在设置页显示本地同步模拟错误", async () => {
-    const repository = fakeRepository();
-    const onRunLocalSyncSimulation = vi
-      .fn()
-      .mockRejectedValue(new Error("simulation unavailable"));
-
-    renderWithRepository(Settings, repository, {
-      props: { onRunLocalSyncSimulation },
-    });
-
-    await fireEvent.click(
-      await screen.findByRole("button", { name: "运行本地同步模拟" }),
-    );
-
-    expect(await screen.findByText("错误：simulation unavailable")).toBeInTheDocument();
-  });
-
-  it("接受来自设置页模拟回调的同步 runner 结果", async () => {
-    const repository = fakeRepository();
-    const runnerResult: SyncRunnerRunOnceResult = {
-      ok: true,
-      result: {
-        request: {
-          contractVersion: 1,
-          workspaceId: "local",
-          deviceId: "desktop-1",
-          changes: [],
-          clientSentAt: "2026-05-16T12:00:00.000Z",
-        },
-        push: {
-          acceptedChangeIds: [],
-          rejectedChanges: [],
-          conflicts: [],
-          serverCursor: "cursor-9",
-          summary: {
-            status: "all-synced",
-            message: "已完成同步",
-            acceptedCount: 0,
-            rejectedCount: 0,
-            conflictCount: 0,
-            serverCursor: "cursor-9",
-          },
-        },
-        pendingConflictCount: 0,
-        pendingConflicts: [],
-      },
-    };
-
-    renderWithRepository(Settings, repository, {
-      props: { onRunLocalSyncSimulation: vi.fn().mockResolvedValue(runnerResult) },
-    });
-
-    await fireEvent.click(
-      await screen.findByRole("button", { name: "运行本地同步模拟" }),
-    );
-
-    expect(await screen.findByText("同步状态")).toBeInTheDocument();
-    expect(screen.getByText("cursor-9")).toBeInTheDocument();
-  });
-
-  it("本地同步模拟后显示只读 delta pull 摘要", async () => {
-    const repository = fakeRepository();
-    const runnerResult: SyncRunnerRunOnceResult = {
-      ok: true,
-      result: {
-        request: {
-          contractVersion: 1,
-          workspaceId: "local",
-          deviceId: "desktop-1",
-          changes: [],
-          clientSentAt: "2026-05-16T12:00:00.000Z",
-        },
-        push: {
-          acceptedChangeIds: [],
-          rejectedChanges: [],
-          conflicts: [],
-          serverCursor: "cursor-9",
-          summary: {
-            status: "all-synced",
-            message: "已完成同步",
-            acceptedCount: 0,
-            rejectedCount: 0,
-            conflictCount: 0,
-            serverCursor: "cursor-9",
-          },
-        },
-        pull: {
-          appliedTaskCount: 2,
-          deletedTaskCount: 1,
-          serverCursor: "cursor-12",
-        },
-        pendingConflictCount: 0,
-        pendingConflicts: [],
-      },
-    };
-
-    renderWithRepository(Settings, repository, {
-      props: { onRunLocalSyncSimulation: vi.fn().mockResolvedValue(runnerResult) },
-    });
-
-    await fireEvent.click(
-      await screen.findByRole("button", { name: "运行本地同步模拟" }),
-    );
-
-    expect(await screen.findByText("已应用拉取结果")).toBeInTheDocument();
-    const appliedRow = screen.getByText("已应用任务").closest("li");
-    const deletedRow = screen.getByText("已删除任务").closest("li");
-    const cursorRow = screen.getByText("拉取游标").closest("li");
-    expect(within(appliedRow as HTMLElement).getByText("2")).toBeInTheDocument();
-    expect(within(deletedRow as HTMLElement).getByText("1")).toBeInTheDocument();
-    expect(within(cursorRow as HTMLElement).getByText("cursor-12")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /pull/i })).not.toBeInTheDocument();
-  });
-
-  it("本地同步模拟成功后刷新本地数据库和同步状态", async () => {
-    const repository = fakeRepository();
     vi.mocked(repository.getStats)
       .mockResolvedValueOnce({
         databasePath: "sqlite:momo.db",
@@ -877,7 +488,7 @@ describe("桌面端 MVP 页面", () => {
         updatedAt: "2026-05-16T11:59:00.000Z",
       })
       .mockResolvedValueOnce({
-        serverCursor: "cursor-from-repository",
+        serverCursor: "cursor-after",
         lastSyncedAt: "2026-05-16T12:00:00.000Z",
         lastError: null,
         updatedAt: "2026-05-16T12:00:00.000Z",
@@ -890,90 +501,66 @@ describe("桌面端 MVP 页面", () => {
           status: "succeeded",
           startedAt: "2026-05-16T12:00:00.000Z",
           finishedAt: "2026-05-16T12:00:05.000Z",
-          message: "已完成同步",
-          serverCursor: "cursor-from-history",
+          message: "WebDAV 同步完成（无新增变更）",
+          serverCursor: "cursor-after",
         },
       ]);
-    const runnerResult: SyncRunnerRunOnceResult = {
-      ok: true,
+
+    const controller = fakeWebdavController({
+      kind: "enabled",
       result: {
-        request: {
-          contractVersion: 1,
-          workspaceId: "local",
-          deviceId: "desktop-1",
-          changes: [],
-          clientSentAt: "2026-05-16T12:00:00.000Z",
-        },
-        push: {
-          acceptedChangeIds: [],
-          rejectedChanges: [],
-          conflicts: [],
-          serverCursor: "cursor-push",
-          summary: {
-            status: "all-synced",
-            message: "已完成同步",
-            acceptedCount: 0,
-            rejectedCount: 0,
-            conflictCount: 0,
-            serverCursor: "cursor-push",
-          },
-        },
-        pull: {
-          appliedTaskCount: 1,
+        ok: true,
+        report: {
+          pushedOpsCount: 1,
+          markedSyncedCount: 1,
+          pulledOpsCount: 0,
+          appliedTaskCount: 0,
           deletedTaskCount: 0,
-          serverCursor: "cursor-pull-result",
+          serverCursor: "cursor-after",
+          message: "已上传 1 条本地变更",
         },
-        pendingConflictCount: 0,
-        pendingConflicts: [],
       },
-    };
+    });
+    const secretsStore = fakeSecretsStore({
+      baseUrl: "https://dav.jianguoyun.com/dav",
+      root: "/momo",
+      username: "demo",
+      password: "secret",
+      deviceId: "desk-1",
+    });
 
     renderWithRepository(Settings, repository, {
-      props: { onRunLocalSyncSimulation: vi.fn().mockResolvedValue(runnerResult) },
+      global: {
+        provide: {
+          [WebdavSyncControllerKey as symbol]: controller,
+          [WebdavSecretsStoreKey as symbol]: secretsStore,
+        },
+      },
     });
 
     expect(await screen.findByText("cursor-before")).toBeInTheDocument();
-    await fireEvent.click(
-      await screen.findByRole("button", { name: "运行本地同步模拟" }),
-    );
+    const syncButton = await screen.findByRole("button", { name: /立即同步/ });
+    await fireEvent.click(syncButton);
 
-    const pendingRow = await screen.findByText("待同步").then((label) =>
-      label.closest("li"),
+    await waitFor(() => expect(controller.runOnce).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(repository.getStats).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(repository.getSyncState).toHaveBeenCalledTimes(2));
+    const serverCursorRow = (await screen.findByText("服务端游标")).closest("li");
+    await waitFor(() =>
+      expect(
+        within(serverCursorRow as HTMLElement).getByText("cursor-after"),
+      ).toBeInTheDocument(),
     );
-    const serverCursorRow = screen.getByText("服务端游标").closest("li");
-    const lastErrorRow = screen.getByText("最近错误").closest("li");
-    expect(repository.getStats).toHaveBeenCalledTimes(2);
-    expect(repository.getSyncState).toHaveBeenCalledTimes(2);
-    expect(repository.listRecentSyncRuns).toHaveBeenCalledTimes(2);
-    expect(within(pendingRow as HTMLElement).getByText("0")).toBeInTheDocument();
+    const pendingRow = (await screen.findByText("待同步")).closest("li");
+    await waitFor(() =>
+      expect(within(pendingRow as HTMLElement).getByText("0")).toBeInTheDocument(),
+    );
     expect(
-      within(serverCursorRow as HTMLElement).getByText("cursor-from-repository"),
+      await screen.findByText("已上传 1 条本地变更"),
     ).toBeInTheDocument();
-    expect(within(lastErrorRow as HTMLElement).getByText("无")).toBeInTheDocument();
-    expect(await screen.findByText("同步历史")).toBeInTheDocument();
-    expect(screen.getByText("cursor-from-history")).toBeInTheDocument();
   });
 
-  it("在设置页显示同步 runner 错误", async () => {
-    const repository = fakeRepository();
-    const runnerResult: SyncRunnerRunOnceResult = {
-      ok: false,
-      error: "transport unavailable",
-      result: null,
-    };
-
-    renderWithRepository(Settings, repository, {
-      props: { onRunLocalSyncSimulation: vi.fn().mockResolvedValue(runnerResult) },
-    });
-
-    await fireEvent.click(
-      await screen.findByRole("button", { name: "运行本地同步模拟" }),
-    );
-
-    expect(await screen.findByText("错误：transport unavailable")).toBeInTheDocument();
-  });
-
-  it("同步 runner 出错后刷新同步状态", async () => {
+  it("WebDAV 立即同步失败后也刷新设置页顶层卡片以暴露 lastError", async () => {
     const repository = fakeRepository();
     vi.mocked(repository.getSyncState)
       .mockResolvedValueOnce({
@@ -985,46 +572,56 @@ describe("桌面端 MVP 页面", () => {
       .mockResolvedValueOnce({
         serverCursor: null,
         lastSyncedAt: null,
-        lastError: "HTTP-like 同步传输失败",
+        lastError: "WebDAV 401 Unauthorized",
         updatedAt: "2026-05-16T12:00:00.000Z",
       });
-    const runnerResult: SyncRunnerRunOnceResult = {
-      ok: false,
-      error: "HTTP-like 同步传输失败",
-      result: null,
-    };
+    const controller = fakeWebdavController({
+      kind: "enabled",
+      result: { ok: false, error: "WebDAV 401 Unauthorized" },
+    });
+    const secretsStore = fakeSecretsStore({
+      baseUrl: "https://dav.jianguoyun.com/dav",
+      root: "/momo",
+      username: "demo",
+      password: "secret",
+      deviceId: "desk-1",
+    });
 
     renderWithRepository(Settings, repository, {
-      props: { onRunLocalSyncSimulation: vi.fn().mockResolvedValue(runnerResult) },
+      global: {
+        provide: {
+          [WebdavSyncControllerKey as symbol]: controller,
+          [WebdavSecretsStoreKey as symbol]: secretsStore,
+        },
+      },
     });
 
     expect(await screen.findByText("cursor-before")).toBeInTheDocument();
-    await fireEvent.click(
-      await screen.findByRole("button", { name: "运行本地同步模拟" }),
-    );
+    const syncButton = await screen.findByRole("button", { name: /立即同步/ });
+    await fireEvent.click(syncButton);
 
-    expect(
-      await screen.findByText("错误：HTTP-like 同步传输失败"),
-    ).toBeInTheDocument();
-    expect(await screen.findByText("无")).toBeInTheDocument();
-    const serverCursorRow = screen.getByText("服务端游标").closest("li");
-    const lastErrorRow = screen.getByText("最近错误").closest("li");
-    expect(repository.getSyncState).toHaveBeenCalledTimes(2);
-    expect(within(serverCursorRow as HTMLElement).getByText("无")).toBeInTheDocument();
-    expect(
-      within(lastErrorRow as HTMLElement).getByText("HTTP-like 同步传输失败"),
-    ).toBeInTheDocument();
+    await waitFor(() => expect(repository.getSyncState).toHaveBeenCalledTimes(2));
+    const lastErrorRow = (await screen.findByText("最近错误")).closest("li");
+    await waitFor(() =>
+      expect(
+        within(lastErrorRow as HTMLElement).getByText("WebDAV 401 Unauthorized"),
+      ).toBeInTheDocument(),
+    );
   });
 
-  it("在默认设置页路由显示本地同步模拟入口", async () => {
+  it("默认设置页路由展示 WebDAV 凭据卡片而非旧本地模拟入口", async () => {
     const repository = fakeRepository();
 
     await renderAppAt("/settings", repository);
 
     expect(screen.getByRole("button", { name: "打开小组件" })).toBeInTheDocument();
     expect(
-      await screen.findByRole("button", { name: "运行本地同步模拟" }),
+      await screen.findByText("WebDAV 同步（坚果云优先）"),
     ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /本地同步模拟/ }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/远程同步配置/)).not.toBeInTheDocument();
   });
 
   it("保持登录占位路由接入 Vue router", async () => {
@@ -1036,30 +633,6 @@ describe("桌面端 MVP 页面", () => {
     await fireEvent.click(screen.getByRole("button", { name: "继续" }));
 
     expect(await screen.findByText("今日到期")).toBeInTheDocument();
-  });
-
-  it("将远程同步环境配置传入默认设置页路由", async () => {
-    vi.stubEnv("VITE_MOMO_SYNC_BASE_URL", "https://api.example.test/momo");
-    vi.stubEnv("VITE_MOMO_SYNC_TOKEN", "secret-token");
-    const repository = fakeRepository();
-
-    await renderAppAt("/settings", repository);
-
-    expect(
-      await screen.findByText(/远程同步配置（旧 HTTP 通路）/),
-    ).toBeInTheDocument();
-    expect(screen.getByText("已启用")).toBeInTheDocument();
-    expect(screen.getByText("https://api.example.test/momo")).toBeInTheDocument();
-    expect(screen.getByText("已配置")).toBeInTheDocument();
-    const syncActionRow = screen.getByText("同步动作").closest("li");
-    expect(syncActionRow).not.toBeNull();
-    expect(
-      within(syncActionRow as HTMLElement).getByText(/本地模拟/),
-    ).toBeInTheDocument();
-    expect(screen.queryByText("secret-token")).not.toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: "运行本地同步模拟" }),
-    ).toBeInTheDocument();
   });
 
   it("使用重试恢复设置页数据库状态错误", async () => {
@@ -1108,10 +681,11 @@ function renderWithRepository(
   return render(component, {
     ...options,
     global: {
+      ...(options.global as Record<string, unknown> | undefined),
       provide: {
         [TaskRepositoryKey as symbol]: repository,
+        ...(((options.global as { provide?: Record<symbol, unknown> } | undefined)?.provide) ?? {}),
       },
-      ...(options.global as Record<string, unknown> | undefined),
     },
   });
 }
@@ -1126,6 +700,48 @@ async function renderAppAt(path: string, repository: TaskRepository) {
       plugins: [router],
     },
   });
+}
+
+interface FakeWebdavControllerOptions {
+  kind: "enabled" | "disabled";
+  result?: WebdavRunOnceResult;
+}
+
+function fakeWebdavController(
+  options: FakeWebdavControllerOptions,
+): WebdavSyncController & { runOnce: ReturnType<typeof vi.fn> } {
+  const result: WebdavRunOnceResult =
+    options.result ?? { ok: false, error: "尚未配置 WebDAV 凭据" };
+  const resolution: WebdavRuntimeResolution =
+    options.kind === "enabled"
+      ? {
+        kind: "enabled",
+        runner: { runOnce: vi.fn() },
+        secrets: {
+          baseUrl: "https://dav.jianguoyun.com/dav",
+          root: "/momo",
+          username: "u",
+          password: "p",
+          deviceId: "desk-1",
+        },
+        layout: {} as never,
+        provider: {} as never,
+        client: {} as never,
+      }
+      : { kind: "disabled", reason: "尚未配置 WebDAV 凭据" };
+  const runOnce = vi.fn().mockResolvedValue(result);
+  return {
+    inspect: vi.fn().mockResolvedValue(resolution),
+    runOnce,
+  };
+}
+
+function fakeSecretsStore(saved: Parameters<WebdavSecretsStore["save"]>[0] | null): WebdavSecretsStore {
+  return {
+    load: vi.fn().mockResolvedValue(saved),
+    save: vi.fn().mockResolvedValue(undefined),
+    clear: vi.fn().mockResolvedValue(undefined),
+  };
 }
 
 function fakeRepository(overrides: {
@@ -1182,7 +798,7 @@ function fakeRepository(overrides: {
       status: "succeeded",
       startedAt: "2026-05-16T12:00:00.000Z",
       finishedAt: "2026-05-16T12:00:00.000Z",
-      message: "已完成同步",
+      message: "WebDAV 同步完成（无新增变更）",
       serverCursor: "cursor-0",
     }),
     listRecentSyncRuns: vi.fn().mockResolvedValue(overrides.syncRuns ?? []),
@@ -1218,3 +834,4 @@ function task(overrides: Partial<Task> = {}): Task {
     ...overrides,
   };
 }
+
