@@ -9,7 +9,9 @@
 //     oplog/
 //       <device>/<yyyymmdd>/<seq>.jsonl
 //     snapshots/
-//       <yyyymmddhhmm>.tar.zst        # idle 时 oplog > 1k 条触发
+//       <yyyymmddhhmm>.jsonl          # idle 时 oplog > 1k 条触发；
+//                                     # MVP 暂用 JSONL（每行一个 entity），
+//                                     # 加固期再切到 .tar.zst（保留命名空间）。
 //
 // 与未来的服务端 sync 命名空间共用同一份格式，未来切换 transport 时数据零迁移。
 
@@ -107,9 +109,19 @@ export function oplogChunkPath(
   return `${day}/${formatSeq(seq)}.jsonl`;
 }
 
+export const SNAPSHOT_EXTENSION = ".jsonl";
+
 export function snapshotPath(layout: WebdavLayout, yyyymmddhhmm: string): string {
   assertYyyymmddhhmm(yyyymmddhhmm);
-  return `${layout.snapshots}/${yyyymmddhhmm}.tar.zst`;
+  return `${layout.snapshots}/${yyyymmddhhmm}${SNAPSHOT_EXTENSION}`;
+}
+
+export function parseSnapshotFileName(filename: string): string | null {
+  const match = filename.match(/^(\d{12})\.jsonl$/);
+  if (!match) {
+    return null;
+  }
+  return match[1];
 }
 
 export function formatSeq(seq: number): string {

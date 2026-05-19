@@ -16,10 +16,31 @@ export {
   type WebdavStat,
 } from "./types";
 export {
+  SNAPSHOT_EXTENSION,
   WEBDAV_DEFAULT_ROOT,
   createWebdavLayout,
+  parseSnapshotFileName,
   type WebdavLayout,
 } from "./paths";
+export {
+  DEFAULT_SNAPSHOT_OPLOG_THRESHOLD,
+  listSnapshots,
+  loadSnapshot,
+  mergeOpsIntoSnapshot,
+  parseSnapshot,
+  pickLatestSnapshot,
+  serializeSnapshot,
+  shouldCompactSnapshot,
+  writeSnapshot,
+  type ListSnapshotsResult,
+  type LoadSnapshotResult,
+  type MergeOpsIntoSnapshotOptions,
+  type MergeOpsIntoSnapshotResult,
+  type ShouldCompactSnapshotInput,
+  type SnapshotEntry,
+  type SnapshotMeta,
+  type WriteSnapshotOptions,
+} from "./snapshot";
 export {
   createWebdavSyncProvider,
   type CreateWebdavSyncProviderOptions,
