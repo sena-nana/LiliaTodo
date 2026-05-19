@@ -1,29 +1,16 @@
 import { SYNC_CONTRACT_VERSION } from "./sync";
+import type {
+  NotificationDto,
+  NotificationTypeDto,
+  NotificationListStatusDto,
+} from "../../schema/src/notification";
 
-export type NotificationTypeDto =
-  | "approval.required"
-  | "conflict.raised"
-  | "sync.run.failed"
-  | "task.due";
-
-export type NotificationStatusDto = "queued" | "acknowledged";
-export type NotificationListStatusDto = NotificationStatusDto | "all";
-
-export interface NotificationDto {
-  id: string;
-  workspaceId: string;
-  type: NotificationTypeDto;
-  status: NotificationStatusDto;
-  title: string;
-  body: string | null;
-  sourceEventId: string | null;
-  taskId?: string;
-  changeId?: string;
-  conflictId?: string;
-  payload: unknown;
-  createdAt: string;
-  acknowledgedAt: string | null;
-}
+export type {
+  NotificationTypeDto,
+  NotificationStatusDto,
+  NotificationListStatusDto,
+  NotificationDto,
+} from "../../schema/src/notification";
 
 export interface ListNotificationsRequest {
   contractVersion: typeof SYNC_CONTRACT_VERSION;

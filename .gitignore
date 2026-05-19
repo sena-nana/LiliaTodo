@@ -89,6 +89,11 @@ storybook-static/
 # ---------- TypeScript ----------
 *.tsbuildinfo
 .tscache/
+# packages/*/src 下不应出现编译产物（应在 dist/）
+packages/*/src/**/*.js
+packages/*/src/**/*.d.ts
+packages/*/src/**/*.js.map
+packages/*/src/**/*.d.ts.map
 
 # ---------- 测试 / 覆盖率 ----------
 coverage/
