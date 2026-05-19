@@ -7,6 +7,12 @@ import {
 } from "../data/TaskRepositoryContext";
 import { WEBDAV_DEFAULT_ROOT, type WebdavSecrets } from "../sync/webdav";
 import type { WebdavRunReport } from "../sync/webdav";
+import { buildEditableContextMenuItems, useContextMenu } from "./contextMenu";
+
+const contextMenu = useContextMenu();
+function onEditableContextMenu(event: MouseEvent) {
+  contextMenu.show(event, buildEditableContextMenuItems(event));
+}
 
 interface SecretsFormState {
   baseUrl: string;
@@ -183,15 +189,15 @@ function displayError(value: string) {
       <form class="form" @submit.prevent="handleSave">
         <label class="field">
           <span>Base URL</span>
-          <input v-model="form.baseUrl" type="url" autocomplete="off" required />
+          <input v-model="form.baseUrl" type="url" autocomplete="off" required @contextmenu="onEditableContextMenu" />
         </label>
         <label class="field">
           <span>根目录</span>
-          <input v-model="form.root" type="text" autocomplete="off" placeholder="/momo" />
+          <input v-model="form.root" type="text" autocomplete="off" placeholder="/momo" @contextmenu="onEditableContextMenu" />
         </label>
         <label class="field">
           <span>用户名</span>
-          <input v-model="form.username" type="text" autocomplete="off" required />
+          <input v-model="form.username" type="text" autocomplete="off" required @contextmenu="onEditableContextMenu" />
         </label>
         <label class="field">
           <span>应用密码</span>
@@ -200,11 +206,12 @@ function displayError(value: string) {
             type="password"
             autocomplete="new-password"
             :placeholder="passwordPlaceholder"
+            @contextmenu="onEditableContextMenu"
           />
         </label>
         <label class="field">
           <span>设备 ID</span>
-          <input v-model="form.deviceId" type="text" autocomplete="off" />
+          <input v-model="form.deviceId" type="text" autocomplete="off" @contextmenu="onEditableContextMenu" />
         </label>
         <div class="form__actions">
           <button type="submit" :disabled="saving">

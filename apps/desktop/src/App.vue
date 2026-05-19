@@ -53,6 +53,7 @@ provide(WebdavSecretsStoreKey, secretsStoreProvider);
 </script>
 
 <template>
-  <RouterView />
-  <ContextMenu />
+  <ContextMenu>
+    <RouterView />
+  </ContextMenu>
 </template>

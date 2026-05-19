@@ -1,122 +1,26 @@
 <script setup lang="ts">
-import { ref, nextTick, onMounted, onBeforeUnmount } from "vue";
-
-type MenuItem = {
-  id: string;
-  label: string;
-  disabled?: boolean;
-  action: () => void | Promise<void>;
-};
+import { nextTick, onBeforeUnmount, onMounted, provide, ref } from "vue";
+import {
+  ContextMenuHostKey,
+  type ContextMenuController,
+  type ContextMenuItem,
+} from "./contextMenu";
 
 const open = ref(false);
 const x = ref(0);
 const y = ref(0);
-const items = ref<MenuItem[]>([]);
+const items = ref<ContextMenuItem[]>([]);
 const activeIndex = ref(0);
 const menuRef = ref<HTMLElement | null>(null);
 
-function isEditable(el: EventTarget | null): el is HTMLElement {
-  if (!(el instanceof HTMLElement)) return false;
-  const tag = el.tagName;
-  return tag === "INPUT" || tag === "TEXTAREA" || el.isContentEditable;
-}
-
-function selectedText(): string {
-  return (window.getSelection()?.toString() ?? "").trim();
-}
-
-async function writeClipboard(text: string) {
-  try {
-    await navigator.clipboard.writeText(text);
-  } catch {
-    const ta = document.createElement("textarea");
-    ta.value = text;
-    ta.style.position = "fixed";
-    ta.style.opacity = "0";
-    document.body.appendChild(ta);
-    ta.select();
-    try { document.execCommand("copy"); } finally { ta.remove(); }
-  }
-}
-
-async function readClipboard(): Promise<string> {
-  try {
-    return await navigator.clipboard.readText();
-  } catch {
-    return "";
-  }
-}
-
-function buildItems(target: EventTarget | null): MenuItem[] {
-  if (isEditable(target)) {
-    const el = target as HTMLInputElement | HTMLTextAreaElement;
-    const hasSelection = "selectionStart" in el
-      ? (el.selectionEnd ?? 0) > (el.selectionStart ?? 0)
-      : selectedText().length > 0;
-    const readonly = "readOnly" in el ? el.readOnly : false;
-    const disabledEdit = "disabled" in el ? el.disabled : false;
-    const canMutate = !readonly && !disabledEdit;
-
-    return [
-      {
-        id: "cut", label: "剪切", disabled: !hasSelection || !canMutate,
-        action: async () => {
-          const start = (el as HTMLInputElement).selectionStart ?? 0;
-          const end = (el as HTMLInputElement).selectionEnd ?? 0;
-          const v = (el as HTMLInputElement).value;
-          const t = v.slice(start, end);
-          if (t) {
-            await writeClipboard(t);
-            (el as HTMLInputElement).value = v.slice(0, start) + v.slice(end);
-            el.dispatchEvent(new Event("input", { bubbles: true }));
-          }
-        },
-      },
-      {
-        id: "copy", label: "复制", disabled: !hasSelection,
-        action: async () => {
-          const start = (el as HTMLInputElement).selectionStart ?? 0;
-          const end = (el as HTMLInputElement).selectionEnd ?? 0;
-          const v = (el as HTMLInputElement).value;
-          const t = v.slice(start, end) || selectedText();
-          if (t) await writeClipboard(t);
-        },
-      },
-      {
-        id: "paste", label: "粘贴", disabled: !canMutate,
-        action: async () => {
-          const text = await readClipboard();
-          if (!text) return;
-          const start = (el as HTMLInputElement).selectionStart ?? 0;
-          const end = (el as HTMLInputElement).selectionEnd ?? 0;
-          const v = (el as HTMLInputElement).value;
-          (el as HTMLInputElement).value = v.slice(0, start) + text + v.slice(end);
-          el.dispatchEvent(new Event("input", { bubbles: true }));
-        },
-      },
-      {
-        id: "all", label: "全选", disabled: false,
-        action: () => { (el as HTMLInputElement).select?.(); },
-      },
-    ];
-  }
-
-  const sel = selectedText();
-  if (sel.length > 0) {
-    return [{ id: "copy", label: "复制", action: () => writeClipboard(sel) }];
-  }
-  return [];
-}
-
-async function openAt(event: MouseEvent) {
+async function show(event: MouseEvent, next: ContextMenuItem[]) {
   event.preventDefault();
-  const built = buildItems(event.target);
-  if (built.length === 0) {
+  if (next.length === 0) {
     open.value = false;
     return;
   }
-  items.value = built;
-  const firstEnabled = built.findIndex((i) => !i.disabled);
+  items.value = next;
+  const firstEnabled = next.findIndex((i) => !i.disabled);
   activeIndex.value = firstEnabled >= 0 ? firstEnabled : 0;
   x.value = event.clientX;
   y.value = event.clientY;
@@ -125,6 +29,11 @@ async function openAt(event: MouseEvent) {
   reposition();
   menuRef.value?.focus();
 }
+
+function hide() { open.value = false; }
+
+const controller: ContextMenuController = { show, hide };
+provide(ContextMenuHostKey, controller);
 
 function reposition() {
   const el = menuRef.value;
@@ -139,17 +48,18 @@ function reposition() {
   }
 }
 
-function close() { open.value = false; }
-
-async function runItem(item: MenuItem) {
+async function runItem(item: ContextMenuItem) {
   if (item.disabled) return;
-  close();
+  hide();
   try { await item.action(); } catch { /* swallow */ }
 }
 
+// 全局屏蔽浏览器默认右键菜单；具体内容由业务组件通过 useContextMenu().show 声明。
+function suppressDefault(e: MouseEvent) { e.preventDefault(); }
+
 function onKeydown(e: KeyboardEvent) {
   if (!open.value) return;
-  if (e.key === "Escape") { e.preventDefault(); close(); return; }
+  if (e.key === "Escape") { e.preventDefault(); hide(); return; }
   if (e.key === "ArrowDown") {
     e.preventDefault();
     for (let i = 1; i <= items.value.length; i++) {
@@ -173,29 +83,30 @@ function onDocPointerDown(e: MouseEvent) {
   if (!open.value) return;
   if (e.button === 2) return;
   if (menuRef.value && e.target instanceof Node && menuRef.value.contains(e.target)) return;
-  close();
+  hide();
 }
 
 onMounted(() => {
-  document.addEventListener("contextmenu", openAt);
+  document.addEventListener("contextmenu", suppressDefault);
   document.addEventListener("keydown", onKeydown);
   document.addEventListener("mousedown", onDocPointerDown, true);
-  window.addEventListener("blur", close);
-  window.addEventListener("resize", close);
-  window.addEventListener("scroll", close, true);
+  window.addEventListener("blur", hide);
+  window.addEventListener("resize", hide);
+  window.addEventListener("scroll", hide, true);
 });
 
 onBeforeUnmount(() => {
-  document.removeEventListener("contextmenu", openAt);
+  document.removeEventListener("contextmenu", suppressDefault);
   document.removeEventListener("keydown", onKeydown);
   document.removeEventListener("mousedown", onDocPointerDown, true);
-  window.removeEventListener("blur", close);
-  window.removeEventListener("resize", close);
-  window.removeEventListener("scroll", close, true);
+  window.removeEventListener("blur", hide);
+  window.removeEventListener("resize", hide);
+  window.removeEventListener("scroll", hide, true);
 });
 </script>
 
 <template>
+  <slot />
   <Teleport to="body">
     <ul
       v-if="open"

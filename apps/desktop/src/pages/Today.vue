@@ -3,6 +3,12 @@ import { onMounted, ref } from "vue";
 import { Check, Loader2, Plus, RefreshCw } from "lucide-vue-next";
 import { useTaskRepository } from "../data/TaskRepositoryContext";
 import type { TodayTaskGroups } from "../domain/tasks";
+import { buildEditableContextMenuItems, useContextMenu } from "../components/contextMenu";
+
+const contextMenu = useContextMenu();
+function onEditableContextMenu(event: MouseEvent) {
+  contextMenu.show(event, buildEditableContextMenuItems(event));
+}
 
 const repository = useTaskRepository();
 const groups = ref<TodayTaskGroups>({
@@ -99,6 +105,7 @@ function formatDateTime(value: string | null) {
           id="today-quick-add"
           v-model="title"
           placeholder="添加今日任务"
+          @contextmenu="onEditableContextMenu"
         />
         <label class="sr-only" for="task-destination">任务归属</label>
         <select id="task-destination" v-model="destination">
@@ -111,6 +118,7 @@ function formatDateTime(value: string | null) {
           v-model="dueAtInput"
           type="datetime-local"
           :disabled="destination === 'inbox'"
+          @contextmenu="onEditableContextMenu"
         />
         <label class="sr-only" for="task-estimate">任务估时分钟</label>
         <input
@@ -121,6 +129,7 @@ function formatDateTime(value: string | null) {
           min="1"
           step="1"
           placeholder="min"
+          @contextmenu="onEditableContextMenu"
         />
         <button type="submit" :disabled="saving || !title.trim()">
           <Plus :size="16" aria-hidden="true" />
