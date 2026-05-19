@@ -66,7 +66,7 @@ npm install
 ## 共享契约
 
 - `packages/contracts` 定义 Task DTO、LocalChange DTO、Delta Push/Pull 请求响应类型，供未来真接入后端时复用。
-- 旧的 `apps/api` 内存契约骨架已在阶段 80 整体下线；接入服务端时直接基于 `packages/contracts` 的 DTO 重新搭建即可。
+- 旧的 `apps/api` 内存契约骨架已下线，不要恢复其内存 router 作为设置页默认 runner；接入服务端时直接基于 `packages/contracts` 的 DTO 在独立服务端项目重新搭建即可。
 
 ## 手动验收
 
