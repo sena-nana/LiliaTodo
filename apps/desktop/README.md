@@ -108,7 +108,7 @@ npm install
 - 本地同步演示成功后会重新读取 repository，并刷新同步状态与待同步数量，让 runner 写回后的 cursor / error / pending count 可见。
 - 本地同步演示成功或失败后也会刷新同步历史，让本次手动运行结果可追溯。
 - 本地同步错误也会刷新同步状态，所以 HTTP-like transport 或 runner 写回的 `lastError` 会显示在设置页。
-- 当前没有真实网络请求、账号、后台任务或定时同步；这些仍属于后续 BE-01 / BE-04 范围。
+- 当前没有真实网络请求、账号、后台任务或定时同步；这些由独立服务端项目承接，本端通过 WebDAV 同步链路完成多端协同。
 - `GET /sync/events` 不会启动 WebSocket server；默认设置页路由仍只运行本地模拟，不订阅实时事件、不切换到远程 runner。
 
 ## 手动验收
@@ -128,17 +128,17 @@ npm install
 - 确认“同步状态”中的 cursor / last synced / last error 状态可见。
 - 该检查使用内存 transport，不发起真实网络、不接账号、不启动后台任务或生产同步。
 
-## BE-03 本地同步边界
+## 本地同步边界
 
-- 本地 BE-03 边界已经足够支撑桌面端本地验证：push/pull 适配器、cursor 状态、运行历史、待同步变更诊断、拒绝/冲突可见性、远程配置展示和本地验收护栏均已覆盖。
-- 生产同步仍需要 BE-01 / IF-01 生产后端前置条件，桌面端默认流程才能接入真实服务：身份、租户存储、RLS/持久化、部署和运维策略。
-- 下一条路线图边界是 BE-04 实时事件，可以基于现有契约与 HTTP-like route 语义推进，但在生产后端前置条件完成前，默认设置页路由仍应保持在本地模拟。
-- BE-04 实时事件当前只实现契约与内存语义；这一阶段只固化 event envelope、sequence 补拉和 HTTP-like `GET /sync/events`，不会启动 WebSocket server、Redis/event bus 或生产后端。
+- 本地同步骨架已覆盖：push/pull 适配器、cursor 状态、运行历史、待同步变更诊断、拒绝/冲突可见性、远程配置展示和本地验收护栏。
+- 生产同步链路由独立服务端项目承接，桌面端不再自建后端身份/存储/部署；多端协同优先通过 WebDAV 同步实现（详见 `src/sync/webdav/`）。
+- 实时事件当前只实现契约与内存语义：event envelope、sequence 补拉和 HTTP-like `GET /sync/events`，不会启动 WebSocket server、Redis/event bus 或生产后端。
 - 继续保持默认设置页路由使用本地模拟；不要仅凭配置把它切换到远程同步或后台同步。
 
 ## 当前限制
 
-- 登录是纯前端跳转占位，OIDC / Passkeys 接入对应后端任务 **BE-01**。
-- 当前仅为桌面端本地 MVP，没有后端同步、协作、Agent 执行或 Android 端。
-- 小组件窗口已在 `tauri.conf.json` 声明 `transparent / alwaysOnTop / decorations:false`，但还没有 Win32 扩展样式桥接（**NB-01**）来管理 `WS_EX_TOOLWINDOW / NOACTIVATE` 等。
+- 登录是纯前端跳转占位；真实账号体系由独立服务端项目承接。
+- 当前桌面端不持有后端同步、协作或 Agent 执行能力；多端协同通过 WebDAV 同步链路完成。
+- 尚未实现 Android 端。
+- 小组件窗口已在 `tauri.conf.json` 声明 `transparent / alwaysOnTop / decorations:false`，但还没有 Win32 扩展样式桥接来管理 `WS_EX_TOOLWINDOW / NOACTIVATE` 等。
 - Rust 端仍保留 `greet` 命令作为 Tauri invoke 冒烟测试，但主页面不再展示该调试入口。
