@@ -12,6 +12,7 @@ export {
   type WebdavGetResult,
   type WebdavPutOptions,
   type WebdavPutResult,
+  type WebdavServerInfo,
   type WebdavStat,
 } from "./types";
 export {
@@ -45,3 +46,45 @@ export {
   type WebdavSyncScheduler,
   type WebdavSyncSchedulerOptions,
 } from "./scheduler";
+export {
+  applyOpToEntity,
+  compareOpsForReplay,
+  dedupeOps,
+  groupOpsByEntity,
+  mergeOpsAcrossEntities,
+  mergeOpsForEntity,
+  sortOpsForReplay,
+  type ApplyOpToEntityOptions,
+  type EntityWithUnknownPayload,
+  type MergeOpsAcrossEntitiesEntry,
+  type MergeOpsAcrossEntitiesOptions,
+  type MergeOpsAcrossEntitiesResult,
+  type MergeOpsForEntityOptions,
+  type MergeOpsForEntityResult,
+} from "./merge";
+export {
+  lastWriteWinsFieldMergePolicy,
+  noopSemanticConflictDetector,
+  type FieldMergeInput,
+  type FieldMergePolicy,
+  type SemanticConflict,
+  type SemanticConflictDetector,
+  type SemanticConflictInspectInput,
+} from "./conflict";
+export {
+  conservativeWebdavCapabilities,
+  detectWebdavCapabilities,
+  inferVendor,
+  type DetectWebdavCapabilitiesInput,
+  type WebdavCapabilities,
+  type WebdavVendor,
+} from "./capabilities";
+export {
+  createEtagOptimisticLockStrategy,
+  createReadBeforeWriteLockStrategy,
+  pickLockStrategy,
+  type LockStrategy,
+  type LockStrategyKind,
+  type LockToken,
+  type PickLockStrategyInput,
+} from "./lock";

@@ -43,6 +43,12 @@ export interface WebdavGetResult {
   readonly lastModified: string | null;
 }
 
+export interface WebdavServerInfo {
+  readonly davCompliance: ReadonlySet<string>;
+  readonly allowMethods: ReadonlySet<string>;
+  readonly serverHeader: string | null;
+}
+
 export interface WebdavClient {
   ensureCollection(path: string): Promise<void>;
   list(path: string): Promise<WebdavStat[]>;
@@ -54,6 +60,11 @@ export interface WebdavClient {
   ): Promise<WebdavPutResult>;
   delete(path: string): Promise<void>;
   stat(path: string): Promise<WebdavStat | null>;
+  /**
+   * 可选：探测服务端能力（OPTIONS）。
+   * sprint-3 capabilities 模块在 client 未实现时按"最保守"画像退化。
+   */
+  options?(path: string): Promise<WebdavServerInfo>;
 }
 
 export class WebdavConflictError extends Error {
