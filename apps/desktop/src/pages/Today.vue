@@ -93,11 +93,6 @@ function formatDateTime(value: string | null) {
 
 <template>
   <section class="page">
-    <header class="page__head">
-      <h1>今日</h1>
-      <span class="page__sub">今日任务 · 逾期提醒 · 完成回看</span>
-    </header>
-
     <form class="quick-add" @submit.prevent="onQuickAdd">
       <label class="sr-only" for="today-quick-add">快速添加任务</label>
       <div class="row">

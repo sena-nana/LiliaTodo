@@ -49,11 +49,6 @@ function displayError(value: string) {
 
 <template>
   <section class="page">
-    <header class="page__head">
-      <h1>日历</h1>
-      <span class="page__sub">未来 7 天</span>
-    </header>
-
     <div v-if="loading" class="card state">
       <Loader2 class="spin" :size="18" aria-hidden="true" />
       <p>正在加载日程...</p>

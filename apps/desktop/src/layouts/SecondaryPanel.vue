@@ -11,7 +11,6 @@ const nav = [
 
 <template>
   <aside class="secondary-panel">
-    <h2 class="secondary-panel__title">任务</h2>
     <nav class="secondary-panel__nav">
       <RouterLink
         v-for="item in nav"

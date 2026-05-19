@@ -18,10 +18,20 @@ import type {
 import Today from "../src/pages/Today.vue";
 import Inbox from "../src/pages/Inbox.vue";
 import Calendar from "../src/pages/Calendar.vue";
-import Settings from "../src/pages/Settings.vue";
+import SyncSettings from "../src/pages/settings/SyncSettings.vue";
 import Widget from "../src/pages/Widget.vue";
 import App from "../src/App.vue";
 import { createMomoRouter } from "../src/router";
+
+vi.mock("@tauri-apps/api/window", () => ({
+  getCurrentWindow: vi.fn(() => ({
+    isMaximized: vi.fn().mockResolvedValue(false),
+    onResized: vi.fn().mockResolvedValue(() => {}),
+    minimize: vi.fn().mockResolvedValue(undefined),
+    toggleMaximize: vi.fn().mockResolvedValue(undefined),
+    close: vi.fn().mockResolvedValue(undefined),
+  })),
+}));
 
 describe("桌面端 MVP 页面", () => {
   it("显示今日分组并快速添加今日任务", async () => {
@@ -237,7 +247,7 @@ describe("桌面端 MVP 页面", () => {
     renderWithRepository(Calendar, repository);
 
     expect(await screen.findByText("Planning session")).toBeInTheDocument();
-    expect(screen.getByText("未来 7 天")).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { level: 1, name: "日历" })).toBeNull();
     expect(repository.listAgenda).toHaveBeenCalledTimes(1);
   });
 
@@ -286,7 +296,7 @@ describe("桌面端 MVP 页面", () => {
       deviceId: "desk-1",
     });
 
-    renderWithRepository(Settings, repository, {
+    renderWithRepository(SyncSettings, repository, {
       global: {
         provide: {
           [WebdavSyncControllerKey as symbol]: controller,
@@ -318,7 +328,7 @@ describe("桌面端 MVP 页面", () => {
       deviceId: "desk-1",
     });
 
-    renderWithRepository(Settings, repository, {
+    renderWithRepository(SyncSettings, repository, {
       global: {
         provide: {
           [WebdavSyncControllerKey as symbol]: controller,
@@ -339,9 +349,8 @@ describe("桌面端 MVP 页面", () => {
   it("默认设置页路由展示 WebDAV 凭据卡片而非旧本地模拟入口", async () => {
     const repository = fakeRepository();
 
-    await renderAppAt("/settings", repository);
+    await renderAppAt("/settings-shell", repository);
 
-    expect(screen.getByRole("button", { name: "打开小组件" })).toBeInTheDocument();
     expect(
       await screen.findByText("WebDAV 同步（坚果云优先）"),
     ).toBeInTheDocument();
@@ -351,13 +360,10 @@ describe("桌面端 MVP 页面", () => {
     expect(screen.queryByText(/远程同步配置/)).not.toBeInTheDocument();
   });
 
-  it("保持登录占位路由接入 Vue router", async () => {
+  it("未知路由回到今日页", async () => {
     const repository = fakeRepository();
 
     await renderAppAt("/login", repository);
-
-    await fireEvent.update(screen.getByLabelText("邮箱"), "you@example.com");
-    await fireEvent.click(screen.getByRole("button", { name: "继续" }));
 
     expect(await screen.findByText("今日到期")).toBeInTheDocument();
   });
