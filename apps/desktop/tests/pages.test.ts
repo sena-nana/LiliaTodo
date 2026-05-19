@@ -508,7 +508,9 @@ describe("桌面端 MVP 页面", () => {
       props: { remoteSyncConfig },
     });
 
-    expect(await screen.findByText("远程同步配置")).toBeInTheDocument();
+    expect(
+      await screen.findByText(/远程同步配置（旧 HTTP 通路）/),
+    ).toBeInTheDocument();
     expect(screen.getByText("已禁用")).toBeInTheDocument();
     expect(screen.getByText("未配置远程同步 base URL")).toBeInTheDocument();
   });
@@ -525,13 +527,17 @@ describe("桌面端 MVP 页面", () => {
       props: { remoteSyncConfig },
     });
 
-    expect(await screen.findByText("远程同步配置")).toBeInTheDocument();
+    expect(
+      await screen.findByText(/远程同步配置（旧 HTTP 通路）/),
+    ).toBeInTheDocument();
     expect(screen.getByText("已启用")).toBeInTheDocument();
     expect(screen.getByText("https://api.example.test/momo")).toBeInTheDocument();
     expect(screen.getByText("已配置")).toBeInTheDocument();
     const syncActionRow = screen.getByText("同步动作").closest("li");
     expect(syncActionRow).not.toBeNull();
-    expect(within(syncActionRow as HTMLElement).getByText("本地模拟")).toBeInTheDocument();
+    expect(
+      within(syncActionRow as HTMLElement).getByText(/本地模拟/),
+    ).toBeInTheDocument();
     expect(screen.queryByText("secret-token")).not.toBeInTheDocument();
   });
 
@@ -1039,13 +1045,17 @@ describe("桌面端 MVP 页面", () => {
 
     await renderAppAt("/settings", repository);
 
-    expect(await screen.findByText("远程同步配置")).toBeInTheDocument();
+    expect(
+      await screen.findByText(/远程同步配置（旧 HTTP 通路）/),
+    ).toBeInTheDocument();
     expect(screen.getByText("已启用")).toBeInTheDocument();
     expect(screen.getByText("https://api.example.test/momo")).toBeInTheDocument();
     expect(screen.getByText("已配置")).toBeInTheDocument();
     const syncActionRow = screen.getByText("同步动作").closest("li");
     expect(syncActionRow).not.toBeNull();
-    expect(within(syncActionRow as HTMLElement).getByText("本地模拟")).toBeInTheDocument();
+    expect(
+      within(syncActionRow as HTMLElement).getByText(/本地模拟/),
+    ).toBeInTheDocument();
     expect(screen.queryByText("secret-token")).not.toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "运行本地同步模拟" }),

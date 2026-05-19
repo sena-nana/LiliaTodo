@@ -8,6 +8,8 @@ import type {
   SyncRunnerRunOnceResult,
 } from "../sync/syncClient";
 import type { RemoteSyncConfig } from "../sync/remoteSyncConfig";
+import type { WebdavSyncController } from "../sync/defaultSettingsSyncRuntime";
+import type { WebdavSecretsStore } from "../sync/webdav";
 
 export type RunLocalSyncSimulation = () => Promise<
   LocalSyncSimulationResult | SyncRunnerRunOnceResult
@@ -23,6 +25,10 @@ export const RemoteSyncConfigKey: InjectionKey<RemoteSyncConfig> = Symbol(
 );
 export const RunLocalSyncSimulationKey: InjectionKey<RunLocalSyncSimulation> =
   Symbol("RunLocalSyncSimulation");
+export const WebdavSyncControllerKey: InjectionKey<WebdavSyncController | null> =
+  Symbol("WebdavSyncController");
+export const WebdavSecretsStoreKey: InjectionKey<WebdavSecretsStore | null> =
+  Symbol("WebdavSecretsStore");
 
 export function installTaskRepository(
   app: App,
