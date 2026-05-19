@@ -117,3 +117,7 @@ export {
   type HttpRequest,
   type HttpResponse,
 } from "./httpClient";
+export {
+  createTauriHttpFetcher,
+  type CreateTauriHttpFetcherOptions,
+} from "./tauriHttpFetcher";
