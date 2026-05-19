@@ -109,3 +109,11 @@ export {
   type LockToken,
   type PickLockStrategyInput,
 } from "./lock";
+export {
+  createWebdavHttpClient,
+  type CreateWebdavHttpClientOptions,
+  type HttpFetcher,
+  type HttpHeaders,
+  type HttpRequest,
+  type HttpResponse,
+} from "./httpClient";
