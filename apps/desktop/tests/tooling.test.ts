@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -70,7 +70,8 @@ describe("测试工具链", () => {
     ).toEqual([]);
   });
 
-  it("确保默认设置页路由不接入远程 runner 工厂", () => {
+  it("确保默认设置页路由只装配 WebDAV runner，不再引用旧本地/远程 runner", () => {
+    // 目的：防止阶段 80 下线的本地模拟 / 远程 HTTP runner 被悄悄恢复成默认 runner。
     const desktopRoot = resolve(
       dirname(fileURLToPath(import.meta.url)),
       "..",
@@ -82,9 +83,38 @@ describe("测试工具链", () => {
     );
 
     expect(appSource).toContain("createDefaultSettingsSyncRuntime");
-    expect(appSource).not.toContain("createRemoteSyncRunner");
-    expect(defaultRuntimeSource).toContain("createLocalSyncRunner");
-    expect(defaultRuntimeSource).not.toContain("createRemoteSyncRunner");
+    for (const forbidden of [
+      "createRemoteSyncRunner",
+      "createRemoteSyncConfig",
+      "createLocalSyncRunner",
+      "createHttpLikeSyncTransport",
+      "createHttpSyncTransport",
+      "RemoteSyncConfigKey",
+      "RunLocalSyncSimulationKey",
+    ]) {
+      expect(appSource).not.toContain(forbidden);
+      expect(defaultRuntimeSource).not.toContain(forbidden);
+    }
+  });
+
+  it("已下线的 backend 抽象层与旧同步模块不再存在于源码树", () => {
+    // 目的：阶段 80 已删除的死代码不应被恢复；如需重启「自建后端 / 远程 runner」请新开阶段。
+    const desktopRoot = resolve(
+      dirname(fileURLToPath(import.meta.url)),
+      "..",
+    );
+
+    expect(existsSync(resolve(desktopRoot, "src/backend"))).toBe(false);
+    for (const removedSyncFile of [
+      "src/sync/syncClient.ts",
+      "src/sync/localSyncRunner.ts",
+      "src/sync/httpLikeSyncTransport.ts",
+      "src/sync/httpSyncTransport.ts",
+      "src/sync/remoteSyncConfig.ts",
+      "src/sync/remoteSyncRunner.ts",
+    ]) {
+      expect(existsSync(resolve(desktopRoot, removedSyncFile))).toBe(false);
+    }
   });
 
   it("WebDAV 同步层不再 import 已废弃的 backend/contracts 子目录", () => {

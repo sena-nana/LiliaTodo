@@ -3,8 +3,8 @@ import { onMounted, ref } from "vue";
 import { Database, Loader2, RefreshCw } from "lucide-vue-next";
 import { useTaskRepository } from "../data/TaskRepositoryContext";
 import type { DatabaseStats, SyncRun, SyncState } from "../data/taskRepository";
-import type { PendingLocalChangeSummary } from "../sync/syncClient";
-import { summarizePendingLocalChanges } from "../sync/syncClient";
+import type { PendingLocalChangeSummary } from "../data/changeSummary";
+import { summarizePendingLocalChanges } from "../data/changeSummary";
 import WebdavSettingsCard from "../components/WebdavSettingsCard.vue";
 
 const repository = useTaskRepository();
