@@ -7,7 +7,7 @@
 // 本模块只提供数据结构与默认 noop 实现；具体规则（哪些字段算语义冲突）
 // 由业务侧实现 Detector 注入。
 
-import type { Op } from "../../backend/contracts/op";
+import type { Op } from "../types/op";
 
 export interface SemanticConflict {
   readonly entityType: string;

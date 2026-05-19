@@ -11,8 +11,8 @@
 // 同步语义：'put' 整体替换 payload；'patch' 字段级合并；'delete' 标记为 null。
 // 富文本/列表字段如需 CRDT 合并，由 caller 通过 FieldMergePolicy 注入。
 
-import type { Entity } from "../../backend/contracts/entity";
-import type { Op } from "../../backend/contracts/op";
+import type { Entity } from "../types/entity";
+import type { Op } from "../types/op";
 import {
   lastWriteWinsFieldMergePolicy,
   noopSemanticConflictDetector,

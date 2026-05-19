@@ -86,6 +86,26 @@ describe("测试工具链", () => {
     expect(defaultRuntimeSource).toContain("createLocalSyncRunner");
     expect(defaultRuntimeSource).not.toContain("createRemoteSyncRunner");
   });
+
+  it("WebDAV 同步层不再 import 已废弃的 backend/contracts 子目录", () => {
+    // 目的：防止 sync/webdav/* 继续依赖一个被废弃的 backend 抽象目录。
+    // entity/op 数据格式已迁到 sync/types，是 WebDAV 同步层的共享格式。
+    const desktopRoot = resolve(
+      dirname(fileURLToPath(import.meta.url)),
+      "..",
+    );
+    const webdavRoot = resolve(desktopRoot, "src/sync/webdav");
+    const offenders = listFiles(webdavRoot)
+      .filter((file) => /\.ts$/.test(file))
+      .filter((file) =>
+        /from\s+["'][^"']*backend\/contracts/.test(
+          readFileSync(file, "utf-8"),
+        ),
+      )
+      .map((file) => file.replace(`${desktopRoot}\\`, ""));
+
+    expect(offenders).toEqual([]);
+  });
 });
 
 function listFiles(root: string): string[] {

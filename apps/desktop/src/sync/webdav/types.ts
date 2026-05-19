@@ -4,8 +4,8 @@
 // `webdav` / 自研 Tauri 命令 / 其它实现都不影响业务代码。
 //
 // 边界约定（强约束，后续 ESLint 会通过 no-restricted-imports 强化）：
-// - 本目录仅依赖 `@momo/schema` 与 `backend/contracts/{entity,op}`；
-// - 严禁 import `backend/namespaces/*` 或 `backend/transport/*`；
+// - 本目录仅依赖 `@momo/schema` 与 `sync/types/{entity,op}`；
+// - 严禁 import 已废弃的 `backend/*` 子目录；
 // - 业务页面不应直接 import 本目录，统一经 `SyncProvider`。
 
 export interface WebdavCredentials {

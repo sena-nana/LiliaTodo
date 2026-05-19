@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Op } from "../src/backend/contracts/op";
+import type { Op } from "../src/sync/types/op";
 import {
   lastWriteWinsFieldMergePolicy,
   noopSemanticConflictDetector,

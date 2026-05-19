@@ -14,8 +14,8 @@
 // 本 sprint 完成最小可运行回路（push 单设备 jsonl chunk、pull 多设备扫日合并）；
 // snapshot / 冲突仲裁 / idle 缓冲 / feature detect 留后续 sprint。
 
-import type { Entity } from "../../backend/contracts/entity";
-import type { Op } from "../../backend/contracts/op";
+import type { Entity } from "../types/entity";
+import type { Op } from "../types/op";
 
 import {
   advanceCursor,

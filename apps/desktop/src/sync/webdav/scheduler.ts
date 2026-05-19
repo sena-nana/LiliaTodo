@@ -12,7 +12,7 @@
 // 重入抑制：同步进行中再次触发只排一个挂起请求，当前结束后自动跑一次，
 // 防止 idle/periodic/manual 三源叠加引发并发 push。
 
-import type { Op } from "../../backend/contracts/op";
+import type { Op } from "../types/op";
 import type { SyncProvider } from "./provider";
 
 export const DEFAULT_IDLE_DEBOUNCE_MS = 5000;
