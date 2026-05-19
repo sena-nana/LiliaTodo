@@ -1,6 +1,8 @@
+export type { TaskStatusDto, TaskDto } from "../../schema/src/task";
+import type { TaskDto } from "../../schema/src/task";
+
 export const SYNC_CONTRACT_VERSION = 1;
 
-export type TaskStatusDto = "active" | "completed" | "archived";
 export type LocalChangeActionDto =
   | "task.create"
   | "task.update"
@@ -10,22 +12,6 @@ export type SyncEventTypeDto =
   | "task.changed"
   | "sync.run.updated"
   | "conflict.raised";
-
-export interface TaskDto {
-  id: string;
-  workspaceId: string;
-  title: string;
-  notes: string | null;
-  status: TaskStatusDto;
-  priority: 0 | 1 | 2 | 3;
-  dueAt: string | null;
-  estimateMin: number | null;
-  tags: string[];
-  createdAt: string;
-  updatedAt: string;
-  completedAt: string | null;
-  version: number;
-}
 
 export interface LocalChangeDto {
   id: string;
