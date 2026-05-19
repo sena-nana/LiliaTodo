@@ -16,7 +16,7 @@ describe("桌面端 README 文档", () => {
     expect(readme).toContain("共享契约");
     expect(readme).toContain("本地同步前置层");
     expect(readme).toContain("手动验收");
-    expect(readme).toContain("BE-03 本地同步边界");
+    expect(readme).toContain("本地同步边界");
     expect(readme).toContain("当前限制");
     expect(readme).toContain("sync_state");
     expect(readme).toContain("sync_runs");

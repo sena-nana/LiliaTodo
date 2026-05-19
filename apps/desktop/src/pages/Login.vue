@@ -15,7 +15,7 @@ function onSubmit() {
     <form class="auth__card" @submit.prevent="onSubmit">
       <h1>Momo</h1>
       <p class="auth__hint">
-        OIDC / Passkeys 登录链路待接入（BE-01）。当前为占位入口。
+        登录链路由独立服务端项目承接，当前为前端占位入口。
       </p>
       <label class="auth__label">
         邮箱
