@@ -19,6 +19,10 @@ interface SecretsFormState {
 const secretsStore = inject(WebdavSecretsStoreKey, null);
 const controller = inject(WebdavSyncControllerKey, null);
 
+const emit = defineEmits<{
+  (e: "sync-done"): void;
+}>();
+
 const form = reactive<SecretsFormState>({
   baseUrl: "https://dav.jianguoyun.com/dav",
   root: WEBDAV_DEFAULT_ROOT,
@@ -125,6 +129,9 @@ async function handleSyncNow() {
     }
   } finally {
     syncing.value = false;
+    // 不论成功失败都通知父级刷新顶层卡片：sync_state.lastError、待同步队列、
+    // sync_runs 历史都由 runner 写到 SQLite，父级需要重新读才能看到。
+    emit("sync-done");
   }
 }
 
