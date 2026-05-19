@@ -12,6 +12,14 @@
     "opener:default",
     "sql:default",
     "sql:allow-execute",
+    "store:default",
+    "store:allow-get",
+    "store:allow-set",
+    "store:allow-save",
+    "store:allow-load",
+    "store:allow-delete",
+    "store:allow-clear",
+    "store:allow-has",
     {
       "identifier": "http:default",
       "allow": [

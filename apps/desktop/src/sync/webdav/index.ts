@@ -121,3 +121,29 @@ export {
   createTauriHttpFetcher,
   type CreateTauriHttpFetcherOptions,
 } from "./tauriHttpFetcher";
+export {
+  createInMemoryWebdavSecretsStore,
+  createPluginStoreWebdavSecretsStore,
+  type CreatePluginStoreWebdavSecretsStoreOptions,
+  type WebdavSecrets,
+  type WebdavSecretsStore,
+} from "./secretsStore";
+export {
+  entityToTask,
+  localChangeToOp,
+  TASK_ENTITY_TYPE,
+  TASK_SCHEMA_VERSION,
+  type LocalChangeToOpOptions,
+} from "./taskBridge";
+export {
+  createWebdavTaskSyncRunner,
+  type CreateWebdavTaskSyncRunnerOptions,
+  type WebdavRunOnceResult,
+  type WebdavRunReport,
+  type WebdavTaskSyncRunner,
+} from "./taskSyncRunner";
+export {
+  createWebdavRuntime,
+  type CreateWebdavRuntimeOptions,
+  type WebdavRuntimeResolution,
+} from "./runtime";

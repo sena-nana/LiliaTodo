@@ -22,6 +22,7 @@ import {
   RunLocalSyncSimulationKey,
 } from "../data/TaskRepositoryContext";
 import type { RemoteSyncConfig } from "../sync/remoteSyncConfig";
+import WebdavSettingsCard from "../components/WebdavSettingsCard.vue";
 
 interface SettingsProps {
   pendingConflicts?: PendingConflictSummary[];
@@ -292,9 +293,11 @@ function displayError(value: string) {
       </ul>
     </div>
 
+    <WebdavSettingsCard />
+
     <div class="card">
       <div class="section-title">
-        <h2>远程同步配置</h2>
+        <h2>远程同步配置（旧 HTTP 通路）</h2>
         <span class="pill">{{ remoteSyncEnabled ? "已启用" : "已禁用" }}</span>
       </div>
       <ul class="kv">
@@ -303,7 +306,7 @@ function displayError(value: string) {
           <li><span>认证 token</span><b>已配置</b></li>
         </template>
         <li v-else><span>原因</span><b>{{ remoteSyncReason }}</b></li>
-        <li><span>同步动作</span><b>本地模拟</b></li>
+        <li><span>同步动作</span><b>本地模拟（WebDAV 推荐路径见上方卡片）</b></li>
       </ul>
     </div>
 
