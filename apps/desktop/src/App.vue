@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { provide } from "vue";
 import { RouterView } from "vue-router";
+import ContextMenu from "./components/ContextMenu.vue";
 import {
   WebdavSecretsStoreKey,
   WebdavSyncControllerKey,
@@ -53,4 +54,5 @@ provide(WebdavSecretsStoreKey, secretsStoreProvider);
 
 <template>
   <RouterView />
+  <ContextMenu />
 </template>
