@@ -79,7 +79,7 @@ describe("BE-12 WebDAV 路径布局", () => {
   it("snapshotPath 校验 yyyymmddhhmm", () => {
     const layout = createWebdavLayout();
     expect(snapshotPath(layout, "202605191230")).toBe(
-      "/momo/snapshots/202605191230.tar.zst",
+      "/momo/snapshots/202605191230.jsonl",
     );
     expect(() => snapshotPath(layout, "2026051912")).toThrow(/yyyymmddhhmm/);
   });
