@@ -47,7 +47,7 @@ describe("WebDAV 同步验收清单", () => {
 
     expect(checklist).toContain("不再显示 `本地同步模拟` 按钮");
     expect(checklist).toContain("远程同步配置（旧 HTTP 通路）");
-    expect(checklist).toContain("`apps/api/` 已在阶段 80 整体下线");
+    expect(checklist).toContain("`apps/api/` 已整体下线");
     expect(checklist).toContain("不要在没有用户授权的情况下启动后台或定时 WebDAV 同步");
   });
 });
