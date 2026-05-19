@@ -1,11 +1,28 @@
 use tauri::{
     menu::{MenuBuilder, MenuItemBuilder},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    AppHandle, Manager,
+    utils::config::Color,
+    AppHandle, Manager, Theme, WebviewWindow, WindowEvent,
 };
 
 const MAIN_WINDOW_LABEL: &str = "main";
 const MENU_ID_QUIT: &str = "quit";
+
+// 与前端 CSS 变量 --bg 保持一致：light=#f7f7f8、dark=#1c1c1e。
+// 把窗口背景刷子调成这两个色，可以避免 Windows 在拉伸时露出默认白底。
+const BG_LIGHT: Color = Color(0xF7, 0xF7, 0xF8, 0xFF);
+const BG_DARK: Color = Color(0x1C, 0x1C, 0x1E, 0xFF);
+
+fn background_for(theme: Theme) -> Color {
+    match theme {
+        Theme::Dark => BG_DARK,
+        _ => BG_LIGHT,
+    }
+}
+
+fn apply_background(window: &WebviewWindow, theme: Theme) {
+    let _ = window.set_background_color(Some(background_for(theme)));
+}
 
 #[tauri::command]
 fn greet(name: &str) -> String {
@@ -55,6 +72,16 @@ pub fn run() {
         .plugin(tauri_plugin_store::Builder::default().build())
         .setup(|app| {
             build_tray(app.handle())?;
+            if let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) {
+                let initial_theme = window.theme().unwrap_or(Theme::Light);
+                apply_background(&window, initial_theme);
+                let follow = window.clone();
+                window.on_window_event(move |event| {
+                    if let WindowEvent::ThemeChanged(theme) = event {
+                        apply_background(&follow, *theme);
+                    }
+                });
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![greet])
