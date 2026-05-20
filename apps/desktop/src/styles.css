@@ -1,34 +1,74 @@
 :root {
-  color-scheme: light dark;
-  --bg: #f4f5f7;
-  --bg-elev: #ffffff;
-  --bg-subtle: #f8f9fb;
-  --border: #d9dde5;
-  --border-soft: #edf0f4;
-  --text: #1f2329;
-  --text-muted: #6b7280;
-  --accent: #315fbd;
-  --accent-soft: #e8eefb;
-  --accent-text: #ffffff;
-  --ok: #1f8f55;
-  --err: #c93c3c;
+  color-scheme: dark;
+
+  /* ---- 表面 ---- */
+  --bg:           #181818;
+  --bg-elev:      #202020;
+  --bg-subtle:    #1c1c1c;
+  --bg-hover:     #2d2d2d;
+  --bg-active:    #353535;
+
+  /* ---- 边线 ---- */
+  --border:       #2a2a2a;
+  --border-soft:  #232323;
+  --border-strong:#3a3a3a;
+
+  /* ---- 文本 ---- */
+  --text:         #e6e6e6;
+  --text-muted:   #8a8a8a;
+  --text-faint:   #5a5a5a;
+
+  /* ---- 品牌色 ---- */
+  --accent:       #7bb9f0;
+  --accent-strong:#4991d7;
+  --accent-soft:  rgba(123, 185, 240, 0.14);
+  --accent-text:  #0d1622;
+
+  /* ---- 语义色 ---- */
+  --ok:           #3fb950;
+  --warn:         #d4a85b;
+  --err:          #f47174;
+  --ok-soft:      rgba(63, 185, 80, 0.14);
+  --warn-soft:    rgba(212, 168, 91, 0.16);
+  --err-soft:     rgba(244, 113, 116, 0.14);
+
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue",
     Arial, "PingFang SC", "Microsoft YaHei", sans-serif;
   font-size: 14px;
   line-height: 1.5;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #1c1c1e;
-    --bg-elev: #2c2c2e;
-    --bg-subtle: #242426;
-    --border: #3a3a3c;
-    --border-soft: #323236;
-    --text: #f2f2f7;
-    --text-muted: #8e8e93;
-    --accent-soft: rgba(49, 95, 189, 0.25);
-  }
+/* ---------------- 浅色主题（与 Lilia 同款映射） ---------------- *
+ * 主区纯白、侧边浅灰；hover / active 在浅色下走「更深」方向。
+ */
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  --bg:           #ffffff;
+  --bg-elev:      #f3f4f6;
+  --bg-subtle:    #f7f8fa;
+  --bg-hover:     #ebedf0;
+  --bg-active:    #dfe2e7;
+
+  --border:       #e3e5e8;
+  --border-soft:  #eef0f3;
+  --border-strong:#cbcfd5;
+
+  --text:         #1a1a1f;
+  --text-muted:   #6b7280;
+  --text-faint:   #9ca3af;
+
+  --accent:       #4991d7;
+  --accent-strong:#2c7ed6;
+  --accent-soft:  #e8eefb;
+  --accent-text:  #ffffff;
+
+  --ok:           #1d8540;
+  --warn:         #b8771c;
+  --err:          #c93c3c;
+  --ok-soft:      rgba(29, 133, 64, 0.10);
+  --warn-soft:    rgba(184, 119, 28, 0.12);
+  --err-soft:     rgba(201, 60, 60, 0.10);
 }
 
 * { box-sizing: border-box; }
@@ -43,7 +83,7 @@ body { background: var(--bg); color: var(--text); }
     "titlebar titlebar titlebar"
     "activity secondary main";
   height: 100%;
-  background: var(--bg-subtle);
+  background: var(--bg-elev);
 }
 .shell > .titlebar { grid-area: titlebar; }
 .shell__main {
@@ -51,6 +91,7 @@ body { background: var(--bg); color: var(--text); }
   overflow: auto;
   padding: 20px 24px;
   background: var(--bg);
+  border-top-left-radius: 10px;
 }
 
 .activity-bar {
@@ -171,6 +212,7 @@ body { background: var(--bg); color: var(--text); }
   overflow: auto;
   padding: 20px 24px;
   background: var(--bg);
+  border-top-left-radius: 10px;
 }
 
 .titlebar {
@@ -511,7 +553,7 @@ button:disabled {
 .widget {
   min-height: 100%;
   padding: 18px;
-  background: rgba(247, 247, 248, 0.86);
+  background: rgba(28, 28, 30, 0.86);
   color: var(--text);
   backdrop-filter: blur(18px);
 }
@@ -587,10 +629,8 @@ button:disabled {
   color: var(--text-muted);
 }
 
-@media (prefers-color-scheme: dark) {
-  .widget {
-    background: rgba(28, 28, 30, 0.86);
-  }
+:root[data-theme="light"] .widget {
+  background: rgba(247, 247, 248, 0.86);
 }
 
 .context-menu {
@@ -622,4 +662,57 @@ button:disabled {
 .context-menu__item.is-disabled {
   color: var(--text-muted);
   cursor: not-allowed;
+}
+
+/* ---------------- 设置页常用控件 ---------------- */
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border-soft);
+}
+.settings-row:first-child { padding-top: 4px; }
+.settings-row:last-child { border-bottom: 0; padding-bottom: 4px; }
+.settings-row__label { min-width: 0; }
+.settings-row__hint {
+  color: var(--text-muted);
+  font-size: 12px;
+  margin-top: 2px;
+}
+
+.segmented {
+  display: inline-flex;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 2px;
+  gap: 2px;
+  height: 34px;
+}
+.segmented button {
+  background: transparent;
+  color: var(--text-muted);
+  border: 0;
+  height: 28px;
+  padding: 0 12px;
+  border-radius: 6px;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  transition: background-color 0.12s ease, color 0.12s ease;
+}
+.segmented button:hover:not(.is-active) {
+  background: var(--bg-hover);
+  color: var(--text);
+  filter: none;
+}
+.segmented button.is-active {
+  background: var(--bg-active);
+  color: var(--text);
+  filter: none;
 }

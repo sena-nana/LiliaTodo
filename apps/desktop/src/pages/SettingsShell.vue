@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { RouterLink, RouterView } from "vue-router";
-import { RefreshCw, Info } from "lucide-vue-next";
+import { RefreshCw, Info, Palette } from "lucide-vue-next";
 import TitleBar from "../components/TitleBar.vue";
 
 const categories = [
   { to: "/settings-shell/sync", label: "同步", icon: RefreshCw },
+  { to: "/settings-shell/appearance", label: "外观", icon: Palette },
   { to: "/settings-shell/about", label: "关于", icon: Info },
 ];
 </script>

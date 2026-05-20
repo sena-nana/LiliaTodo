@@ -5,6 +5,15 @@
     <link rel="icon" type="image/svg+xml" href="/tauri.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Momo</title>
+    <script>
+      // 在 CSS 应用前同步设置 data-theme，避免浅色用户启动时闪一下暗色。
+      try {
+        var t = localStorage.getItem("momo.theme");
+        if (t === "light" || t === "dark") {
+          document.documentElement.dataset.theme = t;
+        }
+      } catch (e) {}
+    </script>
   </head>
 
   <body>
