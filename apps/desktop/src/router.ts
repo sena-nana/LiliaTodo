@@ -11,6 +11,7 @@ import Widget from "./pages/Widget.vue";
 import SettingsShell from "./pages/SettingsShell.vue";
 import SyncSettings from "./pages/settings/SyncSettings.vue";
 import AboutSettings from "./pages/settings/AboutSettings.vue";
+import AppearanceSettings from "./pages/settings/AppearanceSettings.vue";
 
 export function createMomoRouter(history: RouterHistory = createWebHistory()) {
   return createRouter({
@@ -33,6 +34,7 @@ export function createMomoRouter(history: RouterHistory = createWebHistory()) {
         children: [
           { path: "", redirect: "/settings-shell/sync" },
           { path: "sync", component: SyncSettings },
+          { path: "appearance", component: AppearanceSettings },
           { path: "about", component: AboutSettings },
         ],
       },

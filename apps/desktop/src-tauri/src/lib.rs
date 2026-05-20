@@ -11,10 +11,10 @@ const MENU_ID_QUIT: &str = "quit";
 const SHOW_WIDGET_TEXT: &str = "显示小组件";
 const CLOSE_WIDGET_TEXT: &str = "关闭小组件";
 
-// 与前端 CSS 变量 --bg 保持一致：light=#f7f7f8、dark=#1c1c1e。
+// 与前端 CSS 变量 --bg 保持一致：light=#ffffff、dark=#181818。
 // 把窗口背景刷子调成这两个色，可以避免 Windows 在拉伸时露出默认白底。
-const BG_LIGHT: Color = Color(0xF7, 0xF7, 0xF8, 0xFF);
-const BG_DARK: Color = Color(0x1C, 0x1C, 0x1E, 0xFF);
+const BG_LIGHT: Color = Color(0xFF, 0xFF, 0xFF, 0xFF);
+const BG_DARK: Color = Color(0x18, 0x18, 0x18, 0xFF);
 
 #[derive(Debug, PartialEq, Eq)]
 enum WidgetTrayCommand {
