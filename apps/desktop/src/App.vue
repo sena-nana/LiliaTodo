@@ -1,7 +1,6 @@
 <script setup lang="ts">
-import { provide } from "vue";
+import { defineAsyncComponent, provide } from "vue";
 import { RouterView } from "vue-router";
-import ContextMenu from "./components/ContextMenu.vue";
 import {
   WebdavSecretsStoreKey,
   WebdavSyncControllerKey,
@@ -16,6 +15,7 @@ import {
   type WebdavSecretsStore,
 } from "./sync/webdav";
 
+const ContextMenuHost = defineAsyncComponent(() => import("./components/ContextMenuHost.vue"));
 const repository = useTaskRepository();
 
 // 凭据 store 与 http fetcher 都是异步装配，但 App.vue 的 setup 必须保持同步；
@@ -53,7 +53,6 @@ provide(WebdavSecretsStoreKey, secretsStoreProvider);
 </script>
 
 <template>
-  <ContextMenu>
-    <RouterView />
-  </ContextMenu>
+  <RouterView />
+  <ContextMenuHost />
 </template>

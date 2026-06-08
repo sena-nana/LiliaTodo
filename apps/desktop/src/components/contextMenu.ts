@@ -1,27 +1,8 @@
-import { inject, type InjectionKey } from "vue";
-
-export interface ContextMenuItem {
-  id: string;
-  label: string;
-  disabled?: boolean;
-  action: () => void | Promise<void>;
-}
-
-export interface ContextMenuController {
-  show: (event: MouseEvent, items: ContextMenuItem[]) => void;
-  hide: () => void;
-}
-
-export const ContextMenuHostKey: InjectionKey<ContextMenuController> =
-  Symbol("ContextMenuHost");
-
-export function useContextMenu(): ContextMenuController {
-  const host = inject(ContextMenuHostKey, null);
-  if (!host) {
-    return { show: () => {}, hide: () => {} };
-  }
-  return host;
-}
+export {
+  useContextMenu,
+} from "../composables/useContextMenu";
+import type { ContextMenuItem } from "../composables/useContextMenu";
+export type { ContextMenuItem } from "../composables/useContextMenu";
 
 function isEditableTarget(
   el: EventTarget | null,
