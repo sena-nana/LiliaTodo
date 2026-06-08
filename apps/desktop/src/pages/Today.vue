@@ -126,7 +126,7 @@ function formatDateTime(value: string | null) {
           placeholder="min"
           @contextmenu="onEditableContextMenu"
         />
-        <button type="submit" :disabled="saving || !title.trim()">
+        <button class="primary" type="submit" :disabled="saving || !title.trim()">
           <Plus :size="16" aria-hidden="true" />
           {{ destination === "today" ? "添加到今日" : "添加任务" }}
         </button>

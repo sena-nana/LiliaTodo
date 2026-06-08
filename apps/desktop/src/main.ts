@@ -6,6 +6,7 @@ import { installTaskRepository } from "./data/TaskRepositoryContext";
 import { vContextMenu } from "./directives/contextMenu";
 import { router } from "./router";
 import "./styles.css";
+import "./styles/page.css";
 
 installContextMenu();
 

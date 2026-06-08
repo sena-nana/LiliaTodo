@@ -1,5 +1,15 @@
 :root {
   color-scheme: dark;
+  --font-sans:
+    -apple-system, BlinkMacSystemFont,
+    "Segoe UI Variable Text", "Segoe UI",
+    Inter, Roboto, "Helvetica Neue", Arial,
+    "PingFang SC", "Microsoft YaHei UI", "Microsoft YaHei",
+    "Source Han Sans SC", "Noto Sans SC",
+    sans-serif;
+  --font-mono:
+    ui-monospace, "SF Mono", "Cascadia Mono", "Cascadia Code",
+    "JetBrains Mono", Menlo, Consolas, "Liberation Mono", monospace;
 
   /* ---- 表面 ---- */
   --bg:           #181818;
@@ -32,10 +42,13 @@
   --warn-soft:    rgba(212, 168, 91, 0.16);
   --err-soft:     rgba(244, 113, 116, 0.14);
 
-  font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue",
-    Arial, "PingFang SC", "Microsoft YaHei", sans-serif;
+  font-family: var(--font-sans);
   font-size: 14px;
-  line-height: 1.5;
+  line-height: 1.55;
+  font-weight: 400;
+  font-synthesis: none;
+  font-feature-settings: "cv11", "ss01", "ss03";
+  text-rendering: optimizeLegibility;
 }
 
 /* ---------------- 浅色主题（与 Lilia 同款映射） ---------------- *
@@ -75,15 +88,66 @@
 html, body, #root { height: 100%; margin: 0; }
 body { background: var(--bg); color: var(--text); }
 
-.card {
-  background: var(--bg-elev);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 12px 14px;
-  margin-bottom: 12px;
-  overflow: hidden;
+code,
+kbd,
+pre,
+samp,
+.mono {
+  font-family: var(--font-mono);
+  font-feature-settings: "calt" 1, "ss01", "ss02";
+  font-variant-ligatures: contextual;
 }
-.card h2 { margin: 0; font-size: 14px; }
+
+code,
+kbd {
+  font-size: 0.92em;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border-soft);
+  color: var(--text);
+}
+
+pre {
+  margin: 0;
+  padding: 12px 14px;
+  border-radius: 8px;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border-soft);
+  overflow: auto;
+  line-height: 1.55;
+}
+
+pre code {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font-size: inherit;
+}
+
+::selection {
+  background: var(--accent-soft);
+  color: var(--text);
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-faint);
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
 .card.empty { color: var(--text-muted); }
 
 .sr-only {
@@ -111,37 +175,73 @@ input, button, select {
   height: 32px;
   padding: 6px 10px;
   border-radius: 6px;
-  border: 1px solid var(--border);
-  background: var(--bg);
+  border: 1px solid var(--border-strong);
+  background: var(--bg-subtle);
   color: var(--text);
+  transition: background-color 0.12s ease, border-color 0.12s ease, color 0.12s ease,
+    opacity 0.12s ease;
+}
+input:focus,
+select:focus {
+  outline: none;
+  border-color: var(--border-strong);
+  background: var(--bg);
 }
 button {
-  background: var(--accent);
-  color: var(--accent-text);
-  border-color: var(--accent);
+  background: transparent;
+  color: var(--text);
+  border: 0;
   cursor: pointer;
+  font-weight: 500;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 6px;
 }
-button:hover { filter: brightness(1.05); }
+button:hover {
+  background: var(--bg-hover);
+  filter: none;
+}
 button:disabled {
   cursor: not-allowed;
-  opacity: 0.55;
+  opacity: 0.45;
+  filter: none;
+}
+
+button.ghost {
+  background: transparent;
+  color: var(--text);
+  font-weight: 500;
+}
+
+button.ghost:hover {
+  background: var(--bg-hover);
+  filter: none;
+}
+
+button.primary {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+button.primary:hover {
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
+  color: var(--accent);
+}
+
+button.ghost.danger {
+  color: var(--err);
+}
+
+button.ghost.danger:hover {
+  background: color-mix(in srgb, var(--err) 18%, transparent);
   filter: none;
 }
 
 .ok  { color: var(--ok); }
 .err { color: var(--err); }
 
-.todo, .kv { list-style: none; padding: 0; margin: 0; }
-.todo li { padding: 6px 0; border-bottom: 1px solid var(--border-soft); }
-.todo li:last-child { border-bottom: 0; }
-
-.kv li { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid var(--border-soft); }
-.kv li:last-child { border-bottom: 0; }
-.kv span { color: var(--text-muted); }
 .muted { color: var(--text-muted); }
 .pill {
   min-width: 24px;
@@ -291,7 +391,7 @@ button:disabled {
   padding: 0;
   background: transparent;
   color: var(--text);
-  border-color: var(--border);
+  border: 1px solid var(--border);
 }
 .icon-button--danger { color: var(--err); }
 

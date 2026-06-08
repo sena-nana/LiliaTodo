@@ -207,7 +207,7 @@ function displayError(value: string) {
           <input v-model="form.deviceId" type="text" autocomplete="off" @contextmenu="onEditableContextMenu" />
         </label>
         <div class="form__actions">
-          <button type="submit" :disabled="saving">
+          <button class="primary" type="submit" :disabled="saving">
             <Loader2 v-if="saving" class="spin" :size="14" aria-hidden="true" />
             保存凭据
           </button>
@@ -221,7 +221,7 @@ function displayError(value: string) {
       <p v-if="inspectReason && !formError" class="muted">{{ inspectReason }}</p>
 
       <div v-if="controller" class="form__actions">
-        <button type="button" :disabled="syncing || !hasSavedSecrets" @click="handleSyncNow">
+        <button class="primary" type="button" :disabled="syncing || !hasSavedSecrets" @click="handleSyncNow">
           <Loader2 v-if="syncing" class="spin" :size="14" aria-hidden="true" />
           <RefreshCw v-else :size="14" aria-hidden="true" />
           立即同步
