@@ -191,7 +191,7 @@ function displayError(value: string) {
             placeholder="min"
             @contextmenu="onEditableContextMenu"
           />
-          <button type="submit" :aria-label="`保存 ${task.title}`">
+          <button class="primary" type="submit" :aria-label="`保存 ${task.title}`">
             <Save :size="16" aria-hidden="true" />
           </button>
           <button

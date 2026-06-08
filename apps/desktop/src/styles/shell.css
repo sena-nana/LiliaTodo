@@ -10,6 +10,7 @@
   height: 100%;
   background: var(--bg-elev);
   position: relative;
+  transition: grid-template-columns 0.24s var(--sidebar-easing);
 }
 
 .shell > .titlebar {
@@ -36,7 +37,9 @@
   z-index: 5;
   touch-action: none;
   user-select: none;
-  transition: visibility 0s linear 0s;
+  transition:
+    left 0.24s var(--sidebar-easing),
+    visibility 0s linear 0s;
 }
 
 .shell__resizer::before {
@@ -87,4 +90,16 @@
   transform: translateX(-12px);
   pointer-events: none;
   transition-delay: 0s, 0s, 0.22s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shell,
+  .shell__resizer,
+  .secondary-panel {
+    transition: none;
+  }
+
+  .shell.is-sidebar-collapsed .secondary-panel {
+    transform: none;
+  }
 }

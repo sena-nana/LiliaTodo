@@ -147,6 +147,60 @@ describe("测试工具链", () => {
 
     expect(offenders).toEqual([]);
   });
+
+  it("保留模板外壳样式的折叠动画与 reduced-motion 规则", () => {
+    const desktopRoot = resolve(
+      dirname(fileURLToPath(import.meta.url)),
+      "..",
+    );
+    const shellCss = readFileSync(
+      resolve(desktopRoot, "src/styles/shell.css"),
+      "utf-8",
+    );
+
+    expect(shellCss).toContain("transition: grid-template-columns 0.24s var(--sidebar-easing)");
+    expect(shellCss).toContain("left 0.24s var(--sidebar-easing)");
+    expect(shellCss).toContain("@media (prefers-reduced-motion: reduce)");
+  });
+
+  it("保留模板透明按钮基线与显式强调态", () => {
+    const desktopRoot = resolve(
+      dirname(fileURLToPath(import.meta.url)),
+      "..",
+    );
+    const styles = readFileSync(
+      resolve(desktopRoot, "src/styles.css"),
+      "utf-8",
+    );
+
+    expect(styles).toContain("button {\n  background: transparent");
+    expect(styles).toContain("button.primary");
+    expect(styles).toContain("background: var(--accent-soft)");
+    expect(styles).toContain("button.ghost.danger:hover");
+    expect(styles).toContain("background: transparent");
+  });
+
+  it("页面通用样式由 page.css 承载，避免在全局业务样式里重复实现", () => {
+    const desktopRoot = resolve(
+      dirname(fileURLToPath(import.meta.url)),
+      "..",
+    );
+    const mainSource = readFileSync(resolve(desktopRoot, "src/main.ts"), "utf-8");
+    const styles = readFileSync(
+      resolve(desktopRoot, "src/styles.css"),
+      "utf-8",
+    );
+    const pageStyles = readFileSync(
+      resolve(desktopRoot, "src/styles/page.css"),
+      "utf-8",
+    );
+
+    expect(mainSource).toContain('import "./styles/page.css"');
+    expect(styles).not.toContain(".card {\n");
+    expect(styles).not.toContain(".kv {\n");
+    expect(pageStyles).toContain(".card {");
+    expect(pageStyles).toContain(".kv {");
+  });
 });
 
 function listFiles(root: string): string[] {
