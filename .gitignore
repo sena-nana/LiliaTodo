@@ -172,10 +172,6 @@ kubeconfig.*
 .eval-runs/
 *.prompt-cache
 .ralph-loop/
-.claude/
-.claude-flow/
-.mcp.json
-CLAUDE.md
 
 # ---------- 工具临时 / 杂项 ----------
 tmp/

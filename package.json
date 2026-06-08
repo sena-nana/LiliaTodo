@@ -8,8 +8,8 @@
   ],
   "scripts": {
     "tauri": "yarn --cwd apps/desktop tauri",
-    "tauri:dev": "yarn --cwd apps/desktop tauri dev",
-    "tauri:build": "yarn --cwd apps/desktop tauri build",
+    "tauri:dev": "yarn --cwd apps/desktop tauri:dev",
+    "tauri:build": "yarn --cwd apps/desktop tauri:build",
     "verify": "yarn verify:desktop:test && yarn verify:desktop:build && yarn verify:tauri && yarn verify:schema && yarn verify:contracts",
     "verify:desktop:test": "yarn --cwd apps/desktop test",
     "verify:desktop:build": "yarn --cwd apps/desktop build",

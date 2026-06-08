@@ -1,11 +1,16 @@
 /// <reference types="vitest" />
+import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
 import vue from "@vitejs/plugin-vue";
 
 // @ts-expect-error process 是 Node.js 全局对象
 const host = process.env.TAURI_DEV_HOST;
+// @ts-expect-error process 是 Node.js 全局对象
+const momoDevPort = Number.parseInt(process.env.MOMO_TAURI_DEV_PORT ?? "", 10);
+// @ts-expect-error process 是 Node.js 全局对象
+const strictPort = process.env.MOMO_TAURI_DEV_STRICT_PORT === "1";
+const port = Number.isInteger(momoDevPort) ? momoDevPort : 1420;
 
-// https://vite.dev/config/
 export default defineConfig(async () => ({
   plugins: [vue()],
 
@@ -15,8 +20,8 @@ export default defineConfig(async () => ({
   clearScreen: false,
   // 2. Tauri 需要固定端口，端口不可用时直接失败
   server: {
-    port: 1420,
-    strictPort: true,
+    port,
+    strictPort: strictPort || port === 1420,
     host: host || false,
     hmr: host
       ? {
@@ -32,6 +37,6 @@ export default defineConfig(async () => ({
   },
   test: {
     environment: "jsdom",
-    setupFiles: ["./tests/setupTests.ts"],
+    setupFiles: [fileURLToPath(new URL("./tests/setupTests.ts", import.meta.url))],
   },
 }));

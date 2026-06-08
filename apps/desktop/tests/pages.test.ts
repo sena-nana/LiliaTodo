@@ -22,6 +22,7 @@ import SyncSettings from "../src/pages/settings/SyncSettings.vue";
 import Widget from "../src/pages/Widget.vue";
 import App from "../src/App.vue";
 import { createMomoRouter } from "../src/router";
+import { normalizeSettingsTab } from "../src/config/appShell";
 
 vi.mock("@tauri-apps/api/window", () => ({
   getCurrentWindow: vi.fn(() => ({
@@ -349,7 +350,7 @@ describe("桌面端 MVP 页面", () => {
   it("默认设置页路由展示 WebDAV 凭据卡片而非旧本地模拟入口", async () => {
     const repository = fakeRepository();
 
-    await renderAppAt("/settings-shell", repository);
+    await renderAppAt("/settings", repository);
 
     expect(
       await screen.findByText("WebDAV 同步（坚果云优先）"),
@@ -358,6 +359,24 @@ describe("桌面端 MVP 页面", () => {
       screen.queryByRole("button", { name: /本地同步模拟/ }),
     ).not.toBeInTheDocument();
     expect(screen.queryByText(/远程同步配置/)).not.toBeInTheDocument();
+  });
+
+  it("设置 tab 使用同步作为默认回退", () => {
+    expect(normalizeSettingsTab("sync")).toBe("sync");
+    expect(normalizeSettingsTab("appearance")).toBe("appearance");
+    expect(normalizeSettingsTab("about")).toBe("about");
+    expect(normalizeSettingsTab("missing")).toBe("sync");
+  });
+
+  it("主窗口 shell 展示任务导航和设置入口", async () => {
+    const repository = fakeRepository();
+
+    await renderAppAt("/today", repository);
+
+    expect(await screen.findByRole("link", { name: /今日/ })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /收件箱/ })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /日历/ })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "设置" })).toBeInTheDocument();
   });
 
   it("未知路由回到今日页", async () => {

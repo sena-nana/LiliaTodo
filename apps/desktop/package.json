@@ -4,11 +4,20 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
+    "check:package-manager": "node scripts/check-package-manager.mjs",
+    "predev": "node scripts/check-package-manager.mjs",
     "dev": "vite",
+    "prebuild": "node scripts/check-package-manager.mjs",
     "build": "vue-tsc --noEmit && vite build",
+    "pretest": "node scripts/check-package-manager.mjs",
     "test": "vitest run",
     "preview": "vite preview",
-    "tauri": "tauri"
+    "pretauri": "node scripts/check-package-manager.mjs",
+    "tauri": "tauri",
+    "pretauri:dev": "node scripts/check-package-manager.mjs",
+    "tauri:dev": "node scripts/tauri-dev.mjs",
+    "pretauri:build": "node scripts/check-package-manager.mjs",
+    "tauri:build": "tauri build"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",
