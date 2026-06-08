@@ -16,6 +16,8 @@ const CLOSE_WIDGET_TEXT: &str = "关闭小组件";
 const BG_LIGHT: Color = Color(0xFF, 0xFF, 0xFF, 0xFF);
 const BG_DARK: Color = Color(0x18, 0x18, 0x18, 0xFF);
 
+mod window_state;
+
 #[derive(Debug, PartialEq, Eq)]
 enum WidgetTrayCommand {
     Show,
@@ -178,6 +180,16 @@ pub fn run() {
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_store::Builder::default().build())
         .on_window_event(|window, event| {
+            if window.label() == MAIN_WINDOW_LABEL
+                && matches!(event, WindowEvent::CloseRequested { .. } | WindowEvent::Destroyed)
+            {
+                if let Some(webview_window) = window.get_webview_window(MAIN_WINDOW_LABEL) {
+                    window_state::persist_main_window_state(
+                        &window.app_handle(),
+                        &webview_window,
+                    );
+                }
+            }
             if window.label() == "widget" {
                 match event {
                     WindowEvent::Destroyed => {
@@ -193,6 +205,9 @@ pub fn run() {
         .setup(|app| {
             build_tray(app.handle())?;
             if let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) {
+                if let Some(state) = window_state::load_main_window_state(app.handle()) {
+                    window_state::restore_main_window_state(&window, state);
+                }
                 let initial_theme = window.theme().unwrap_or(Theme::Light);
                 apply_background(&window, initial_theme);
                 let follow = window.clone();
@@ -201,6 +216,7 @@ pub fn run() {
                         apply_background(&follow, *theme);
                     }
                 });
+                let _ = window.show();
             }
             Ok(())
         })

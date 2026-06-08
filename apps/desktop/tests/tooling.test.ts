@@ -24,6 +24,17 @@ describe("测试工具链", () => {
     );
   });
 
+  it("旧 Claude 配置不再存在于仓库", () => {
+    const workspaceRoot = resolve(
+      dirname(fileURLToPath(import.meta.url)),
+      "../../..",
+    );
+
+    expect(existsSync(resolve(workspaceRoot, ".claude"))).toBe(false);
+    expect(existsSync(resolve(workspaceRoot, ".claude-flow"))).toBe(false);
+    expect(existsSync(resolve(workspaceRoot, ".mcp.json"))).toBe(false);
+  });
+
   it("保持桌面端 UI 技术栈使用 Vue 而非 React", () => {
     const packagePath = resolve(
       dirname(fileURLToPath(import.meta.url)),
