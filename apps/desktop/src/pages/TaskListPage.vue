@@ -4,6 +4,7 @@ import { useRoute } from "vue-router";
 import { Check, Loader2, Pencil, RefreshCw, Trash2 } from "lucide-vue-next";
 import { useTaskRepository } from "../data/TaskRepositoryContext";
 import { onTaskListsChanged } from "../data/taskListEvents";
+import { useLatestAsyncRun } from "../composables/useLatestAsyncRun";
 import { useTaskDetailDrawer } from "../composables/useTaskDetailDrawer";
 import type { Task } from "../domain/tasks";
 import { taskHasDueReminder } from "../domain/tasks";
@@ -15,6 +16,7 @@ const listId = computed(() => String(route.params.listId ?? "inbox"));
 const tasks = ref<Task[]>([]);
 const loading = ref(true);
 const error = ref<string | null>(null);
+const loadRuns = useLatestAsyncRun();
 const {
   selectedTask,
   childTasks,
@@ -26,7 +28,6 @@ const {
   saveTask,
   completeTask,
   closeTask,
-  loadLists,
 } = useTaskDetailDrawer({
   repository,
   reload: load,
@@ -52,16 +53,27 @@ watch(listId, () => {
 });
 
 async function load() {
-  loading.value = true;
-  error.value = null;
-  try {
-    tasks.value = await repository.listTasksByList(listId.value);
-    await loadLists();
-  } catch (e) {
-    error.value = String(e);
-  } finally {
-    loading.value = false;
-  }
+  const currentListId = listId.value;
+  await loadRuns.runLatest({
+    before: () => {
+      loading.value = true;
+      error.value = null;
+    },
+    execute: () => Promise.all([
+      repository.listTasksByList(currentListId),
+      repository.listLists(),
+    ]),
+    commit: ([nextTasks, nextLists]) => {
+      tasks.value = nextTasks;
+      lists.value = nextLists;
+    },
+    fail: (e) => {
+      error.value = String(e);
+    },
+    settle: () => {
+      loading.value = false;
+    },
+  });
 }
 
 async function deleteTask(task: Task) {

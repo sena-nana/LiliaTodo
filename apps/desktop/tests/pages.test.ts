@@ -27,6 +27,7 @@ import { normalizeSettingsTab } from "../src/config/appShell";
 import { TASK_LISTS_CHANGED_EVENT } from "../src/data/taskListEvents";
 import {
   fakeTaskRepository as fakeRepository,
+  taskListFixture,
   taskFixture as task,
 } from "./taskFixtures";
 
@@ -513,6 +514,179 @@ describe("桌面端 MVP 页面", () => {
     expect(screen.getByRole("link", { name: "设置" })).toBeInTheDocument();
   });
 
+  it("侧边栏支持新增清单并广播清单刷新事件", async () => {
+    const inbox = taskListFixture();
+    const project = taskListFixture({ id: "list-1", name: "项目", order: 1 });
+    const repository = fakeRepository();
+    const listChangeListener = vi.fn();
+    vi.mocked(repository.listLists)
+      .mockResolvedValue([inbox, project])
+      .mockResolvedValueOnce([inbox])
+      .mockResolvedValueOnce([inbox]);
+    window.addEventListener(TASK_LISTS_CHANGED_EVENT, listChangeListener);
+
+    try {
+      await renderAppAt("/calendar", repository);
+
+      await fireEvent.click(await screen.findByRole("button", { name: "新增清单" }));
+      await fireEvent.update(screen.getByLabelText("清单名称"), "项目");
+      await fireEvent.click(screen.getByRole("button", { name: "保存清单" }));
+
+      await waitFor(() =>
+        expect(repository.createList).toHaveBeenCalledWith({ name: "项目" }),
+      );
+      expect(await screen.findByRole("link", { name: "项目" })).toBeInTheDocument();
+      expect(repository.listLists).toHaveBeenCalledTimes(3);
+      expect(listChangeListener).toHaveBeenCalledTimes(1);
+    } finally {
+      window.removeEventListener(TASK_LISTS_CHANGED_EVENT, listChangeListener);
+    }
+  });
+
+  it("侧边栏支持重命名清单并广播清单刷新事件", async () => {
+    const inbox = taskListFixture();
+    const project = taskListFixture({ id: "list-1", name: "项目", order: 1 });
+    const renamed = taskListFixture({ id: "list-1", name: "项目二", order: 1 });
+    const repository = fakeRepository();
+    const listChangeListener = vi.fn();
+    vi.mocked(repository.listLists)
+      .mockResolvedValue([inbox, renamed])
+      .mockResolvedValueOnce([inbox, project])
+      .mockResolvedValueOnce([inbox, project]);
+    window.addEventListener(TASK_LISTS_CHANGED_EVENT, listChangeListener);
+
+    try {
+      await renderAppAt("/calendar", repository);
+
+      await fireEvent.click(await screen.findByRole("button", { name: "重命名 项目" }));
+      await fireEvent.update(screen.getByLabelText("重命名 项目"), "项目二");
+      await fireEvent.click(screen.getByRole("button", { name: "保存 项目" }));
+
+      await waitFor(() =>
+        expect(repository.updateList).toHaveBeenCalledWith("list-1", { name: "项目二" }),
+      );
+      expect(await screen.findByRole("link", { name: "项目二" })).toBeInTheDocument();
+      expect(repository.listLists).toHaveBeenCalledTimes(3);
+      expect(listChangeListener).toHaveBeenCalledTimes(1);
+    } finally {
+      window.removeEventListener(TASK_LISTS_CHANGED_EVENT, listChangeListener);
+    }
+  });
+
+  it("侧边栏支持归档清单并广播清单刷新事件", async () => {
+    const inbox = taskListFixture();
+    const project = taskListFixture({ id: "list-1", name: "项目", order: 1 });
+    const repository = fakeRepository();
+    const listChangeListener = vi.fn();
+    vi.mocked(repository.listLists)
+      .mockResolvedValue([inbox])
+      .mockResolvedValueOnce([inbox, project])
+      .mockResolvedValueOnce([inbox, project]);
+    window.addEventListener(TASK_LISTS_CHANGED_EVENT, listChangeListener);
+
+    try {
+      await renderAppAt("/calendar", repository);
+
+      await fireEvent.click(await screen.findByRole("button", { name: "归档 项目" }));
+
+      await waitFor(() => expect(repository.archiveList).toHaveBeenCalledWith("list-1"));
+      await waitFor(() =>
+        expect(screen.queryByRole("link", { name: "项目" })).not.toBeInTheDocument(),
+      );
+      expect(repository.listLists).toHaveBeenCalledTimes(3);
+      expect(listChangeListener).toHaveBeenCalledTimes(1);
+    } finally {
+      window.removeEventListener(TASK_LISTS_CHANGED_EVENT, listChangeListener);
+    }
+  });
+
+  it("侧边栏归档成功但刷新失败时仍广播清单刷新事件", async () => {
+    const inbox = taskListFixture();
+    const project = taskListFixture({ id: "list-1", name: "项目", order: 1 });
+    const repository = fakeRepository();
+    const listChangeListener = vi.fn();
+    vi.mocked(repository.listLists)
+      .mockResolvedValue([inbox, project])
+      .mockResolvedValueOnce([inbox, project])
+      .mockResolvedValueOnce([inbox, project])
+      .mockRejectedValueOnce(new Error("清单刷新失败"));
+    window.addEventListener(TASK_LISTS_CHANGED_EVENT, listChangeListener);
+
+    try {
+      await renderAppAt("/calendar", repository);
+
+      await fireEvent.click(await screen.findByRole("button", { name: "归档 项目" }));
+
+      await waitFor(() => expect(repository.archiveList).toHaveBeenCalledWith("list-1"));
+      expect(await screen.findByText("错误：清单刷新失败")).toBeInTheDocument();
+      expect(listChangeListener).toHaveBeenCalledTimes(1);
+    } finally {
+      window.removeEventListener(TASK_LISTS_CHANGED_EVENT, listChangeListener);
+    }
+  });
+
+  it("侧边栏清单操作失败时显示错误且不广播成功事件", async () => {
+    const repository = fakeRepository();
+    const listChangeListener = vi.fn();
+    vi.mocked(repository.listLists).mockResolvedValue([taskListFixture()]);
+    vi.mocked(repository.createList).mockRejectedValueOnce(new Error("清单名称重复"));
+    window.addEventListener(TASK_LISTS_CHANGED_EVENT, listChangeListener);
+
+    try {
+      await renderAppAt("/calendar", repository);
+
+      await fireEvent.click(await screen.findByRole("button", { name: "新增清单" }));
+      await fireEvent.update(screen.getByLabelText("清单名称"), "项目");
+      await fireEvent.click(screen.getByRole("button", { name: "保存清单" }));
+
+      expect(await screen.findByText("错误：清单名称重复")).toBeInTheDocument();
+      expect(listChangeListener).not.toHaveBeenCalled();
+    } finally {
+      window.removeEventListener(TASK_LISTS_CHANGED_EVENT, listChangeListener);
+    }
+  });
+
+  it("清单变更事件会触发收件箱重新加载迁移任务", async () => {
+    const repository = fakeRepository();
+    vi.mocked(repository.listInbox)
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        task({ id: "moved-1", title: "迁移任务", listId: "inbox" }),
+      ]);
+
+    await renderAppAt("/inbox", repository);
+
+    expect(await screen.findByText("收件箱暂无任务。可在今日页添加任务并选择收件箱。")).toBeInTheDocument();
+    window.dispatchEvent(new CustomEvent(TASK_LISTS_CHANGED_EVENT));
+
+    expect(await screen.findByText("迁移任务")).toBeInTheDocument();
+    expect(repository.listInbox).toHaveBeenCalledTimes(2);
+  });
+
+  it("收件箱清单刷新不会被较慢的旧加载覆盖", async () => {
+    const repository = fakeRepository();
+    const initialLoad = deferred<ReturnType<TaskRepository["listInbox"]> extends Promise<infer T> ? T : never>();
+    vi.mocked(repository.listInbox)
+      .mockReturnValueOnce(initialLoad.promise)
+      .mockResolvedValueOnce([
+        task({ id: "moved-1", title: "迁移任务", listId: "inbox" }),
+      ]);
+
+    await renderAppAt("/inbox", repository);
+    await waitFor(() => expect(repository.listInbox).toHaveBeenCalledTimes(1));
+
+    window.dispatchEvent(new CustomEvent(TASK_LISTS_CHANGED_EVENT));
+
+    expect(await screen.findByText("迁移任务")).toBeInTheDocument();
+    initialLoad.resolve([]);
+
+    await waitFor(() => expect(repository.listInbox).toHaveBeenCalledTimes(2));
+    expect(screen.getByText("迁移任务")).toBeInTheDocument();
+    expect(
+      screen.queryByText("收件箱暂无任务。可在今日页添加任务并选择收件箱。"),
+    ).not.toBeInTheDocument();
+  });
+
   it("清单变更事件会触发当前清单页重新加载", async () => {
     const repository = fakeRepository({
       lists: [{ id: "list-1", name: "项目", color: null, archived: false, order: 1, createdAt: "2026-05-16T00:00:00.000Z", updatedAt: "2026-05-16T00:00:00.000Z" }],
@@ -530,6 +704,32 @@ describe("桌面端 MVP 页面", () => {
 
     await waitFor(() => expect(repository.listTasksByList).toHaveBeenCalledTimes(2));
     expect(repository.listTasksByList).toHaveBeenLastCalledWith("list-1");
+  });
+
+  it("当前清单页刷新不会被较慢的旧加载覆盖", async () => {
+    const repository = fakeRepository({
+      lists: [taskListFixture({ id: "list-1", name: "项目", order: 1 })],
+    });
+    const initialLoad = deferred<ReturnType<TaskRepository["listTasksByList"]> extends Promise<infer T> ? T : never>();
+    vi.mocked(repository.listTasksByList)
+      .mockReturnValueOnce(initialLoad.promise)
+      .mockResolvedValueOnce([
+        task({ id: "new-task", title: "新任务", listId: "list-1" }),
+      ]);
+
+    await renderAppAt("/lists/list-1", repository);
+    await waitFor(() => expect(repository.listTasksByList).toHaveBeenCalledTimes(1));
+
+    window.dispatchEvent(new CustomEvent(TASK_LISTS_CHANGED_EVENT));
+
+    expect(await screen.findByText("新任务")).toBeInTheDocument();
+    initialLoad.resolve([
+      task({ id: "old-task", title: "旧任务", listId: "list-1" }),
+    ]);
+
+    await waitFor(() => expect(repository.listTasksByList).toHaveBeenCalledTimes(2));
+    expect(screen.getByText("新任务")).toBeInTheDocument();
+    expect(screen.queryByText("旧任务")).not.toBeInTheDocument();
   });
 
   it("未知路由回到今日页", async () => {
@@ -692,5 +892,15 @@ function fakeSecretsStore(saved: Parameters<WebdavSecretsStore["save"]>[0] | nul
     save: vi.fn().mockResolvedValue(undefined),
     clear: vi.fn().mockResolvedValue(undefined),
   };
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((innerResolve, innerReject) => {
+    resolve = innerResolve;
+    reject = innerReject;
+  });
+  return { promise, resolve, reject };
 }
 

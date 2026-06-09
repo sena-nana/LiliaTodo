@@ -1,7 +1,9 @@
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
+import { onMounted, onUnmounted, ref } from "vue";
 import { Check, Loader2, Pencil, RefreshCw, Trash2 } from "lucide-vue-next";
 import { useTaskRepository } from "../data/TaskRepositoryContext";
+import { onTaskListsChanged } from "../data/taskListEvents";
+import { useLatestAsyncRun } from "../composables/useLatestAsyncRun";
 import { useTaskDetailDrawer } from "../composables/useTaskDetailDrawer";
 import type { Task } from "../domain/tasks";
 import { taskHasDueReminder } from "../domain/tasks";
@@ -11,6 +13,7 @@ const repository = useTaskRepository();
 const tasks = ref<Task[]>([]);
 const loading = ref(true);
 const error = ref<string | null>(null);
+const loadRuns = useLatestAsyncRun();
 const {
   selectedTask,
   childTasks,
@@ -22,7 +25,6 @@ const {
   saveTask,
   completeTask,
   closeTask,
-  loadLists,
 } = useTaskDetailDrawer({
   repository,
   reload: load,
@@ -33,17 +35,35 @@ onMounted(() => {
   void load();
 });
 
+const stopTaskListEvents = onTaskListsChanged(() => {
+  void load();
+});
+
+onUnmounted(() => {
+  stopTaskListEvents();
+});
+
 async function load() {
-  loading.value = true;
-  error.value = null;
-  try {
-    tasks.value = await repository.listInbox();
-    await loadLists();
-  } catch (e) {
-    error.value = String(e);
-  } finally {
-    loading.value = false;
-  }
+  await loadRuns.runLatest({
+    before: () => {
+      loading.value = true;
+      error.value = null;
+    },
+    execute: () => Promise.all([
+      repository.listInbox(),
+      repository.listLists(),
+    ]),
+    commit: ([nextTasks, nextLists]) => {
+      tasks.value = nextTasks;
+      lists.value = nextLists;
+    },
+    fail: (e) => {
+      error.value = String(e);
+    },
+    settle: () => {
+      loading.value = false;
+    },
+  });
 }
 
 async function deleteTask(task: Task) {
