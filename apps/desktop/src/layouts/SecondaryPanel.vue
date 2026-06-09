@@ -119,16 +119,16 @@ function displayError(value: string) {
       </div>
       <form v-if="creating" class="sb-list-form" @submit.prevent="createList">
         <input v-model="newName" aria-label="清单名称" placeholder="清单名称" />
-        <button type="submit" aria-label="保存清单"><Check :size="13" aria-hidden="true" /></button>
-        <button type="button" aria-label="取消新增清单" @click="creating = false"><X :size="13" aria-hidden="true" /></button>
+        <button type="submit" class="sb-section__icon" aria-label="保存清单"><Check :size="13" aria-hidden="true" /></button>
+        <button type="button" class="sb-section__icon" aria-label="取消新增清单" @click="creating = false"><X :size="13" aria-hidden="true" /></button>
       </form>
       <p v-if="listError" class="state state--error state--inline sb-list-error">{{ displayError(listError) }}</p>
       <nav class="sb-tree" aria-label="任务清单">
         <template v-for="list in visibleLists" :key="list.id">
           <form v-if="editingListId === list.id" class="sb-list-form" @submit.prevent="saveRename(list)">
             <input v-model="editingName" :aria-label="`重命名 ${list.name}`" />
-            <button type="submit" :aria-label="`保存 ${list.name}`"><Check :size="13" aria-hidden="true" /></button>
-            <button type="button" :aria-label="`取消 ${list.name}`" @click="editingListId = null"><X :size="13" aria-hidden="true" /></button>
+            <button type="submit" class="sb-section__icon" :aria-label="`保存 ${list.name}`"><Check :size="13" aria-hidden="true" /></button>
+            <button type="button" class="sb-section__icon" :aria-label="`取消 ${list.name}`" @click="editingListId = null"><X :size="13" aria-hidden="true" /></button>
           </form>
           <RouterLink v-else v-slot="{ href, navigate, isActive }" :to="`/lists/${list.id}`" custom>
             <div
@@ -272,13 +272,15 @@ function displayError(value: string) {
 .sb-list-form {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 22px 22px;
-  gap: 2px;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
 }
 
 .sb-list-form input {
-  height: 26px;
+  height: 28px;
   min-width: 0;
-  padding: 4px 7px;
+  padding: 4px 8px;
 }
 
 .sb-list-error {
