@@ -19,7 +19,7 @@ function delegate<K extends RepositoryMethodName>(method: K): TaskRepository[K] 
   return (async (...args: unknown[]) => {
     const repository = await getRepository();
     const target = repository[method] as (...nextArgs: unknown[]) => unknown;
-    return target(...args);
+    return Reflect.apply(target, repository, args);
   }) as TaskRepository[K];
 }
 
