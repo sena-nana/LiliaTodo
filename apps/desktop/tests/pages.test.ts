@@ -143,6 +143,81 @@ describe("桌面端 MVP 页面", () => {
     );
   });
 
+  it("清单页面仍按分类显示当前清单任务", async () => {
+    const repository = fakeRepository({
+      lists: [taskListFixture(), taskListFixture({ id: "project", name: "项目", order: 1 })],
+      categories: {
+        project: [taskCategoryFixture({ id: "category-1", listId: "project", name: "工作" })],
+      },
+      listTasks: {
+        project: [
+          task({ id: "work-task", title: "工作任务", listId: "project", categoryId: "category-1" }),
+          task({ id: "plain-task", title: "未分类任务", listId: "project" }),
+        ],
+      },
+    });
+
+    await renderAppAt("/lists/project", repository);
+
+    expect(await screen.findByText("工作任务")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 1, name: "项目" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 2, name: "工作" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 2, name: "未分类" })).toBeInTheDocument();
+    expect(screen.getByText("未分类任务")).toBeInTheDocument();
+  });
+
+  it("全局四象限视图按重要和紧急分组", async () => {
+    const repository = fakeRepository({
+      lists: [taskListFixture(), taskListFixture({ id: "project", name: "项目", order: 1 })],
+      activeTasks: [
+        task({ id: "important-urgent", title: "重要且紧急任务", listId: "project", priority: 2, dueAt: "2026-01-01T00:00:00.000Z" }),
+        task({ id: "important-not-urgent", title: "重要不紧急任务", listId: "project", priority: 1, dueAt: "2099-01-01T00:00:00.000Z" }),
+        task({ id: "not-important-urgent", title: "不重要但紧急任务", listId: "project", priority: 0, dueAt: "2026-01-01T00:00:00.000Z" }),
+        task({ id: "not-important-not-urgent", title: "不重要不紧急任务", listId: "project", priority: 0, dueAt: null }),
+      ],
+    });
+
+    await renderAppAt("/tasks/quadrant", repository);
+
+    expect(await sectionByHeading("重要且紧急")).toHaveTextContent("重要且紧急任务");
+    expect(await sectionByHeading("重要不紧急")).toHaveTextContent("重要不紧急任务");
+    expect(await sectionByHeading("不重要但紧急")).toHaveTextContent("不重要但紧急任务");
+    expect(await sectionByHeading("不重要不紧急")).toHaveTextContent("不重要不紧急任务");
+  });
+
+  it("全局时间线视图显示全部 active 任务并按时间排序", async () => {
+    const repository = fakeRepository({
+      lists: [taskListFixture(), taskListFixture({ id: "project", name: "项目", order: 1 })],
+      activeTasks: [
+        task({ id: "created-task", title: "无时间任务", listId: "project", createdAt: "2026-05-20T00:00:00.000Z" }),
+        task({ id: "start-task", title: "开始任务", listId: "project", startAt: "2026-05-18T00:00:00.000Z" }),
+        task({ id: "due-task", title: "截止任务", listId: "project", dueAt: "2026-05-19T00:00:00.000Z" }),
+      ],
+    });
+
+    await renderAppAt("/tasks/timeline", repository);
+
+    await screen.findByText("开始任务");
+    const titles = screen.getAllByText(/^(开始任务|截止任务|无时间任务)$/).map((item) => item.textContent);
+    expect(titles).toEqual(["开始任务", "截止任务", "无时间任务"]);
+  });
+
+  it("全局任务视图点击任务能打开详情", async () => {
+    const repository = fakeRepository({
+      lists: [taskListFixture(), taskListFixture({ id: "project", name: "项目", order: 1 })],
+      activeTasks: [
+        task({ id: "view-task", title: "视图任务", listId: "project", priority: 1, dueAt: "2026-01-01T00:00:00.000Z" }),
+      ],
+    });
+
+    await renderAppAt("/tasks/all", repository);
+
+    await fireEvent.click(await screen.findByText("视图任务"));
+
+    expect(await screen.findByRole(drawerRole, { name: "任务详情" })).toBeInTheDocument();
+    expect(repository.listActiveTasks).toHaveBeenCalled();
+  });
+
   it("显示收件箱任务并支持完成和删除操作", async () => {
     const repository = fakeRepository({
       inbox: [task({ id: "inbox-1", title: "Inbox task" })],
@@ -735,9 +810,14 @@ describe("桌面端 MVP 页面", () => {
 
     await renderAppAt("/today", repository);
 
-    expect(await screen.findByRole("link", { name: /今日/ })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /收件箱/ })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /日历/ })).toBeInTheDocument();
+    const mainNav = await screen.findByRole("navigation", { name: "主导航" });
+    expect(within(mainNav).queryByText("任务")).not.toBeInTheDocument();
+    expect(within(mainNav).getByRole("link", { name: /今日/ })).toBeInTheDocument();
+    expect(within(mainNav).getByRole("link", { name: /收件箱/ })).toBeInTheDocument();
+    expect(within(mainNav).getByRole("link", { name: /日历/ })).toBeInTheDocument();
+    expect(within(mainNav).getByRole("link", { name: /所有/ })).toBeInTheDocument();
+    expect(within(mainNav).getByRole("link", { name: /四象限/ })).toBeInTheDocument();
+    expect(within(mainNav).getByRole("link", { name: /时间线/ })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "设置" })).toBeInTheDocument();
   });
 
@@ -1202,6 +1282,13 @@ async function openDrawerTask(scenario: DrawerPageScenario, repository: TaskRepo
 async function clickPageTask(scenario: DrawerPageScenario) {
   const item = await screen.findByText(scenario.taskTitle);
   await fireEvent.click(item);
+}
+
+async function sectionByHeading(name: string) {
+  const heading = await screen.findByRole("heading", { level: 2, name });
+  const section = heading.closest("section, .task-view-section");
+  expect(section).not.toBeNull();
+  return section as HTMLElement;
 }
 
 function getDrawer() {

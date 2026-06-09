@@ -13,6 +13,7 @@ import type {
 
 export interface FakeTaskRepositoryOverrides {
   today?: TodayTaskGroups;
+  activeTasks?: Task[];
   inbox?: Task[];
   agenda?: Task[];
   lists?: TaskList[];
@@ -40,6 +41,7 @@ export function fakeTaskRepository(
   function findTask(taskId: string) {
     const allTasks = [
       ...(overrides.inbox ?? []),
+      ...(overrides.activeTasks ?? []),
       ...(overrides.agenda ?? []),
       ...today.overdue,
       ...today.dueToday,
@@ -75,6 +77,7 @@ export function fakeTaskRepository(
     deleteRemoteList: vi.fn().mockResolvedValue(undefined),
     applyRemoteCategory: vi.fn().mockResolvedValue(undefined),
     deleteRemoteCategory: vi.fn().mockResolvedValue(undefined),
+    listActiveTasks: vi.fn().mockResolvedValue(overrides.activeTasks ?? []),
     listTasksByList: vi.fn().mockImplementation((listId: string) =>
       Promise.resolve(overrides.listTasks?.[listId] ?? (listId === "inbox" ? overrides.inbox ?? [] : [])),
     ),

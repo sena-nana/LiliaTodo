@@ -91,9 +91,6 @@ function displayError(value: string) {
 <template>
   <aside class="secondary-panel">
     <div class="sb-section">
-      <div class="sb-section__header">
-        <span class="sb-section__title">任务</span>
-      </div>
       <nav class="sb-tree" aria-label="主导航">
         <RouterLink
           v-for="item in SIDEBAR_NAV"
