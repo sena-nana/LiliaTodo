@@ -32,7 +32,7 @@ describe("UI 精简", () => {
       },
     });
 
-    expect(screen.queryByRole("heading", { name: "任务" })).toBeNull();
+    expect(screen.queryByText("任务")).toBeNull();
   });
 
   it("任务主页面不再显示页标题和副标题", async () => {

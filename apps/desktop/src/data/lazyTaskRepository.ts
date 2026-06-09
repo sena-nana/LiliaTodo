@@ -37,6 +37,7 @@ export function createLazyTaskRepository(): TaskRepository {
     deleteRemoteList: delegate("deleteRemoteList"),
     applyRemoteCategory: delegate("applyRemoteCategory"),
     deleteRemoteCategory: delegate("deleteRemoteCategory"),
+    listActiveTasks: delegate("listActiveTasks"),
     listTasksByList: delegate("listTasksByList"),
     listTaskChildren: delegate("listTaskChildren"),
     listLists: delegate("listLists"),

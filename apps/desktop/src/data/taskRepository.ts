@@ -72,6 +72,7 @@ export interface TaskRepository {
   deleteRemoteList(id: string): Promise<void>;
   applyRemoteCategory(category: TaskCategory, remoteVersion?: number): Promise<void>;
   deleteRemoteCategory(id: string): Promise<void>;
+  listActiveTasks(): Promise<Task[]>;
   listTasksByList(listId: string): Promise<Task[]>;
   listTaskChildren(parentId: string): Promise<Task[]>;
   listLists(): Promise<TaskList[]>;
@@ -402,6 +403,17 @@ export function createTaskRepository(
     return rows.map(mapTaskRow);
   }
 
+  async function listActiveTasks() {
+    await init();
+    const db = await getDb();
+    const rows = await db.select<TaskRow>(
+      `SELECT * FROM tasks
+       WHERE status = 'active'
+       ORDER BY child_order ASC, COALESCE(start_at, due_at, created_at) ASC, priority DESC`,
+    );
+    return rows.map(mapTaskRow);
+  }
+
   return {
     databasePath: LILIATODO_DATABASE_PATH,
     init,
@@ -628,6 +640,7 @@ export function createTaskRepository(
       await deleteEntityRemoteVersion(db, 'taskCategory', categoryId);
     },
 
+    listActiveTasks,
     listTasksByList,
 
     async listTaskChildren(parentId) {

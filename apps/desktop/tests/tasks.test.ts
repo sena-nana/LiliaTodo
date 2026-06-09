@@ -176,6 +176,28 @@ describe("TaskRepository 仓储", () => {
     expect(db.paramsForLastSql("WHERE status = 'active' AND list_id = $1")).toEqual(["inbox"]);
   });
 
+  it("全局任务视图查询全部 active 任务并使用稳定排序", async () => {
+    const db = new RecordingDatabase({
+      taskRows: [
+        taskRow({ id: "active-1", title: "全局任务", list_id: "project" }),
+      ],
+    });
+    const repository = createTaskRepository(() => Promise.resolve(db));
+
+    await expect(repository.listActiveTasks()).resolves.toEqual([
+      expect.objectContaining({
+        id: "active-1",
+        title: "全局任务",
+        listId: "project",
+      }),
+    ]);
+
+    const query = db.calls.find((call) => call.sql.includes("WHERE status = 'active'") && !call.sql.includes("list_id = $1"));
+    expect(query?.sql).toContain("WHERE status = 'active'");
+    expect(query?.sql).toContain("ORDER BY child_order ASC, COALESCE(start_at, due_at, created_at) ASC, priority DESC");
+    expect(query?.params).toBeUndefined();
+  });
+
   it("创建规范化 active 任务行并记录本地变更", async () => {
     const db = new RecordingDatabase();
     const repository = createTaskRepository(() => Promise.resolve(db), {

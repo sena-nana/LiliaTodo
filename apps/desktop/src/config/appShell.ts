@@ -1,7 +1,10 @@
 import {
   CalendarDays,
+  Clock,
   Info,
   Inbox,
+  LayoutGrid,
+  List,
   Palette,
   RefreshCw,
   Settings,
@@ -47,6 +50,9 @@ export const SIDEBAR_NAV: SidebarNavItem[] = [
   { to: "/today", label: "今日", icon: Sun },
   { to: "/inbox", label: "收件箱", icon: Inbox },
   { to: "/calendar", label: "日历", icon: CalendarDays },
+  { to: "/tasks/all", label: "所有", icon: List },
+  { to: "/tasks/quadrant", label: "四象限", icon: LayoutGrid },
+  { to: "/tasks/timeline", label: "时间线", icon: Clock },
 ];
 
 export const SIDEBAR_FOOTER_LINKS: SidebarFooterLink[] = [
