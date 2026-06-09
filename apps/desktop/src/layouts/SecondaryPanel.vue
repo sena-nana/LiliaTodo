@@ -124,30 +124,37 @@ function displayError(value: string) {
       </form>
       <p v-if="listError" class="state state--error state--inline sb-list-error">{{ displayError(listError) }}</p>
       <nav class="sb-tree" aria-label="任务清单">
-        <div v-for="list in visibleLists" :key="list.id" class="sb-list-row">
-          <form v-if="editingListId === list.id" class="sb-list-form sb-list-form--wide" @submit.prevent="saveRename(list)">
+        <template v-for="list in visibleLists" :key="list.id">
+          <form v-if="editingListId === list.id" class="sb-list-form" @submit.prevent="saveRename(list)">
             <input v-model="editingName" :aria-label="`重命名 ${list.name}`" />
             <button type="submit" :aria-label="`保存 ${list.name}`"><Check :size="13" aria-hidden="true" /></button>
             <button type="button" :aria-label="`取消 ${list.name}`" @click="editingListId = null"><X :size="13" aria-hidden="true" /></button>
           </form>
-          <template v-else>
-            <RouterLink :to="`/lists/${list.id}`" class="sb-tree__row" active-class="is-active">
-              <span class="sb-tree__name">{{ list.name }}</span>
-            </RouterLink>
-            <button type="button" class="sb-section__icon" :aria-label="`上移清单 ${list.name}`" @click="moveList(list, -1)">
-              <ArrowUp :size="12" aria-hidden="true" />
-            </button>
-            <button type="button" class="sb-section__icon" :aria-label="`下移清单 ${list.name}`" @click="moveList(list, 1)">
-              <ArrowDown :size="12" aria-hidden="true" />
-            </button>
-            <button type="button" class="sb-section__icon" :aria-label="`重命名 ${list.name}`" @click="beginRename(list)">
-              <Pencil :size="12" aria-hidden="true" />
-            </button>
-            <button type="button" class="sb-section__icon" :aria-label="`删除清单 ${list.name}`" @click="deleteList(list)">
-              <Trash2 :size="12" aria-hidden="true" />
-            </button>
-          </template>
-        </div>
+          <RouterLink v-else v-slot="{ href, navigate, isActive }" :to="`/lists/${list.id}`" custom>
+            <div
+              class="sb-tree__row sb-tree__row--list"
+              :class="{ 'is-active': isActive }"
+            >
+              <a :href="href" class="sb-tree__link" @click="navigate">
+                <span class="sb-tree__name">{{ list.name }}</span>
+              </a>
+              <div class="sb-tree__hover-tools" @click.stop>
+                <button type="button" class="sb-section__icon" :aria-label="`上移清单 ${list.name}`" @click="moveList(list, -1)">
+                  <ArrowUp :size="12" aria-hidden="true" />
+                </button>
+                <button type="button" class="sb-section__icon" :aria-label="`下移清单 ${list.name}`" @click="moveList(list, 1)">
+                  <ArrowDown :size="12" aria-hidden="true" />
+                </button>
+                <button type="button" class="sb-section__icon" :aria-label="`重命名 ${list.name}`" @click="beginRename(list)">
+                  <Pencil :size="12" aria-hidden="true" />
+                </button>
+                <button type="button" class="sb-section__icon" :aria-label="`删除清单 ${list.name}`" @click="deleteList(list)">
+                  <Trash2 :size="12" aria-hidden="true" />
+                </button>
+              </div>
+            </div>
+          </RouterLink>
+        </template>
       </nav>
     </div>
 
@@ -217,6 +224,11 @@ function displayError(value: string) {
   min-width: 0;
 }
 
+.sb-tree__row--list {
+  gap: 4px;
+  padding-right: 4px;
+}
+
 .sb-tree__row:hover {
   background: var(--bg-hover);
 }
@@ -234,21 +246,33 @@ function displayError(value: string) {
   white-space: nowrap;
 }
 
-.sb-list-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 22px 22px 22px 22px;
-  gap: 2px;
+.sb-tree__link {
+  flex: 1;
+  min-width: 0;
+  display: inline-flex;
   align-items: center;
+  color: inherit;
+  text-decoration: none;
+}
+
+.sb-tree__hover-tools {
+  display: inline-flex;
+  gap: 1px;
+  margin-left: auto;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+
+.sb-tree__row:hover .sb-tree__hover-tools,
+.sb-tree__row:focus-within .sb-tree__hover-tools,
+.sb-tree__row.is-active .sb-tree__hover-tools {
+  opacity: 1;
 }
 
 .sb-list-form {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 22px 22px;
   gap: 2px;
-}
-
-.sb-list-form--wide {
-  grid-column: 1 / -1;
 }
 
 .sb-list-form input {
