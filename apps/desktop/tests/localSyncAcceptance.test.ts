@@ -35,6 +35,11 @@ describe("WebDAV 同步验收清单", () => {
     expect(checklist).toContain("立即同步");
     expect(checklist).toContain("WebDAV 同步（坚果云优先）");
     expect(checklist).toContain("同步结果 message");
+    expect(checklist).toContain("本地清单变更");
+    expect(checklist).toContain("远端清单");
+    expect(checklist).toContain("新增一个清单");
+    expect(checklist).toContain("归档刚创建的清单");
+    expect(checklist).toContain("原清单内任务已迁移回收件箱");
     expect(checklist).toContain("sync_state.lastError");
     expect(checklist).toContain("应用密码");
     expect(checklist).toContain("已保存到本机安全存储");

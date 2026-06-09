@@ -31,7 +31,11 @@ import {
 
 export interface WebdavRunReport {
   readonly pushedOpsCount: number;
+  readonly pushedTaskChangeCount: number;
+  readonly pushedTaskListChangeCount: number;
   readonly markedSyncedCount: number;
+  readonly markedTaskChangeSyncedCount: number;
+  readonly markedTaskListChangeSyncedCount: number;
   readonly pulledOpsCount: number;
   readonly appliedTaskCount: number;
   readonly deletedTaskCount: number;
@@ -99,7 +103,11 @@ export function createWebdavTaskSyncRunner({
         });
         const report: WebdavRunReport = {
           pushedOpsCount: pushReport.pushedOpsCount,
+          pushedTaskChangeCount: pushReport.pushedTaskChangeCount,
+          pushedTaskListChangeCount: pushReport.pushedTaskListChangeCount,
           markedSyncedCount: pushReport.markedSyncedCount,
+          markedTaskChangeSyncedCount: pushReport.markedTaskChangeSyncedCount,
+          markedTaskListChangeSyncedCount: pushReport.markedTaskListChangeSyncedCount,
           pulledOpsCount: pullReport.pulledOpsCount,
           appliedTaskCount: pullReport.appliedTaskCount,
           deletedTaskCount: pullReport.deletedTaskCount,
@@ -138,7 +146,16 @@ export function createWebdavTaskSyncRunner({
 
 interface PushReport {
   readonly pushedOpsCount: number;
+  readonly pushedTaskChangeCount: number;
+  readonly pushedTaskListChangeCount: number;
   readonly markedSyncedCount: number;
+  readonly markedTaskChangeSyncedCount: number;
+  readonly markedTaskListChangeSyncedCount: number;
+}
+
+interface EntityChangeCounts {
+  readonly task: number;
+  readonly taskList: number;
 }
 
 async function pushPending(input: {
@@ -152,20 +169,52 @@ async function pushPending(input: {
   const pending = await repository.listPendingChanges();
   const entityChanges = pending.filter((c) => isSupportedEntityType(c.entityType));
   if (entityChanges.length === 0) {
-    return { pushedOpsCount: 0, markedSyncedCount: 0 };
+    return emptyPushReport();
   }
+  const pushedCounts = countEntityChanges(entityChanges);
   const ops: Op[] = entityChanges.map((change) =>
     localChangeToOp(change, { deviceId, actor })
   );
   const result = await provider.push(ops);
-  let markedSyncedCount = 0;
   if (result.acceptedCount > 0) {
     for (const change of entityChanges) {
       await repository.markChangeSynced(change.id, syncedAt);
-      markedSyncedCount += 1;
     }
   }
-  return { pushedOpsCount: ops.length, markedSyncedCount };
+  const markedCounts = result.acceptedCount > 0 ? pushedCounts : EMPTY_ENTITY_CHANGE_COUNTS;
+  return {
+    pushedOpsCount: ops.length,
+    pushedTaskChangeCount: pushedCounts.task,
+    pushedTaskListChangeCount: pushedCounts.taskList,
+    markedSyncedCount: markedCounts.task + markedCounts.taskList,
+    markedTaskChangeSyncedCount: markedCounts.task,
+    markedTaskListChangeSyncedCount: markedCounts.taskList,
+  };
+}
+
+const EMPTY_ENTITY_CHANGE_COUNTS: EntityChangeCounts = { task: 0, taskList: 0 };
+
+function emptyPushReport(): PushReport {
+  return {
+    pushedOpsCount: 0,
+    pushedTaskChangeCount: 0,
+    pushedTaskListChangeCount: 0,
+    markedSyncedCount: 0,
+    markedTaskChangeSyncedCount: 0,
+    markedTaskListChangeSyncedCount: 0,
+  };
+}
+
+function countEntityChanges(
+  changes: readonly Array<{ readonly entityType: typeof TASK_ENTITY_TYPE | typeof TASK_LIST_ENTITY_TYPE }>,
+): EntityChangeCounts {
+  return changes.reduce<EntityChangeCounts>(
+    (counts, change) =>
+      change.entityType === TASK_ENTITY_TYPE
+        ? { ...counts, task: counts.task + 1 }
+        : { ...counts, taskList: counts.taskList + 1 },
+    EMPTY_ENTITY_CHANGE_COUNTS,
+  );
 }
 
 interface PullReport {
@@ -256,8 +305,11 @@ function buildMessage(input: {
 }): string {
   const { pushReport, pullReport } = input;
   const segments: string[] = [];
-  if (pushReport.markedSyncedCount > 0) {
-    segments.push(`已上传 ${pushReport.markedSyncedCount} 条本地变更`);
+  if (pushReport.markedTaskChangeSyncedCount > 0) {
+    segments.push(`已上传 ${pushReport.markedTaskChangeSyncedCount} 条本地任务变更`);
+  }
+  if (pushReport.markedTaskListChangeSyncedCount > 0) {
+    segments.push(`已上传 ${pushReport.markedTaskListChangeSyncedCount} 个本地清单变更`);
   }
   if (pullReport.appliedTaskCount > 0) {
     segments.push(`已应用 ${pullReport.appliedTaskCount} 条远端任务`);

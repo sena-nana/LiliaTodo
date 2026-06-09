@@ -18,10 +18,16 @@ describe("默认设置页 WebDAV 同步装配", () => {
         ok: true,
         report: {
           pushedOpsCount: 1,
+          pushedTaskChangeCount: 1,
+          pushedTaskListChangeCount: 0,
           markedSyncedCount: 1,
+          markedTaskChangeSyncedCount: 1,
+          markedTaskListChangeSyncedCount: 0,
           pulledOpsCount: 0,
           appliedTaskCount: 0,
           deletedTaskCount: 0,
+          appliedTaskListCount: 0,
+          deletedTaskListCount: 0,
           serverCursor: "{}",
           message: "ok",
         },
@@ -61,12 +67,18 @@ describe("默认设置页 WebDAV 同步装配", () => {
   it("WebDAV runOnce 成功后通知订阅者", async () => {
     const report = {
       pushedOpsCount: 1,
+      pushedTaskChangeCount: 1,
+      pushedTaskListChangeCount: 0,
       markedSyncedCount: 1,
+      markedTaskChangeSyncedCount: 1,
+      markedTaskListChangeSyncedCount: 0,
       pulledOpsCount: 0,
       appliedTaskCount: 0,
       deletedTaskCount: 0,
+      appliedTaskListCount: 0,
+      deletedTaskListCount: 0,
       serverCursor: "cursor-after",
-      message: "已上传 1 条本地变更",
+      message: "已上传 1 条本地任务变更",
     };
     const runOnce = vi
       .fn<() => Promise<WebdavRunOnceResult>>()

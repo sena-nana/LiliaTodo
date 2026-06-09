@@ -671,6 +671,11 @@ describe("TaskRepository 仓储", () => {
       "list-1",
       "taskList.archive",
     ]);
+    expect(JSON.parse(changes[0]?.[4] as string)).toEqual({
+      id: "list-1",
+      archived: true,
+      updatedAt: "2026-05-16T12:00:00.000Z",
+    });
     const localChangeParams = changes[1];
     expect(localChangeParams?.slice(0, 4)).toEqual([
       "change-list",

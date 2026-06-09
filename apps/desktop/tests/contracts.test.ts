@@ -5,7 +5,9 @@ import {
   createDeltaPushRequest,
   createListTaskConflictsRequest,
   createTaskConflict,
+  type DeltaPullResponse,
   type LocalChangeDto,
+  type TaskListDto,
   type TaskDto,
 } from "../../../packages/contracts/src";
 
@@ -62,6 +64,34 @@ describe("同步契约", () => {
         payload: { title: "Write plan" },
         createdAt: "2026-05-16T04:00:00.000Z",
       },
+      {
+        id: "change-list-create",
+        entityType: "taskList",
+        entityId: "list-1",
+        action: "taskList.create",
+        payload: {
+          id: "list-1",
+          name: "项目",
+          color: null,
+          archived: false,
+          order: 0,
+          createdAt: "2026-05-16T04:00:00.000Z",
+          updatedAt: "2026-05-16T04:00:00.000Z",
+        },
+        createdAt: "2026-05-16T04:00:00.000Z",
+      },
+      {
+        id: "change-list-archive",
+        entityType: "taskList",
+        entityId: "list-1",
+        action: "taskList.archive",
+        payload: {
+          id: "list-1",
+          archived: true,
+          updatedAt: "2026-05-16T05:00:00.000Z",
+        },
+        createdAt: "2026-05-16T05:00:00.000Z",
+      },
     ];
 
     expect(
@@ -78,6 +108,30 @@ describe("同步契约", () => {
       changes,
       clientSentAt: "2026-05-16T05:00:00.000Z",
     });
+  });
+
+  it("TaskListDto 和 delta pull 响应覆盖清单同步字段", () => {
+    const taskList: TaskListDto = {
+      id: "list-1",
+      name: "项目",
+      color: "#ff0000",
+      archived: false,
+      order: 1,
+      createdAt: "2026-05-16T04:00:00.000Z",
+      updatedAt: "2026-05-16T05:00:00.000Z",
+    };
+    const response: DeltaPullResponse = {
+      contractVersion: SYNC_CONTRACT_VERSION,
+      tasks: [],
+      taskLists: [taskList],
+      deletedTaskIds: [],
+      deletedTaskListIds: ["list-old"],
+      serverCursor: "cursor-list",
+      serverTime: "2026-05-16T05:01:00.000Z",
+    };
+
+    expect(response.taskLists[0]).toEqual(taskList);
+    expect(response.deletedTaskListIds).toEqual(["list-old"]);
   });
 
   it("构造允许空 cursor 的带版本 delta pull 请求", () => {
