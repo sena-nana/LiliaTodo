@@ -347,6 +347,64 @@ describe("桌面端 MVP 页面", () => {
     ).toBeInTheDocument();
   });
 
+  it("WebDAV 凭据表单保存时留空应用密码会沿用既有密码", async () => {
+    const repository = fakeRepository();
+    const controller = fakeWebdavController({ kind: "enabled" });
+    const secretsStore = fakeSecretsStore({
+      baseUrl: "https://dav.jianguoyun.com/dav",
+      root: "/momo",
+      username: "demo",
+      password: "secret",
+      deviceId: "desk-1",
+    });
+
+    renderWithRepository(SyncSettings, repository, {
+      global: {
+        provide: {
+          [WebdavSyncControllerKey as symbol]: controller,
+          [WebdavSecretsStoreKey as symbol]: secretsStore,
+        },
+      },
+    });
+
+    await screen.findByDisplayValue("demo");
+    await fireEvent.update(screen.getByLabelText("用户名"), "demo-updated");
+    await fireEvent.click(screen.getByRole("button", { name: "保存凭据" }));
+
+    await waitFor(() =>
+      expect(secretsStore.save).toHaveBeenCalledWith({
+        baseUrl: "https://dav.jianguoyun.com/dav",
+        root: "/momo",
+        username: "demo-updated",
+        password: "secret",
+        deviceId: "desk-1",
+      }),
+    );
+    expect(await screen.findByText("已保存到本机安全存储")).toBeInTheDocument();
+  });
+
+  it("WebDAV 首次保存缺少应用密码时提示错误且不写入凭据", async () => {
+    const repository = fakeRepository();
+    const secretsStore = fakeSecretsStore(null);
+
+    renderWithRepository(SyncSettings, repository, {
+      global: {
+        provide: {
+          [WebdavSecretsStoreKey as symbol]: secretsStore,
+        },
+      },
+    });
+
+    await screen.findByLabelText("用户名");
+    await fireEvent.update(screen.getByLabelText("用户名"), "demo");
+    await fireEvent.click(screen.getByRole("button", { name: "保存凭据" }));
+
+    expect(
+      await screen.findByText("错误：首次保存必须填写应用密码"),
+    ).toBeInTheDocument();
+    expect(secretsStore.save).not.toHaveBeenCalled();
+  });
+
   it("默认设置页路由展示 WebDAV 凭据卡片而非旧本地模拟入口", async () => {
     const repository = fakeRepository();
 
