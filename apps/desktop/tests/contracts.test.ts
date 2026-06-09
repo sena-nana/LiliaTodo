@@ -12,8 +12,8 @@ import {
 } from "../../../packages/contracts/src";
 
 describe("同步契约", () => {
-  it("同步契约版本随任务 wire shape 升级到 2", () => {
-    expect(SYNC_CONTRACT_VERSION).toBe(2);
+  it("同步契约版本随任务分类 wire shape 升级到 3", () => {
+    expect(SYNC_CONTRACT_VERSION).toBe(3);
   });
 
   it("TaskDto 覆盖结构化任务字段", () => {
@@ -43,6 +43,7 @@ describe("同步契约", () => {
       childOrder: 0,
       tags: ["sync"],
       listId: "inbox",
+      categoryId: null,
       createdAt: "2026-05-16T00:00:00.000Z",
       updatedAt: "2026-05-16T00:30:00.000Z",
       completedAt: null,
@@ -124,8 +125,10 @@ describe("同步契约", () => {
       contractVersion: SYNC_CONTRACT_VERSION,
       tasks: [],
       taskLists: [taskList],
+      taskCategories: [],
       deletedTaskIds: [],
       deletedTaskListIds: ["list-old"],
+      deletedTaskCategoryIds: [],
       serverCursor: "cursor-list",
       serverTime: "2026-05-16T05:01:00.000Z",
     };

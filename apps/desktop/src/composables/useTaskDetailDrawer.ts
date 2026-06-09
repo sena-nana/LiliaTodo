@@ -1,6 +1,6 @@
 import { computed, ref } from "vue";
 import type { TaskRepository } from "../data/taskRepository";
-import type { Task, TaskList, UpdateTaskInput } from "../domain/tasks";
+import type { Task, TaskCategory, TaskList, UpdateTaskInput } from "../domain/tasks";
 
 interface UseTaskDetailDrawerOptions {
   repository: TaskRepository;
@@ -12,6 +12,7 @@ export function useTaskDetailDrawer(options: UseTaskDetailDrawerOptions) {
   const selectedTask = ref<Task | null>(null);
   const childTasks = ref<Task[]>([]);
   const lists = ref<TaskList[]>([]);
+  const categories = ref<TaskCategory[]>([]);
   const saving = ref(false);
   const drawerError = ref<string | null>(null);
 
@@ -27,12 +28,16 @@ export function useTaskDetailDrawer(options: UseTaskDetailDrawerOptions) {
     lists.value = await options.repository.listLists();
   }
 
+  async function loadCategories(listId: string) {
+    categories.value = await options.repository.listCategoriesByList(listId);
+  }
+
   async function openTask(task: Task) {
     selectedTask.value = task;
     drawerError.value = null;
     try {
       childTasks.value = await options.repository.listTaskChildren(task.id);
-      await loadLists();
+      await Promise.all([loadLists(), loadCategories(task.listId)]);
     } catch (e) {
       drawerError.value = String(e);
     }
@@ -82,6 +87,7 @@ export function useTaskDetailDrawer(options: UseTaskDetailDrawerOptions) {
     selectedTask,
     childTasks,
     lists,
+    categories,
     saving,
     drawerError,
     parentCandidates,

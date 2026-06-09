@@ -4,7 +4,7 @@ import {
   mapTaskRow,
   normalizeCreateTaskInput,
   normalizeUpdateTaskInput,
-  type TaskListGroupRow,
+  type TaskCategoryRow,
   type TaskListRow,
   type TaskRow,
 } from "../src/domain/tasks";
@@ -111,6 +111,7 @@ describe("任务领域", () => {
       childOrder: 0,
       tags: ["focus", "writing"],
       listId: "inbox",
+      categoryId: null,
       createdAt: "2026-05-15T01:00:00.000Z",
       updatedAt: "2026-05-15T01:30:00.000Z",
       completedAt: null,
@@ -196,6 +197,7 @@ describe("TaskRepository 仓储", () => {
       0,
       '["work"]',
       "inbox",
+      null,
       "2026-05-16T04:00:00.000Z",
       "2026-05-16T04:00:00.000Z",
       null,
@@ -464,6 +466,7 @@ describe("TaskRepository 仓储", () => {
       0,
       '["sync"]',
       "inbox",
+      null,
       "2026-05-16T10:00:00.000Z",
       "2026-05-16T11:00:00.000Z",
       null,
@@ -662,6 +665,7 @@ describe("TaskRepository 仓储", () => {
 
     expect(db.paramsForLastSql("UPDATE tasks SET list_id")).toEqual([
       "inbox",
+      null,
       "2026-05-16T12:00:00.000Z",
       "list-1",
     ]);
@@ -687,7 +691,7 @@ describe("TaskRepository 仓储", () => {
     expect(JSON.parse(localChangeParams?.[4] as string)).toEqual({
       id: "task-in-list",
       baseVersion: 9,
-      patch: { listId: "inbox" },
+      patch: { listId: "inbox", categoryId: null },
       updatedAt: "2026-05-16T12:00:00.000Z",
     });
   });
@@ -705,7 +709,6 @@ describe("TaskRepository 仓储", () => {
         color: null,
         archived: false,
         order: 2,
-        groupId: null,
         createdAt: "2026-05-16T10:00:00.000Z",
         updatedAt: "2026-05-16T11:00:00.000Z",
       },
@@ -719,7 +722,6 @@ describe("TaskRepository 仓储", () => {
       null,
       0,
       2,
-      null,
       "2026-05-16T10:00:00.000Z",
       "2026-05-16T11:00:00.000Z",
     ]);
@@ -731,83 +733,101 @@ describe("TaskRepository 仓储", () => {
     ]);
     expect(db.paramsForLastSql("UPDATE tasks SET list_id")).toEqual([
       "inbox",
+      null,
       "2026-05-16T12:00:00.000Z",
       "list-remote",
     ]);
     expect(db.calls.some((call) => call.sql.includes("INSERT INTO local_changes"))).toBe(false);
   });
 
-  it("创建、重命名和删除清单分类只影响本地分组", async () => {
+  it("创建、重命名和删除清单内分类会记录分类同步变更", async () => {
     const db = new RecordingDatabase({
-      taskListGroups: [
+      taskCategories: [
         {
-          id: "group-1",
+          id: "category-1",
+          list_id: "list-1",
           name: "工作",
-          group_order: 1,
+          category_order: 1,
           created_at: "2026-05-16T10:00:00.000Z",
           updated_at: "2026-05-16T12:00:00.000Z",
         },
       ],
     });
-    const ids = ["group-1"];
+    const ids = ["category-1", "change-create", "change-update", "change-delete"];
     const repository = createTaskRepository(() => Promise.resolve(db), {
       id: () => ids.shift() ?? "id",
+      changeId: () => ids.shift() ?? "change",
       now: () => new Date("2026-05-16T12:00:00.000Z"),
     });
 
-    await expect(repository.createListGroup({ name: " 工作 " })).resolves.toMatchObject({
-      id: "group-1",
+    await expect(repository.createCategory({ listId: "list-1", name: " 工作 " })).resolves.toMatchObject({
+      id: "category-1",
+      listId: "list-1",
       name: "工作",
       order: 0,
     });
-    await expect(repository.updateListGroup("group-1", { name: "工作区", order: 2 })).resolves.toMatchObject({
-      id: "group-1",
+    await expect(repository.updateCategory("category-1", { name: "工作区", order: 2 })).resolves.toMatchObject({
+      id: "category-1",
       name: "工作",
       order: 1,
     });
-    await repository.deleteListGroup("group-1");
+    await repository.deleteCategory("category-1");
 
-    expect(db.paramsForSql("INSERT INTO task_list_groups")).toEqual([
-      "group-1",
+    expect(db.paramsForSql("INSERT INTO task_categories")).toEqual([
+      "category-1",
+      "list-1",
       "工作",
       0,
       "2026-05-16T12:00:00.000Z",
       "2026-05-16T12:00:00.000Z",
     ]);
-    expect(db.paramsForSql("UPDATE task_list_groups")).toEqual([
+    expect(db.paramsForSql("UPDATE task_categories")).toEqual([
       "工作区",
       2,
       "2026-05-16T12:00:00.000Z",
-      "group-1",
+      "category-1",
     ]);
-    expect(db.paramsForSql("UPDATE task_lists SET group_id")).toEqual([
+    expect(db.paramsForSql("UPDATE tasks SET category_id")).toEqual([
       null,
       "2026-05-16T12:00:00.000Z",
-      "group-1",
+      "category-1",
     ]);
-    expect(db.paramsForSql("DELETE FROM task_list_groups")).toEqual(["group-1"]);
+    expect(db.paramsForSql("DELETE FROM task_categories")).toEqual(["category-1"]);
+    const changes = db.paramsForAllSql("INSERT INTO local_changes");
+    expect(changes.map((change) => change?.slice(1, 4))).toEqual([
+      ["taskCategory", "category-1", "taskCategory.create"],
+      ["taskCategory", "category-1", "taskCategory.update"],
+      ["taskCategory", "category-1", "taskCategory.delete"],
+    ]);
+  });
+
+  it("删除远端分类会把任务移回未分类且不记录本地变更", async () => {
+    const db = new RecordingDatabase();
+    const repository = createTaskRepository(() => Promise.resolve(db), {
+      now: () => new Date("2026-05-16T12:00:00.000Z"),
+    });
+
+    await repository.deleteRemoteCategory("category-1");
+
+    expect(db.paramsForSql("UPDATE tasks SET category_id")).toEqual([
+      null,
+      "2026-05-16T12:00:00.000Z",
+      "category-1",
+    ]);
+    expect(db.paramsForSql("DELETE FROM task_categories")).toEqual(["category-1"]);
+    expect(db.paramsForSql("DELETE FROM entity_sync_versions")).toEqual(["taskCategory", "category-1"]);
     expect(db.calls.some((call) => call.sql.includes("INSERT INTO local_changes"))).toBe(false);
   });
 
-  it("移动清单到分类会写 group_id 且不产生同步变更", async () => {
+  it("任务更新可保存清单内分类", async () => {
     const db = new RecordingDatabase({
-      taskLists: [
+      taskRows: [taskRow({ id: "task-1", category_id: "category-1" })],
+      taskCategories: [
         {
-          id: "list-1",
-          name: "项目",
-          color: null,
-          archived: 0,
-          list_order: 1,
-          group_id: "group-1",
-          created_at: "2026-05-16T10:00:00.000Z",
-          updated_at: "2026-05-16T12:00:00.000Z",
-        },
-      ],
-      taskListGroups: [
-        {
-          id: "group-1",
+          id: "category-1",
+          list_id: "list-1",
           name: "工作",
-          group_order: 0,
+          category_order: 0,
           created_at: "2026-05-16T10:00:00.000Z",
           updated_at: "2026-05-16T10:00:00.000Z",
         },
@@ -817,17 +837,13 @@ describe("TaskRepository 仓储", () => {
       now: () => new Date("2026-05-16T12:00:00.000Z"),
     });
 
-    await expect(repository.updateList("list-1", { groupId: "group-1" })).resolves.toMatchObject({
-      id: "list-1",
-      groupId: "group-1",
+    await expect(repository.updateTask("task-1", { categoryId: "category-1" })).resolves.toMatchObject({
+      id: "task-1",
+      categoryId: "category-1",
     });
 
-    expect(db.paramsForLastSql("UPDATE task_lists SET")).toEqual([
-      "group-1",
-      "2026-05-16T12:00:00.000Z",
-      "list-1",
-    ]);
-    expect(db.calls.some((call) => call.sql.includes("INSERT INTO local_changes"))).toBe(false);
+    expect(db.paramsForLastSql("UPDATE tasks SET")).toContain("category-1");
+    expect(db.calls.some((call) => call.sql.includes("INSERT INTO local_changes"))).toBe(true);
   });
 
   it("拒绝将任务父级设置为自己或后代", async () => {
@@ -878,6 +894,7 @@ function baseTask() {
     childOrder: 0,
     tags: [],
     listId: "inbox",
+    categoryId: null,
     createdAt: "2026-05-16T00:00:00.000Z",
     updatedAt: "2026-05-16T00:00:00.000Z",
     completedAt: null,
@@ -901,6 +918,7 @@ function taskRow(overrides: Partial<TaskRow> = {}): TaskRow {
     child_order: 0,
     tags: "[]",
     list_id: "inbox",
+    category_id: null,
     created_at: "2026-05-16T00:00:00.000Z",
     updated_at: "2026-05-16T00:00:00.000Z",
     completed_at: null,
@@ -915,7 +933,7 @@ class RecordingDatabase implements SqlDatabase {
     localChanges?: LocalChangeRow[];
     taskRows?: TaskRow[];
     taskLists?: TaskListRow[];
-    taskListGroups?: TaskListGroupRow[];
+    taskCategories?: TaskCategoryRow[];
     taskSyncVersions?: TaskSyncVersionRow[];
     entitySyncVersions?: EntitySyncVersionRow[];
     syncState?: SyncStateRow[];
@@ -954,8 +972,8 @@ class RecordingDatabase implements SqlDatabase {
     if (sql.includes("FROM task_lists")) {
       return (this.rows.taskLists ?? []) as T[];
     }
-    if (sql.includes("FROM task_list_groups")) {
-      return (this.rows.taskListGroups ?? []) as T[];
+    if (sql.includes("FROM task_categories")) {
+      return (this.rows.taskCategories ?? []) as T[];
     }
     if (sql.includes("FROM tasks")) {
       if (sql.includes("WHERE id = $1")) {

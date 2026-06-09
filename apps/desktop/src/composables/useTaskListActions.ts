@@ -8,6 +8,7 @@ interface UseTaskListActionsOptions {
   tasks: Ref<Task[]>;
   reload: () => Promise<void>;
   listId: () => string;
+  categoryId?: () => string | null;
   setError: (value: string | null) => void;
 }
 
@@ -16,6 +17,7 @@ export function useTaskListActions({
   tasks,
   reload,
   listId,
+  categoryId,
   setError,
 }: UseTaskListActionsOptions) {
   const newTitle = ref("");
@@ -26,7 +28,12 @@ export function useTaskListActions({
     quickAddSaving.value = true;
     setError(null);
     try {
-      await repository.createTask({ title: newTitle.value, listId: listId() });
+      const selectedCategoryId = categoryId?.() ?? null;
+      await repository.createTask({
+        title: newTitle.value,
+        listId: listId(),
+        ...(selectedCategoryId ? { categoryId: selectedCategoryId } : {}),
+      });
       newTitle.value = "";
       await reload();
     } catch (e) {
@@ -37,7 +44,8 @@ export function useTaskListActions({
   }
 
   async function moveTask(task: Task, direction: -1 | 1) {
-    const reordered = moveItemById(tasks.value, task.id, direction);
+    const bucket = tasks.value.filter((item) => item.categoryId === task.categoryId);
+    const reordered = moveItemById(bucket, task.id, direction);
     if (!reordered) return;
     setError(null);
     try {

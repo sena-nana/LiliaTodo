@@ -4,33 +4,34 @@ import {
   DEFAULT_TASK_LIST_NAME,
   getDayBounds,
   groupTodayTasks,
-  mapTaskListGroupRow,
+  mapTaskCategoryRow,
   mapTaskListRow,
   mapTaskRow,
-  normalizeCreateTaskListGroupInput,
+  normalizeCreateTaskCategoryInput,
   normalizeCreateTaskInput,
   normalizeCreateTaskListInput,
-  normalizeUpdateTaskListGroupInput,
+  normalizeUpdateTaskCategoryInput,
   normalizeUpdateTaskInput,
   normalizeUpdateTaskListInput,
   taskHasDueReminder,
-  type CreateTaskListGroupInput,
+  type CreateTaskCategoryInput,
   type CreateTaskInput,
   type CreateTaskListInput,
   type Task,
-  type TaskListGroup,
-  type TaskListGroupRow,
+  type TaskCategory,
+  type TaskCategoryRow,
   type TaskList,
   type TaskListRow,
   type TaskRow,
   type TaskStatus,
   type TodayTaskGroups,
-  type UpdateTaskListGroupInput,
+  type UpdateTaskCategoryInput,
   type UpdateTaskInput,
   type UpdateTaskListInput,
 } from '../domain/tasks';
 import {
   INSERT_TASK_LIST_SQL,
+  INSERT_TASK_CATEGORY_SQL,
   INSERT_TASK_SQL,
   MOMO_DATABASE_PATH,
   SCHEMA,
@@ -38,6 +39,9 @@ import {
   appendUpdate,
   ensureDefaultList,
   runTaskMigrations,
+  taskCategoryParams,
+  taskCategorySyncPatch,
+  taskCategorySyncPayload,
   taskListParams,
   taskListSyncPatch,
   taskListSyncPayload,
@@ -66,16 +70,18 @@ export interface TaskRepository {
   deleteRemoteTask(id: string): Promise<void>;
   applyRemoteList(list: TaskList, remoteVersion?: number): Promise<void>;
   deleteRemoteList(id: string): Promise<void>;
+  applyRemoteCategory(category: TaskCategory, remoteVersion?: number): Promise<void>;
+  deleteRemoteCategory(id: string): Promise<void>;
   listTasksByList(listId: string): Promise<Task[]>;
   listTaskChildren(parentId: string): Promise<Task[]>;
   listLists(): Promise<TaskList[]>;
   createList(input: CreateTaskListInput): Promise<TaskList>;
   updateList(id: string, patch: UpdateTaskListInput): Promise<TaskList>;
   archiveList(id: string): Promise<TaskList>;
-  listListGroups(): Promise<TaskListGroup[]>;
-  createListGroup(input: CreateTaskListGroupInput): Promise<TaskListGroup>;
-  updateListGroup(id: string, patch: UpdateTaskListGroupInput): Promise<TaskListGroup>;
-  deleteListGroup(id: string): Promise<void>;
+  listCategoriesByList(listId: string): Promise<TaskCategory[]>;
+  createCategory(input: CreateTaskCategoryInput): Promise<TaskCategory>;
+  updateCategory(id: string, patch: UpdateTaskCategoryInput): Promise<TaskCategory>;
+  deleteCategory(id: string): Promise<void>;
   listPendingChanges(): Promise<LocalChange[]>;
   markChangeSynced(id: string, syncedAt?: Date): Promise<void>;
   getSyncState(): Promise<SyncState>;
@@ -97,9 +103,12 @@ export type LocalChangeAction =
   | 'taskList.create'
   | 'taskList.update'
   | 'taskList.archive'
-  | 'taskList.delete';
+  | 'taskList.delete'
+  | 'taskCategory.create'
+  | 'taskCategory.update'
+  | 'taskCategory.delete';
 
-export type LocalChangeEntityType = 'task' | 'taskList';
+export type LocalChangeEntityType = 'task' | 'taskList' | 'taskCategory';
 
 export interface LocalChange {
   id: string;
@@ -247,19 +256,19 @@ export function createTaskRepository(
     return mapTaskListRow(row);
   }
 
-  async function selectListGroup(groupId: string) {
+  async function selectCategory(categoryId: string) {
     const db = await getDb();
-    const rows = await db.select<TaskListGroupRow>('SELECT * FROM task_list_groups WHERE id = $1 LIMIT 1', [groupId]);
+    const rows = await db.select<TaskCategoryRow>('SELECT * FROM task_categories WHERE id = $1 LIMIT 1', [categoryId]);
     const row = rows[0];
     if (!row) {
       throw new Error('分类不存在');
     }
-    return mapTaskListGroupRow(row);
+    return mapTaskCategoryRow(row);
   }
 
-  async function ensureListGroupExists(db: SqlDatabase, groupId: string | null | undefined) {
-    if (!groupId) return;
-    const rows = await db.select<TaskListGroupRow>('SELECT * FROM task_list_groups WHERE id = $1 LIMIT 1', [groupId]);
+  async function ensureCategoryExists(db: SqlDatabase, categoryId: string | null | undefined) {
+    if (!categoryId) return;
+    const rows = await db.select<TaskCategoryRow>('SELECT * FROM task_categories WHERE id = $1 LIMIT 1', [categoryId]);
     if (rows.length === 0) {
       throw new Error('分类不存在');
     }
@@ -270,9 +279,9 @@ export function createTaskRepository(
     if (rows.length > 0) return;
     await db.execute(
       `INSERT INTO task_lists (
-        id, name, color, archived, list_order, group_id, created_at, updated_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-      [listId, listId === DEFAULT_TASK_LIST_ID ? DEFAULT_TASK_LIST_NAME : '未命名清单', null, 0, 0, null, timestamp, timestamp],
+        id, name, color, archived, list_order, created_at, updated_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [listId, listId === DEFAULT_TASK_LIST_ID ? DEFAULT_TASK_LIST_NAME : '未命名清单', null, 0, 0, timestamp, timestamp],
     );
   }
 
@@ -405,6 +414,7 @@ export function createTaskRepository(
         childOrder: normalized.childOrder,
         tags: normalized.tags,
         listId: normalized.listId,
+        categoryId: normalized.categoryId,
         createdAt: timestamp,
         updatedAt: timestamp,
         completedAt: null,
@@ -412,6 +422,7 @@ export function createTaskRepository(
 
       const db = await getDb();
       await ensureListExists(db, task.listId, timestamp);
+      await ensureCategoryExists(db, task.categoryId);
       await assertValidParent(db, task.id, task.parentId);
       await db.execute(INSERT_TASK_SQL, taskParams(task));
       await recordLocalChange(db, 'task', task.id, 'task.create', task, timestamp);
@@ -437,12 +448,16 @@ export function createTaskRepository(
       appendUpdate(updates, values, 'child_order', normalized.childOrder);
       if ('tags' in normalized) appendUpdate(updates, values, 'tags', JSON.stringify(normalized.tags));
       appendUpdate(updates, values, 'list_id', normalized.listId);
+      appendUpdate(updates, values, 'category_id', normalized.categoryId);
 
       if (updates.length > 0) {
         const timestamp = now().toISOString();
         const db = await getDb();
         if (normalized.listId) {
           await ensureListExists(db, normalized.listId, timestamp);
+        }
+        if ('categoryId' in normalized) {
+          await ensureCategoryExists(db, normalized.categoryId);
         }
         if ('parentId' in normalized) {
           await assertValidParent(db, taskId, normalized.parentId);
@@ -498,6 +513,7 @@ export function createTaskRepository(
       await init();
       const db = await getDb();
       await ensureListExists(db, task.listId);
+      await ensureCategoryExists(db, task.categoryId);
       await assertValidParent(db, task.id, task.parentId);
       await db.execute(
         `${INSERT_TASK_SQL}
@@ -516,6 +532,7 @@ export function createTaskRepository(
           child_order = excluded.child_order,
           tags = excluded.tags,
           list_id = excluded.list_id,
+          category_id = excluded.category_id,
           created_at = excluded.created_at,
           updated_at = excluded.updated_at,
           completed_at = excluded.completed_at`,
@@ -544,14 +561,14 @@ export function createTaskRepository(
           color = excluded.color,
           archived = excluded.archived,
           list_order = excluded.list_order,
-          group_id = COALESCE(task_lists.group_id, excluded.group_id),
           created_at = excluded.created_at,
           updated_at = excluded.updated_at`,
         taskListParams(list),
       );
       if (list.archived && list.id !== DEFAULT_TASK_LIST_ID) {
-        await db.execute('UPDATE tasks SET list_id = $1, updated_at = $2 WHERE list_id = $3', [
+        await db.execute('UPDATE tasks SET list_id = $1, category_id = $2, updated_at = $3 WHERE list_id = $4', [
           DEFAULT_TASK_LIST_ID,
+          null,
           list.updatedAt,
           list.id,
         ]);
@@ -569,8 +586,34 @@ export function createTaskRepository(
       const timestamp = now().toISOString();
       const db = await getDb();
       await db.execute('UPDATE task_lists SET archived = $1, updated_at = $2 WHERE id = $3', [1, timestamp, listId]);
-      await db.execute('UPDATE tasks SET list_id = $1, updated_at = $2 WHERE list_id = $3', [DEFAULT_TASK_LIST_ID, timestamp, listId]);
+      await db.execute('UPDATE tasks SET list_id = $1, category_id = $2, updated_at = $3 WHERE list_id = $4', [DEFAULT_TASK_LIST_ID, null, timestamp, listId]);
       await deleteEntityRemoteVersion(db, 'taskList', listId);
+    },
+
+    async applyRemoteCategory(category, remoteVersion) {
+      await init();
+      const db = await getDb();
+      await ensureListExists(db, category.listId);
+      await db.execute(
+        `${INSERT_TASK_CATEGORY_SQL}
+        ON CONFLICT(id) DO UPDATE SET
+          list_id = excluded.list_id,
+          name = excluded.name,
+          category_order = excluded.category_order,
+          created_at = excluded.created_at,
+          updated_at = excluded.updated_at`,
+        taskCategoryParams(category),
+      );
+      await upsertEntityRemoteVersion(db, 'taskCategory', category.id, remoteVersion);
+    },
+
+    async deleteRemoteCategory(categoryId) {
+      await init();
+      const timestamp = now().toISOString();
+      const db = await getDb();
+      await db.execute('UPDATE tasks SET category_id = $1, updated_at = $2 WHERE category_id = $3', [null, timestamp, categoryId]);
+      await db.execute('DELETE FROM task_categories WHERE id = $1', [categoryId]);
+      await deleteEntityRemoteVersion(db, 'taskCategory', categoryId);
     },
 
     async listTasksByList(listId) {
@@ -618,18 +661,11 @@ export function createTaskRepository(
         color: normalized.color,
         archived: false,
         order: 0,
-        groupId: normalized.groupId,
         createdAt: timestamp,
         updatedAt: timestamp,
       };
       const db = await getDb();
-      await ensureListGroupExists(db, list.groupId);
-      await db.execute(
-        `INSERT INTO task_lists (
-          id, name, color, archived, list_order, group_id, created_at, updated_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-        [list.id, list.name, list.color, 0, list.order, list.groupId, list.createdAt, list.updatedAt],
-      );
+      await db.execute(INSERT_TASK_LIST_SQL, taskListParams(list));
       await recordLocalChange(db, 'taskList', list.id, 'taskList.create', taskListSyncPayload(list), timestamp);
       return list;
     },
@@ -640,7 +676,7 @@ export function createTaskRepository(
         if (patch.name && patch.name.trim() !== DEFAULT_TASK_LIST_NAME) {
           throw new Error('默认收件箱不能重命名');
         }
-        if ('order' in patch || 'groupId' in patch) {
+        if ('order' in patch) {
           throw new Error('默认收件箱不能移动');
         }
       }
@@ -650,15 +686,11 @@ export function createTaskRepository(
       appendUpdate(updates, values, 'name', normalized.name);
       appendUpdate(updates, values, 'color', normalized.color);
       appendUpdate(updates, values, 'list_order', normalized.order);
-      appendUpdate(updates, values, 'group_id', normalized.groupId);
       if (updates.length > 0) {
         const timestamp = now().toISOString();
         appendUpdate(updates, values, 'updated_at', timestamp);
         values.push(listId);
         const db = await getDb();
-        if ('groupId' in normalized) {
-          await ensureListGroupExists(db, normalized.groupId);
-        }
         await db.execute(`UPDATE task_lists SET ${updates.join(', ')} WHERE id = $${values.length}`, values);
         const syncPatch = taskListSyncPatch(normalized);
         if (Object.keys(syncPatch).length > 0) {
@@ -688,7 +720,7 @@ export function createTaskRepository(
         [listId],
       );
       await db.execute('UPDATE task_lists SET archived = $1, updated_at = $2 WHERE id = $3', [1, timestamp, listId]);
-      await db.execute('UPDATE tasks SET list_id = $1, updated_at = $2 WHERE list_id = $3', [DEFAULT_TASK_LIST_ID, timestamp, listId]);
+      await db.execute('UPDATE tasks SET list_id = $1, category_id = $2, updated_at = $3 WHERE list_id = $4', [DEFAULT_TASK_LIST_ID, null, timestamp, listId]);
       await recordLocalChange(
         db,
         'taskList',
@@ -705,7 +737,7 @@ export function createTaskRepository(
           'task.update',
           await withBaseVersion(db, 'task', row.id, {
             id: row.id,
-            patch: { listId: DEFAULT_TASK_LIST_ID },
+            patch: { listId: DEFAULT_TASK_LIST_ID, categoryId: null },
             updatedAt: timestamp,
           }),
           timestamp,
@@ -714,60 +746,79 @@ export function createTaskRepository(
       return selectList(listId);
     },
 
-    async listListGroups() {
+    async listCategoriesByList(listId) {
       await init();
       const db = await getDb();
-      const rows = await db.select<TaskListGroupRow>(
-        `SELECT * FROM task_list_groups
-         ORDER BY group_order ASC, created_at ASC`,
+      const rows = await db.select<TaskCategoryRow>(
+        `SELECT * FROM task_categories
+         WHERE list_id = $1
+         ORDER BY category_order ASC, created_at ASC`,
+        [listId],
       );
-      return rows.map(mapTaskListGroupRow);
+      return rows.map(mapTaskCategoryRow);
     },
 
-    async createListGroup(input) {
+    async createCategory(input) {
       await init();
-      const normalized = normalizeCreateTaskListGroupInput(input);
+      const normalized = normalizeCreateTaskCategoryInput(input);
       const timestamp = now().toISOString();
-      const group: TaskListGroup = {
+      const category: TaskCategory = {
         id: id(),
+        listId: normalized.listId,
         name: normalized.name,
         order: 0,
         createdAt: timestamp,
         updatedAt: timestamp,
       };
       const db = await getDb();
-      await db.execute(
-        `INSERT INTO task_list_groups (
-          id, name, group_order, created_at, updated_at
-        ) VALUES ($1, $2, $3, $4, $5)`,
-        [group.id, group.name, group.order, group.createdAt, group.updatedAt],
-      );
-      return group;
+      await ensureListExists(db, category.listId, timestamp);
+      await db.execute(INSERT_TASK_CATEGORY_SQL, taskCategoryParams(category));
+      await recordLocalChange(db, 'taskCategory', category.id, 'taskCategory.create', taskCategorySyncPayload(category), timestamp);
+      return category;
     },
 
-    async updateListGroup(groupId, patch) {
+    async updateCategory(categoryId, patch) {
       await init();
-      const normalized = normalizeUpdateTaskListGroupInput(patch);
+      const normalized = normalizeUpdateTaskCategoryInput(patch);
       const updates: string[] = [];
       const values: unknown[] = [];
       appendUpdate(updates, values, 'name', normalized.name);
-      appendUpdate(updates, values, 'group_order', normalized.order);
+      appendUpdate(updates, values, 'category_order', normalized.order);
       if (updates.length > 0) {
         const timestamp = now().toISOString();
         appendUpdate(updates, values, 'updated_at', timestamp);
-        values.push(groupId);
+        values.push(categoryId);
         const db = await getDb();
-        await db.execute(`UPDATE task_list_groups SET ${updates.join(', ')} WHERE id = $${values.length}`, values);
+        await db.execute(`UPDATE task_categories SET ${updates.join(', ')} WHERE id = $${values.length}`, values);
+        const syncPatch = taskCategorySyncPatch(normalized);
+        if (Object.keys(syncPatch).length > 0) {
+          await recordLocalChange(
+            db,
+            'taskCategory',
+            categoryId,
+            'taskCategory.update',
+            await withBaseVersion(db, 'taskCategory', categoryId, { id: categoryId, patch: syncPatch, updatedAt: timestamp }),
+            timestamp,
+          );
+        }
       }
-      return selectListGroup(groupId);
+      return selectCategory(categoryId);
     },
 
-    async deleteListGroup(groupId) {
+    async deleteCategory(categoryId) {
       await init();
       const timestamp = now().toISOString();
       const db = await getDb();
-      await db.execute('UPDATE task_lists SET group_id = $1, updated_at = $2 WHERE group_id = $3', [null, timestamp, groupId]);
-      await db.execute('DELETE FROM task_list_groups WHERE id = $1', [groupId]);
+      await db.execute('UPDATE tasks SET category_id = $1, updated_at = $2 WHERE category_id = $3', [null, timestamp, categoryId]);
+      await db.execute('DELETE FROM task_categories WHERE id = $1', [categoryId]);
+      await recordLocalChange(
+        db,
+        'taskCategory',
+        categoryId,
+        'taskCategory.delete',
+        await withBaseVersion(db, 'taskCategory', categoryId, { id: categoryId }),
+        timestamp,
+      );
     },
 
     async listPendingChanges() {

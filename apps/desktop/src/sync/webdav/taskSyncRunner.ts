@@ -20,9 +20,12 @@ import {
 } from "./merge";
 import type { SyncProvider } from "./provider";
 import {
+  entityToTaskCategory,
   entityToTaskList,
   entityToTask,
   localChangeToOp,
+  TASK_CATEGORY_ENTITY_TYPE,
+  TASK_CATEGORY_SCHEMA_VERSION,
   TASK_LIST_ENTITY_TYPE,
   TASK_LIST_SCHEMA_VERSION,
   TASK_ENTITY_TYPE,
@@ -33,14 +36,18 @@ export interface WebdavRunReport {
   readonly pushedOpsCount: number;
   readonly pushedTaskChangeCount: number;
   readonly pushedTaskListChangeCount: number;
+  readonly pushedTaskCategoryChangeCount: number;
   readonly markedSyncedCount: number;
   readonly markedTaskChangeSyncedCount: number;
   readonly markedTaskListChangeSyncedCount: number;
+  readonly markedTaskCategoryChangeSyncedCount: number;
   readonly pulledOpsCount: number;
   readonly appliedTaskCount: number;
   readonly deletedTaskCount: number;
   readonly appliedTaskListCount: number;
   readonly deletedTaskListCount: number;
+  readonly appliedTaskCategoryCount: number;
+  readonly deletedTaskCategoryCount: number;
   readonly serverCursor: string;
   readonly message: string;
 }
@@ -64,6 +71,8 @@ export interface CreateWebdavTaskSyncRunnerOptions {
     | "deleteRemoteTask"
     | "applyRemoteList"
     | "deleteRemoteList"
+    | "applyRemoteCategory"
+    | "deleteRemoteCategory"
     | "saveSyncState"
     | "recordSyncRun"
   >;
@@ -105,14 +114,18 @@ export function createWebdavTaskSyncRunner({
           pushedOpsCount: pushReport.pushedOpsCount,
           pushedTaskChangeCount: pushReport.pushedTaskChangeCount,
           pushedTaskListChangeCount: pushReport.pushedTaskListChangeCount,
+          pushedTaskCategoryChangeCount: pushReport.pushedTaskCategoryChangeCount,
           markedSyncedCount: pushReport.markedSyncedCount,
           markedTaskChangeSyncedCount: pushReport.markedTaskChangeSyncedCount,
           markedTaskListChangeSyncedCount: pushReport.markedTaskListChangeSyncedCount,
+          markedTaskCategoryChangeSyncedCount: pushReport.markedTaskCategoryChangeSyncedCount,
           pulledOpsCount: pullReport.pulledOpsCount,
           appliedTaskCount: pullReport.appliedTaskCount,
           deletedTaskCount: pullReport.deletedTaskCount,
           appliedTaskListCount: pullReport.appliedTaskListCount,
           deletedTaskListCount: pullReport.deletedTaskListCount,
+          appliedTaskCategoryCount: pullReport.appliedTaskCategoryCount,
+          deletedTaskCategoryCount: pullReport.deletedTaskCategoryCount,
           serverCursor: pullReport.serverCursor,
           message: buildMessage({ pushReport, pullReport }),
         };
@@ -148,14 +161,17 @@ interface PushReport {
   readonly pushedOpsCount: number;
   readonly pushedTaskChangeCount: number;
   readonly pushedTaskListChangeCount: number;
+  readonly pushedTaskCategoryChangeCount: number;
   readonly markedSyncedCount: number;
   readonly markedTaskChangeSyncedCount: number;
   readonly markedTaskListChangeSyncedCount: number;
+  readonly markedTaskCategoryChangeSyncedCount: number;
 }
 
 interface EntityChangeCounts {
   readonly task: number;
   readonly taskList: number;
+  readonly taskCategory: number;
 }
 
 async function pushPending(input: {
@@ -186,33 +202,38 @@ async function pushPending(input: {
     pushedOpsCount: ops.length,
     pushedTaskChangeCount: pushedCounts.task,
     pushedTaskListChangeCount: pushedCounts.taskList,
-    markedSyncedCount: markedCounts.task + markedCounts.taskList,
+    pushedTaskCategoryChangeCount: pushedCounts.taskCategory,
+    markedSyncedCount: markedCounts.task + markedCounts.taskList + markedCounts.taskCategory,
     markedTaskChangeSyncedCount: markedCounts.task,
     markedTaskListChangeSyncedCount: markedCounts.taskList,
+    markedTaskCategoryChangeSyncedCount: markedCounts.taskCategory,
   };
 }
 
-const EMPTY_ENTITY_CHANGE_COUNTS: EntityChangeCounts = { task: 0, taskList: 0 };
+const EMPTY_ENTITY_CHANGE_COUNTS: EntityChangeCounts = { task: 0, taskList: 0, taskCategory: 0 };
 
 function emptyPushReport(): PushReport {
   return {
     pushedOpsCount: 0,
     pushedTaskChangeCount: 0,
     pushedTaskListChangeCount: 0,
+    pushedTaskCategoryChangeCount: 0,
     markedSyncedCount: 0,
     markedTaskChangeSyncedCount: 0,
     markedTaskListChangeSyncedCount: 0,
+    markedTaskCategoryChangeSyncedCount: 0,
   };
 }
 
 function countEntityChanges(
-  changes: ReadonlyArray<{ readonly entityType: typeof TASK_ENTITY_TYPE | typeof TASK_LIST_ENTITY_TYPE }>,
+  changes: ReadonlyArray<{ readonly entityType: SupportedEntityType }>,
 ): EntityChangeCounts {
   return changes.reduce<EntityChangeCounts>(
-    (counts, change) =>
-      change.entityType === TASK_ENTITY_TYPE
-        ? { ...counts, task: counts.task + 1 }
-        : { ...counts, taskList: counts.taskList + 1 },
+    (counts, change) => {
+      if (change.entityType === TASK_ENTITY_TYPE) return { ...counts, task: counts.task + 1 };
+      if (change.entityType === TASK_LIST_ENTITY_TYPE) return { ...counts, taskList: counts.taskList + 1 };
+      return { ...counts, taskCategory: counts.taskCategory + 1 };
+    },
     EMPTY_ENTITY_CHANGE_COUNTS,
   );
 }
@@ -223,6 +244,8 @@ interface PullReport {
   readonly deletedTaskCount: number;
   readonly appliedTaskListCount: number;
   readonly deletedTaskListCount: number;
+  readonly appliedTaskCategoryCount: number;
+  readonly deletedTaskCategoryCount: number;
   readonly serverCursor: string;
 }
 
@@ -241,6 +264,8 @@ async function pullAndApply(input: {
       deletedTaskCount: 0,
       appliedTaskListCount: 0,
       deletedTaskListCount: 0,
+      appliedTaskCategoryCount: 0,
+      deletedTaskCategoryCount: 0,
       serverCursor: cursor,
     };
   }
@@ -262,6 +287,8 @@ async function pullAndApply(input: {
   let deletedTaskCount = 0;
   let appliedTaskListCount = 0;
   let deletedTaskListCount = 0;
+  let appliedTaskCategoryCount = 0;
+  let deletedTaskCategoryCount = 0;
   for (const entry of merged.entries) {
     const { entity } = entry.result;
     if (entity === null) {
@@ -271,6 +298,9 @@ async function pullAndApply(input: {
       } else if (entry.entityType === TASK_LIST_ENTITY_TYPE) {
         await repository.deleteRemoteList(entry.entityId);
         deletedTaskListCount += 1;
+      } else if (entry.entityType === TASK_CATEGORY_ENTITY_TYPE) {
+        await repository.deleteRemoteCategory(entry.entityId);
+        deletedTaskCategoryCount += 1;
       }
       continue;
     }
@@ -287,6 +317,10 @@ async function pullAndApply(input: {
       const list = entityToTaskList(normalizedEntity);
       await repository.applyRemoteList(list, normalizedEntity.schemaVersion);
       appliedTaskListCount += 1;
+    } else if (normalizedEntity.type === TASK_CATEGORY_ENTITY_TYPE) {
+      const category = entityToTaskCategory(normalizedEntity);
+      await repository.applyRemoteCategory(category, normalizedEntity.schemaVersion);
+      appliedTaskCategoryCount += 1;
     }
   }
   return {
@@ -295,6 +329,8 @@ async function pullAndApply(input: {
     deletedTaskCount,
     appliedTaskListCount,
     deletedTaskListCount,
+    appliedTaskCategoryCount,
+    deletedTaskCategoryCount,
     serverCursor: cursor,
   };
 }
@@ -311,6 +347,9 @@ function buildMessage(input: {
   if (pushReport.markedTaskListChangeSyncedCount > 0) {
     segments.push(`已上传 ${pushReport.markedTaskListChangeSyncedCount} 个本地清单变更`);
   }
+  if (pushReport.markedTaskCategoryChangeSyncedCount > 0) {
+    segments.push(`已上传 ${pushReport.markedTaskCategoryChangeSyncedCount} 个本地分类变更`);
+  }
   if (pullReport.appliedTaskCount > 0) {
     segments.push(`已应用 ${pullReport.appliedTaskCount} 条远端任务`);
   }
@@ -323,18 +362,28 @@ function buildMessage(input: {
   if (pullReport.deletedTaskListCount > 0) {
     segments.push(`已删除 ${pullReport.deletedTaskListCount} 个远端清单`);
   }
+  if (pullReport.appliedTaskCategoryCount > 0) {
+    segments.push(`已应用 ${pullReport.appliedTaskCategoryCount} 个远端分类`);
+  }
+  if (pullReport.deletedTaskCategoryCount > 0) {
+    segments.push(`已删除 ${pullReport.deletedTaskCategoryCount} 个远端分类`);
+  }
   if (segments.length === 0) {
     return "WebDAV 同步完成（无新增变更）";
   }
   return segments.join("，");
 }
 
-function isSupportedEntityType(entityType: string): entityType is typeof TASK_ENTITY_TYPE | typeof TASK_LIST_ENTITY_TYPE {
-  return entityType === TASK_ENTITY_TYPE || entityType === TASK_LIST_ENTITY_TYPE;
+type SupportedEntityType = typeof TASK_ENTITY_TYPE | typeof TASK_LIST_ENTITY_TYPE | typeof TASK_CATEGORY_ENTITY_TYPE;
+
+function isSupportedEntityType(entityType: string): entityType is SupportedEntityType {
+  return entityType === TASK_ENTITY_TYPE || entityType === TASK_LIST_ENTITY_TYPE || entityType === TASK_CATEGORY_ENTITY_TYPE;
 }
 
 function schemaVersionForEntity(entityType: string) {
-  return entityType === TASK_LIST_ENTITY_TYPE ? TASK_LIST_SCHEMA_VERSION : TASK_SCHEMA_VERSION;
+  if (entityType === TASK_LIST_ENTITY_TYPE) return TASK_LIST_SCHEMA_VERSION;
+  if (entityType === TASK_CATEGORY_ENTITY_TYPE) return TASK_CATEGORY_SCHEMA_VERSION;
+  return TASK_SCHEMA_VERSION;
 }
 
 async function recordRunBestEffort(

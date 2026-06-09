@@ -34,6 +34,15 @@ export interface TaskListDto {
   updatedAt: string;
 }
 
+export interface TaskCategoryDto {
+  id: string;
+  listId: string;
+  name: string;
+  order: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface TaskDto {
   id: string;
   workspaceId: string;
@@ -51,6 +60,7 @@ export interface TaskDto {
   childOrder: number;
   tags: string[];
   listId: string;
+  categoryId: string | null;
   createdAt: string;
   updatedAt: string;
   completedAt: string | null;

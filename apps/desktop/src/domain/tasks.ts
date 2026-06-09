@@ -44,6 +44,7 @@ export interface Task {
   childOrder: number;
   tags: string[];
   listId: string;
+  categoryId: string | null;
   createdAt: string;
   updatedAt: string;
   completedAt: string | null;
@@ -55,13 +56,13 @@ export interface TaskList {
   color: string | null;
   archived: boolean;
   order: number;
-  groupId: string | null;
   createdAt: string;
   updatedAt: string;
 }
 
-export interface TaskListGroup {
+export interface TaskCategory {
   id: string;
+  listId: string;
   name: string;
   order: number;
   createdAt: string;
@@ -82,6 +83,7 @@ export interface CreateTaskInput {
   childOrder?: number;
   tags?: string[];
   listId?: string;
+  categoryId?: string | null;
 }
 
 export interface UpdateTaskInput {
@@ -98,26 +100,26 @@ export interface UpdateTaskInput {
   childOrder?: number;
   tags?: string[];
   listId?: string;
+  categoryId?: string | null;
 }
 
 export interface CreateTaskListInput {
   name: string;
   color?: string | null;
-  groupId?: string | null;
 }
 
 export interface UpdateTaskListInput {
   name?: string;
   color?: string | null;
   order?: number;
-  groupId?: string | null;
 }
 
-export interface CreateTaskListGroupInput {
+export interface CreateTaskCategoryInput {
+  listId: string;
   name: string;
 }
 
-export interface UpdateTaskListGroupInput {
+export interface UpdateTaskCategoryInput {
   name?: string;
   order?: number;
 }
@@ -144,6 +146,7 @@ export interface TaskRow {
   child_order: number | null;
   tags: string | null;
   list_id: string | null;
+  category_id?: string | null;
   created_at: string;
   updated_at: string;
   completed_at: string | null;
@@ -155,15 +158,15 @@ export interface TaskListRow {
   color: string | null;
   archived: number | boolean;
   list_order: number;
-  group_id?: string | null;
   created_at: string;
   updated_at: string;
 }
 
-export interface TaskListGroupRow {
+export interface TaskCategoryRow {
   id: string;
+  list_id: string;
   name: string;
-  group_order: number;
+  category_order: number;
   created_at: string;
   updated_at: string;
 }
@@ -188,6 +191,7 @@ export function normalizeCreateTaskInput(input: CreateTaskInput) {
     childOrder: normalizeOrder(input.childOrder),
     tags: normalizeTags(input.tags),
     listId: normalizeListId(input.listId),
+    categoryId: normalizeNullableId(input.categoryId),
   };
 }
 
@@ -214,6 +218,7 @@ export function normalizeUpdateTaskInput(input: UpdateTaskInput) {
   if ('childOrder' in input) patch.childOrder = normalizeOrder(input.childOrder);
   if ('tags' in input) patch.tags = normalizeTags(input.tags);
   if ('listId' in input) patch.listId = normalizeListId(input.listId);
+  if ('categoryId' in input) patch.categoryId = normalizeNullableId(input.categoryId);
 
   return patch;
 }
@@ -226,7 +231,6 @@ export function normalizeCreateTaskListInput(input: CreateTaskListInput) {
   return {
     name,
     color: normalizeNullableText(input.color),
-    groupId: normalizeNullableId(input.groupId),
   };
 }
 
@@ -241,20 +245,20 @@ export function normalizeUpdateTaskListInput(input: UpdateTaskListInput) {
   }
   if ('color' in input) patch.color = normalizeNullableText(input.color);
   if ('order' in input) patch.order = normalizeOrder(input.order);
-  if ('groupId' in input) patch.groupId = normalizeNullableId(input.groupId);
   return patch;
 }
 
-export function normalizeCreateTaskListGroupInput(input: CreateTaskListGroupInput) {
+export function normalizeCreateTaskCategoryInput(input: CreateTaskCategoryInput) {
+  const listId = normalizeListId(input.listId);
   const name = input.name.trim();
   if (!name) {
     throw new Error('分类名称不能为空');
   }
-  return { name };
+  return { listId, name };
 }
 
-export function normalizeUpdateTaskListGroupInput(input: UpdateTaskListGroupInput) {
-  const patch: UpdateTaskListGroupInput = {};
+export function normalizeUpdateTaskCategoryInput(input: UpdateTaskCategoryInput) {
+  const patch: UpdateTaskCategoryInput = {};
   if ('name' in input) {
     const name = input.name?.trim() ?? '';
     if (!name) {
@@ -283,6 +287,7 @@ export function mapTaskRow(row: TaskRow): Task {
     childOrder: normalizeOrder(row.child_order ?? 0),
     tags: parseTags(row.tags),
     listId: normalizeListId(row.list_id),
+    categoryId: normalizeNullableId(row.category_id),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     completedAt: row.completed_at,
@@ -296,17 +301,17 @@ export function mapTaskListRow(row: TaskListRow): TaskList {
     color: row.color,
     archived: row.archived === true || row.archived === 1,
     order: row.list_order,
-    groupId: row.group_id ?? null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
 }
 
-export function mapTaskListGroupRow(row: TaskListGroupRow): TaskListGroup {
+export function mapTaskCategoryRow(row: TaskCategoryRow): TaskCategory {
   return {
     id: row.id,
+    listId: normalizeListId(row.list_id),
     name: row.name,
-    order: row.group_order,
+    order: row.category_order,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };

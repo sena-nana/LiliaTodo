@@ -2,7 +2,9 @@ import {
   DEFAULT_TASK_LIST_ID,
   DEFAULT_TASK_LIST_NAME,
   type Task,
+  type TaskCategory,
   type TaskList,
+  type UpdateTaskCategoryInput,
   type UpdateTaskListInput,
 } from "../domain/tasks";
 import type { SqlDatabase } from "./taskRepository";
@@ -13,12 +15,16 @@ export const SYNC_STATE_ID = "default";
 export const INSERT_TASK_SQL = `INSERT INTO tasks (
   id, title, notes, status, priority, start_at, due_at, estimate_min,
   resources, reminders, checklist, parent_id, child_order, tags, list_id,
-  created_at, updated_at, completed_at
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)`;
+  category_id, created_at, updated_at, completed_at
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)`;
 
 export const INSERT_TASK_LIST_SQL = `INSERT INTO task_lists (
-  id, name, color, archived, list_order, group_id, created_at, updated_at
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`;
+  id, name, color, archived, list_order, created_at, updated_at
+) VALUES ($1, $2, $3, $4, $5, $6, $7)`;
+
+export const INSERT_TASK_CATEGORY_SQL = `INSERT INTO task_categories (
+  id, list_id, name, category_order, created_at, updated_at
+) VALUES ($1, $2, $3, $4, $5, $6)`;
 
 export const SCHEMA = [
   `CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -32,14 +38,14 @@ export const SCHEMA = [
     color TEXT,
     archived INTEGER NOT NULL DEFAULT 0 CHECK (archived IN (0, 1)),
     list_order INTEGER NOT NULL DEFAULT 0 CHECK (list_order >= 0),
-    group_id TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
   )`,
-  `CREATE TABLE IF NOT EXISTS task_list_groups (
+  `CREATE TABLE IF NOT EXISTS task_categories (
     id TEXT PRIMARY KEY,
+    list_id TEXT NOT NULL,
     name TEXT NOT NULL,
-    group_order INTEGER NOT NULL DEFAULT 0 CHECK (group_order >= 0),
+    category_order INTEGER NOT NULL DEFAULT 0 CHECK (category_order >= 0),
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
   )`,
@@ -59,6 +65,7 @@ export const SCHEMA = [
     child_order INTEGER NOT NULL DEFAULT 0 CHECK (child_order >= 0),
     tags TEXT NOT NULL DEFAULT '[]',
     list_id TEXT NOT NULL DEFAULT 'inbox',
+    category_id TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     completed_at TEXT
@@ -115,6 +122,8 @@ export const SCHEMA = [
    VALUES (7, 'create_entity_sync_versions', datetime('now'))`,
   `INSERT OR IGNORE INTO schema_migrations (version, name, applied_at)
    VALUES (8, 'create_task_list_groups', datetime('now'))`,
+  `INSERT OR IGNORE INTO schema_migrations (version, name, applied_at)
+   VALUES (9, 'create_task_categories', datetime('now'))`,
 ];
 
 const TASK_COLUMN_MIGRATIONS = [
@@ -125,10 +134,15 @@ const TASK_COLUMN_MIGRATIONS = [
   `ALTER TABLE tasks ADD COLUMN parent_id TEXT`,
   `ALTER TABLE tasks ADD COLUMN child_order INTEGER NOT NULL DEFAULT 0 CHECK (child_order >= 0)`,
   `ALTER TABLE tasks ADD COLUMN list_id TEXT NOT NULL DEFAULT 'inbox'`,
+  `ALTER TABLE tasks ADD COLUMN category_id TEXT`,
 ];
 
 const TASK_LIST_COLUMN_MIGRATIONS = [
-  `ALTER TABLE task_lists ADD COLUMN group_id TEXT`,
+  `ALTER TABLE task_lists DROP COLUMN group_id`,
+];
+
+const CATEGORY_MIGRATIONS = [
+  `DROP TABLE IF EXISTS task_list_groups`,
 ];
 
 export function appendUpdate(
@@ -159,6 +173,7 @@ export function taskParams(task: Task) {
     task.childOrder ?? 0,
     JSON.stringify(task.tags ?? []),
     task.listId ?? DEFAULT_TASK_LIST_ID,
+    task.categoryId ?? null,
     task.createdAt,
     task.updatedAt,
     task.completedAt,
@@ -172,20 +187,36 @@ export function taskListParams(list: TaskList) {
     list.color,
     list.archived ? 1 : 0,
     list.order,
-    list.groupId ?? null,
     list.createdAt,
     list.updatedAt,
   ];
 }
 
 export function taskListSyncPayload(list: TaskList) {
-  const { groupId: _groupId, ...payload } = list;
-  return payload;
+  return { ...list };
 }
 
 export function taskListSyncPatch(patch: UpdateTaskListInput) {
-  const { groupId: _groupId, ...syncPatch } = patch;
-  return syncPatch;
+  return { ...patch };
+}
+
+export function taskCategoryParams(category: TaskCategory) {
+  return [
+    category.id,
+    category.listId,
+    category.name,
+    category.order,
+    category.createdAt,
+    category.updatedAt,
+  ];
+}
+
+export function taskCategorySyncPayload(category: TaskCategory) {
+  return { ...category };
+}
+
+export function taskCategorySyncPatch(patch: UpdateTaskCategoryInput) {
+  return { ...patch };
 }
 
 export async function runTaskMigrations(db: SqlDatabase) {
@@ -193,6 +224,9 @@ export async function runTaskMigrations(db: SqlDatabase) {
     await runIgnorableMigration(db, statement);
   }
   for (const statement of TASK_LIST_COLUMN_MIGRATIONS) {
+    await runIgnorableMigration(db, statement);
+  }
+  for (const statement of CATEGORY_MIGRATIONS) {
     await runIgnorableMigration(db, statement);
   }
   await db.execute(`UPDATE tasks SET list_id = 'inbox' WHERE list_id IS NULL OR list_id = ''`);
@@ -208,9 +242,9 @@ export async function runTaskMigrations(db: SqlDatabase) {
 export async function ensureDefaultList(db: SqlDatabase, timestamp: string) {
   await db.execute(
     `INSERT OR IGNORE INTO task_lists (
-      id, name, color, archived, list_order, group_id, created_at, updated_at
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-    [DEFAULT_TASK_LIST_ID, DEFAULT_TASK_LIST_NAME, null, 0, 0, null, timestamp, timestamp],
+      id, name, color, archived, list_order, created_at, updated_at
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+    [DEFAULT_TASK_LIST_ID, DEFAULT_TASK_LIST_NAME, null, 0, 0, timestamp, timestamp],
   );
 }
 
@@ -219,7 +253,7 @@ async function runIgnorableMigration(db: SqlDatabase, statement: string) {
     await db.execute(statement);
   } catch (error) {
     const message = String((error as Error).message ?? error).toLowerCase();
-    if (!message.includes("duplicate") && !message.includes("exists")) {
+    if (!message.includes("duplicate") && !message.includes("exists") && !message.includes("no such column")) {
       throw error;
     }
   }

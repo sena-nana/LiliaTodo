@@ -1,13 +1,14 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
 import { ArrowDown, ArrowUp, Check, Plus, Save, Trash2, X } from 'lucide-vue-next';
-import type { Task, TaskChecklistItem, TaskList, TaskPriority, TaskReminder, TaskResource, TaskResourceType, UpdateTaskInput } from '../domain/tasks';
+import type { Task, TaskCategory, TaskChecklistItem, TaskList, TaskPriority, TaskReminder, TaskResource, TaskResourceType, UpdateTaskInput } from '../domain/tasks';
 import { taskHasDueReminder } from '../domain/tasks';
 import { buildEditableContextMenuItems, useContextMenu } from './contextMenu';
 
 const props = defineProps<{
   task: Task | null;
   lists: TaskList[];
+  categories?: TaskCategory[];
   parentCandidates: Task[];
   children: Task[];
   saving?: boolean;
@@ -35,6 +36,7 @@ interface Draft {
   parentId: string;
   tagsInput: string;
   listId: string;
+  categoryId: string;
 }
 
 type DraftResource = Omit<TaskResource, 'amount'> & {
@@ -44,6 +46,9 @@ type DraftResource = Omit<TaskResource, 'amount'> & {
 const contextMenu = useContextMenu();
 const draft = ref<Draft>(emptyDraft());
 const dueReminder = computed(() => props.task ? taskHasDueReminder(props.task) : false);
+const currentCategoryOptions = computed(() =>
+  (props.categories ?? []).filter((category) => category.listId === draft.value.listId),
+);
 const validParentCandidates = computed(() => {
   if (!props.task) return props.parentCandidates;
   const excluded = descendantIds(props.task.id, [...props.parentCandidates, ...props.children]);
@@ -54,6 +59,12 @@ const validParentCandidates = computed(() => {
 watch(() => props.task, (task) => {
   draft.value = task ? taskToDraft(task) : emptyDraft();
 }, { immediate: true });
+
+watch(() => draft.value.listId, () => {
+  if (draft.value.categoryId && !currentCategoryOptions.value.some((category) => category.id === draft.value.categoryId)) {
+    draft.value.categoryId = '';
+  }
+});
 
 function onEditableContextMenu(event: MouseEvent) {
   contextMenu.show(event, buildEditableContextMenuItems(event));
@@ -74,6 +85,7 @@ function save() {
     parentId: draft.value.parentId || null,
     tags: splitTags(draft.value.tagsInput),
     listId: draft.value.listId,
+    categoryId: draft.value.categoryId || null,
   });
 }
 
@@ -117,7 +129,7 @@ function updateReminderTime(reminder: TaskReminder, value: string) {
 }
 
 function emptyDraft(): Draft {
-  return { title: '', notes: '', priority: 0, startAtInput: '', dueAtInput: '', estimateInput: '', resources: [], reminders: [], checklist: [], parentId: '', tagsInput: '', listId: 'inbox' };
+  return { title: '', notes: '', priority: 0, startAtInput: '', dueAtInput: '', estimateInput: '', resources: [], reminders: [], checklist: [], parentId: '', tagsInput: '', listId: 'inbox', categoryId: '' };
 }
 
 function taskToDraft(task: Task): Draft {
@@ -134,6 +146,7 @@ function taskToDraft(task: Task): Draft {
     parentId: task.parentId ?? '',
     tagsInput: task.tags.join(', '),
     listId: task.listId,
+    categoryId: task.categoryId ?? '',
   };
 }
 
@@ -205,6 +218,7 @@ const resourceTypes: Array<{ value: TaskResourceType; label: string }> = [
           <div class="drawer-grid">
             <label><span>优先级</span><select v-model.number="draft.priority"><option :value="0">P0</option><option :value="1">P1</option><option :value="2">P2</option><option :value="3">P3</option></select></label>
             <label><span>所属清单</span><select v-model="draft.listId"><option v-for="list in lists" :key="list.id" :value="list.id">{{ list.name }}</option></select></label>
+            <label><span>所属分类</span><select v-model="draft.categoryId"><option value="">未分类</option><option v-for="category in currentCategoryOptions" :key="category.id" :value="category.id">{{ category.name }}</option></select></label>
             <label><span>开始时间</span><input v-model="draft.startAtInput" type="datetime-local" @contextmenu="onEditableContextMenu" /></label>
             <label><span>截止时间</span><input v-model="draft.dueAtInput" type="datetime-local" @contextmenu="onEditableContextMenu" /></label>
             <label><span>估时分钟</span><input v-model="draft.estimateInput" type="number" min="1" step="1" @contextmenu="onEditableContextMenu" /></label>
