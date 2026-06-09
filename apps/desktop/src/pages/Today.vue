@@ -1,9 +1,12 @@
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
 import { Check, Loader2, Plus, RefreshCw } from "lucide-vue-next";
 import { useTaskRepository } from "../data/TaskRepositoryContext";
-import type { TodayTaskGroups } from "../domain/tasks";
+import { useTaskDetailDrawer } from "../composables/useTaskDetailDrawer";
+import type { Task, TodayTaskGroups } from "../domain/tasks";
+import { taskHasDueReminder } from "../domain/tasks";
 import { buildEditableContextMenuItems, useContextMenu } from "../components/contextMenu";
+import TaskDetailDrawer from "../components/TaskDetailDrawer.vue";
 
 const contextMenu = useContextMenu();
 function onEditableContextMenu(event: MouseEvent) {
@@ -21,8 +24,30 @@ const destination = ref<"today" | "inbox">("today");
 const dueAtInput = ref("");
 const estimateInput = ref("");
 const loading = ref(true);
-const saving = ref(false);
+const quickAddSaving = ref(false);
 const error = ref<string | null>(null);
+const allVisibleTasks = computed(() => [
+  ...groups.value.overdue,
+  ...groups.value.dueToday,
+  ...groups.value.completedToday,
+]);
+const {
+  selectedTask,
+  childTasks,
+  lists,
+  saving,
+  drawerError,
+  parentCandidates,
+  openTask,
+  saveTask,
+  completeTask,
+  closeTask,
+  loadLists,
+} = useTaskDetailDrawer({
+  repository,
+  reload: load,
+  getParentCandidates: () => allVisibleTasks.value,
+});
 
 onMounted(() => {
   void load();
@@ -33,6 +58,7 @@ async function load() {
   error.value = null;
   try {
     groups.value = await repository.listToday(new Date());
+    await loadLists();
   } catch (e) {
     error.value = String(e);
   } finally {
@@ -42,7 +68,7 @@ async function load() {
 
 async function onQuickAdd() {
   if (!title.value.trim()) return;
-  saving.value = true;
+  quickAddSaving.value = true;
   error.value = null;
   try {
     await repository.createTask({
@@ -60,7 +86,7 @@ async function onQuickAdd() {
   } catch (e) {
     error.value = String(e);
   } finally {
-    saving.value = false;
+    quickAddSaving.value = false;
   }
 }
 
@@ -126,7 +152,7 @@ function formatDateTime(value: string | null) {
           placeholder="min"
           @contextmenu="onEditableContextMenu"
         />
-        <button class="primary" type="submit" :disabled="saving || !title.trim()">
+        <button class="primary" type="submit" :disabled="quickAddSaving || !title.trim()">
           <Plus :size="16" aria-hidden="true" />
           {{ destination === "today" ? "添加到今日" : "添加任务" }}
         </button>
@@ -152,10 +178,11 @@ function formatDateTime(value: string | null) {
         </div>
         <p v-if="groups.overdue.length === 0" class="empty-text">暂无内容。</p>
         <ul v-else class="task-list">
-          <li v-for="task in groups.overdue" :key="task.id" class="task-item">
+          <li v-for="task in groups.overdue" :key="task.id" class="task-item task-item--clickable" @click="openTask(task)">
             <span class="task-title is-danger">{{ task.title }}</span>
             <span class="task-meta">
               {{ formatDateTime(task.dueAt ?? task.completedAt) }}
+              <template v-if="taskHasDueReminder(task)"> · 提醒已到</template>
             </span>
           </li>
         </ul>
@@ -167,10 +194,11 @@ function formatDateTime(value: string | null) {
         </div>
         <p v-if="groups.dueToday.length === 0" class="empty-text">暂无内容。</p>
         <ul v-else class="task-list">
-          <li v-for="task in groups.dueToday" :key="task.id" class="task-item">
+          <li v-for="task in groups.dueToday" :key="task.id" class="task-item task-item--clickable" @click="openTask(task)">
             <span class="task-title">{{ task.title }}</span>
             <span class="task-meta">
-              {{ formatDateTime(task.dueAt ?? task.completedAt) }}
+              {{ formatDateTime(task.startAt ?? task.dueAt ?? task.completedAt) }}
+              <template v-if="taskHasDueReminder(task)"> · 提醒已到</template>
             </span>
           </li>
         </ul>
@@ -189,6 +217,7 @@ function formatDateTime(value: string | null) {
             v-for="task in groups.completedToday"
             :key="task.id"
             class="task-item"
+            @click="openTask(task)"
           >
             <span class="task-title">{{ task.title }}</span>
             <span class="task-meta">
@@ -198,5 +227,17 @@ function formatDateTime(value: string | null) {
         </ul>
       </section>
     </div>
+    <TaskDetailDrawer
+      :task="selectedTask"
+      :lists="lists"
+      :parent-candidates="parentCandidates"
+      :children="childTasks"
+      :saving="saving"
+      :error="drawerError"
+      @close="closeTask"
+      @save="saveTask"
+      @complete="completeTask"
+      @open-task="openTask"
+    />
   </section>
 </template>

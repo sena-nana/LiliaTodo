@@ -3,7 +3,6 @@ import { createMemoryHistory } from "vue-router";
 import { describe, expect, it, vi } from "vitest";
 import type { Component } from "vue";
 import { TaskRepositoryKey } from "../src/data/TaskRepositoryContext";
-import type { TaskRepository } from "../src/data/taskRepository";
 import SecondaryPanel from "../src/layouts/SecondaryPanel.vue";
 import Today from "../src/pages/Today.vue";
 import Inbox from "../src/pages/Inbox.vue";
@@ -11,6 +10,7 @@ import Calendar from "../src/pages/Calendar.vue";
 import SyncSettings from "../src/pages/settings/SyncSettings.vue";
 import AboutSettings from "../src/pages/settings/AboutSettings.vue";
 import { createMomoRouter } from "../src/router";
+import { fakeTaskRepository } from "./taskFixtures";
 
 vi.mock("@tauri-apps/api/app", () => ({
   getName: vi.fn().mockResolvedValue("Momo"),
@@ -26,6 +26,9 @@ describe("UI 精简", () => {
     render(SecondaryPanel, {
       global: {
         plugins: [router],
+        provide: {
+          [TaskRepositoryKey as symbol]: fakeTaskRepository(),
+        },
       },
     });
 
@@ -73,35 +76,8 @@ function renderWithRepository(component: Component) {
   return render(component, {
     global: {
       provide: {
-        [TaskRepositoryKey as symbol]: fakeRepository(),
+        [TaskRepositoryKey as symbol]: fakeTaskRepository(),
       },
     },
   });
-}
-
-function fakeRepository(): TaskRepository {
-  return {
-    databasePath: "sqlite:momo.db",
-    init: vi.fn().mockResolvedValue(undefined),
-    createTask: vi.fn(),
-    updateTask: vi.fn(),
-    setStatus: vi.fn(),
-    deleteTask: vi.fn(),
-    applyRemoteTask: vi.fn(),
-    deleteRemoteTask: vi.fn(),
-    listToday: vi.fn().mockResolvedValue({
-      overdue: [],
-      dueToday: [],
-      completedToday: [],
-    }),
-    listInbox: vi.fn().mockResolvedValue([]),
-    listAgenda: vi.fn().mockResolvedValue([]),
-    getStats: vi.fn(),
-    listPendingChanges: vi.fn(),
-    markChangeSynced: vi.fn(),
-    getSyncState: vi.fn(),
-    saveSyncState: vi.fn(),
-    recordSyncRun: vi.fn(),
-    listRecentSyncRuns: vi.fn(),
-  } as TaskRepository;
 }

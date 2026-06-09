@@ -9,7 +9,7 @@ import type {
   SyncState,
   TaskRepository,
 } from "../src/data/taskRepository";
-import type { Task } from "../src/domain/tasks";
+import type { Task, TaskList } from "../src/domain/tasks";
 import type {
   SyncProvider,
   SyncPullResult,
@@ -23,7 +23,9 @@ interface FakeRepositoryState {
   syncState: SyncState;
   savedStates: SaveSyncStateInput[];
   appliedTasks: Array<{ task: Task; remoteVersion?: number }>;
+  appliedLists: Array<{ list: TaskList; remoteVersion?: number }>;
   deletedIds: string[];
+  deletedListIds: string[];
   syncRuns: RecordSyncRunInput[];
 }
 
@@ -36,6 +38,8 @@ function makeRepositoryStub(
   | "getSyncState"
   | "applyRemoteTask"
   | "deleteRemoteTask"
+  | "applyRemoteList"
+  | "deleteRemoteList"
   | "saveSyncState"
   | "recordSyncRun"
 > {
@@ -54,6 +58,12 @@ function makeRepositoryStub(
     },
     async deleteRemoteTask(id) {
       state.deletedIds.push(id);
+    },
+    async applyRemoteList(list, remoteVersion) {
+      state.appliedLists.push({ list, remoteVersion });
+    },
+    async deleteRemoteList(id) {
+      state.deletedListIds.push(id);
     },
     async saveSyncState(input) {
       state.savedStates.push(input);
@@ -115,7 +125,9 @@ function freshState(overrides: Partial<FakeRepositoryState> = {}): FakeRepositor
     },
     savedStates: [],
     appliedTasks: [],
+    appliedLists: [],
     deletedIds: [],
+    deletedListIds: [],
     syncRuns: [],
     ...overrides,
   };
@@ -144,6 +156,8 @@ describe("WebDAV task 同步 runner", () => {
         pulledOpsCount: 0,
         appliedTaskCount: 0,
         deletedTaskCount: 0,
+        appliedTaskListCount: 0,
+        deletedTaskListCount: 0,
         serverCursor: "cursor-empty",
         message: "WebDAV 同步完成（无新增变更）",
       },
@@ -238,7 +252,7 @@ describe("WebDAV task 同步 runner", () => {
     expect(state.markedIds).toEqual([]);
   });
 
-  it("非 task entity 的 pending 在 push 阶段被忽略", async () => {
+  it("非支持实体的 pending 在 push 阶段被忽略", async () => {
     const pending: LocalChange[] = [
       {
         id: "lc-x",
@@ -262,6 +276,45 @@ describe("WebDAV task 同步 runner", () => {
     expect(result.ok).toBe(true);
     expect(pushSpy.lastOps).toBeNull();
     expect(state.markedIds).toEqual([]);
+  });
+
+  it("纯 push：本地 taskList 变更转 Op 并 markChangeSynced", async () => {
+    const pending: LocalChange[] = [
+      {
+        id: "lc-list",
+        entityType: "taskList",
+        entityId: "list-1",
+        action: "taskList.create",
+        payload: {
+          id: "list-1",
+          name: "项目",
+          color: null,
+          archived: false,
+          order: 0,
+          createdAt: "2026-05-19T09:00:00.000Z",
+          updatedAt: "2026-05-19T09:00:00.000Z",
+        },
+        createdAt: "2026-05-19T10:00:00.000Z",
+        syncedAt: null,
+      },
+    ];
+    const state = freshState({ pending });
+    const pushSpy = { lastOps: null as Op[] | null };
+    const provider = makeProviderStub({ pushSpy });
+    const runner = createWebdavTaskSyncRunner({
+      provider,
+      repository: makeRepositoryStub(state),
+      deviceId: "desk-a",
+    });
+
+    const result = await runner.runOnce();
+
+    expect(result.ok).toBe(true);
+    expect(pushSpy.lastOps?.[0]).toMatchObject({
+      op: "put",
+      target: { entityType: "taskList", entityId: "list-1" },
+    });
+    expect(state.markedIds).toEqual(["lc-list"]);
   });
 
   it("纯 pull：remote put op 经 LWW 合并 → pushEntity + applyRemoteTask", async () => {
@@ -315,6 +368,58 @@ describe("WebDAV task 同步 runner", () => {
     }
   });
 
+  it("旧 v1 task entity 收到 patch 后按 v2 写回并应用", async () => {
+    const state = freshState();
+    const entities = new Map<string, Entity<Record<string, unknown>>>([
+      [
+        "task:t-v1",
+        {
+          id: "t-v1",
+          type: "task",
+          schemaVersion: 1,
+          payload: {
+            title: "旧任务",
+            status: "active",
+            priority: 1,
+            createdAt: "2026-05-19T09:00:00.000Z",
+          },
+          updatedAt: "2026-05-19T09:00:00.000Z",
+          originDevice: "desk-old",
+        },
+      ],
+    ]);
+    const pushedEntities: Entity<Record<string, unknown>>[] = [];
+    const provider = makeProviderStub({
+      entities,
+      pullResult: {
+        ops: [
+          {
+            op: "patch",
+            target: { entityType: "task", entityId: "t-v1" },
+            params: { listId: "inbox", resources: [] },
+            ts: "2026-05-19T10:00:00.000Z",
+            actor: "desk-b",
+            originDevice: "desk-b",
+          },
+        ],
+        cursor: "cursor-v2",
+      },
+      onPushEntity: (entity) => pushedEntities.push(entity),
+    });
+    const runner = createWebdavTaskSyncRunner({
+      provider,
+      repository: makeRepositoryStub(state),
+      deviceId: "desk-a",
+    });
+
+    const result = await runner.runOnce();
+
+    expect(result.ok).toBe(true);
+    expect(pushedEntities[0].schemaVersion).toBe(2);
+    expect(state.appliedTasks[0].remoteVersion).toBe(2);
+    expect(state.appliedTasks[0].task.listId).toBe("inbox");
+  });
+
   it("pull 到 delete op 时 deleteRemoteTask 被调用而非 applyRemoteTask", async () => {
     const state = freshState();
     const remoteOps: Op[] = [
@@ -341,6 +446,60 @@ describe("WebDAV task 同步 runner", () => {
     expect(state.appliedTasks).toEqual([]);
     if (result.ok) {
       expect(result.report.deletedTaskCount).toBe(1);
+    }
+  });
+
+  it("远端 taskList put 和 delete 会分派到清单仓储接口", async () => {
+    const state = freshState();
+    const remoteOps: Op[] = [
+      {
+        op: "put",
+        target: { entityType: "taskList", entityId: "list-remote" },
+        params: {
+          name: "远端清单",
+          color: null,
+          archived: false,
+          order: 1,
+          createdAt: "2026-05-19T09:00:00.000Z",
+        },
+        ts: "2026-05-19T10:00:00.000Z",
+        actor: "desk-b",
+        originDevice: "desk-b",
+      },
+      {
+        op: "delete",
+        target: { entityType: "taskList", entityId: "list-old" },
+        params: null,
+        ts: "2026-05-19T11:00:00.000Z",
+        actor: "desk-b",
+        originDevice: "desk-b",
+      },
+    ];
+    const provider = makeProviderStub({
+      pullResult: { ops: remoteOps, cursor: "cursor-lists" },
+    });
+    const runner = createWebdavTaskSyncRunner({
+      provider,
+      repository: makeRepositoryStub(state),
+      deviceId: "desk-a",
+    });
+
+    const result = await runner.runOnce();
+
+    expect(result.ok).toBe(true);
+    expect(state.appliedLists[0]).toMatchObject({
+      list: {
+        id: "list-remote",
+        name: "远端清单",
+        archived: false,
+        order: 1,
+      },
+      remoteVersion: 1,
+    });
+    expect(state.deletedListIds).toEqual(["list-old"]);
+    if (result.ok) {
+      expect(result.report.appliedTaskListCount).toBe(1);
+      expect(result.report.deletedTaskListCount).toBe(1);
     }
   });
 

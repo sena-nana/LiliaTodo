@@ -1,17 +1,33 @@
-export type { TaskStatusDto, TaskDto } from "../../schema/src/task";
+export type {
+  TaskChecklistItemDto,
+  TaskDto,
+  TaskListDto,
+  TaskReminderDto,
+  TaskReminderStatusDto,
+  TaskResourceDto,
+  TaskResourceTypeDto,
+  TaskStatusDto,
+} from "../../schema/src/task";
 import type { TaskDto } from "../../schema/src/task";
+import type { TaskListDto } from "../../schema/src/task";
 
-export const SYNC_CONTRACT_VERSION = 1;
+export const SYNC_CONTRACT_VERSION = 2;
 
 export type LocalChangeActionDto =
   | "task.create"
   | "task.update"
   | "task.status"
-  | "task.delete";
+  | "task.delete"
+  | "taskList.create"
+  | "taskList.update"
+  | "taskList.archive"
+  | "taskList.delete";
+
+export type LocalChangeEntityTypeDto = "task" | "taskList";
 
 export interface LocalChangeDto {
   id: string;
-  entityType: "task";
+  entityType: LocalChangeEntityTypeDto;
   entityId: string;
   action: LocalChangeActionDto;
   payload: unknown;
@@ -72,7 +88,9 @@ export interface DeltaPullRequest {
 export interface DeltaPullResponse {
   contractVersion: typeof SYNC_CONTRACT_VERSION;
   tasks: TaskDto[];
+  taskLists: TaskListDto[];
   deletedTaskIds: string[];
+  deletedTaskListIds: string[];
   serverCursor: string;
   serverTime: string;
 }

@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 import type { Entity } from "../src/sync/types/entity";
 import type { LocalChange } from "../src/data/taskRepository";
 import {
+  entityToTaskList,
   entityToTask,
   localChangeToOp,
+  TASK_LIST_ENTITY_TYPE,
   TASK_ENTITY_TYPE,
 } from "../src/sync/webdav/taskBridge";
 
@@ -120,18 +122,65 @@ describe("LocalChange → Op 翻译", () => {
     expect(op.originDevice).toBe("desk-a");
   });
 
-  it("非 task entityType 抛错（caller 应预先 filter）", () => {
+  it("非支持 entityType 抛错（caller 应预先 filter）", () => {
     const change = baseChange({
       entityType: "project" as unknown as "task",
     });
-    expect(() => localChangeToOp(change, { deviceId: "desk-a" })).toThrow(
-      /task/,
+    expect(() => localChangeToOp(change, { deviceId: "desk-a" })).toThrow(/实体类型/);
+  });
+
+  it("taskList.create 折算为 put", () => {
+    const payload = {
+      id: "list-1",
+      name: "项目",
+      color: null,
+      archived: false,
+      order: 0,
+      createdAt: "2026-05-19T09:00:00.000Z",
+      updatedAt: "2026-05-19T09:00:00.000Z",
+    };
+    const op = localChangeToOp(
+      baseChange({
+        entityType: "taskList",
+        entityId: "list-1",
+        action: "taskList.create",
+        payload,
+      }),
+      { deviceId: "desk-a" },
     );
+    expect(op).toMatchObject({
+      op: "put",
+      target: { entityType: "taskList", entityId: "list-1" },
+      params: payload,
+    });
+  });
+
+  it("taskList.update 折算为 patch，updatedAt 抬到顶层字段", () => {
+    const op = localChangeToOp(
+      baseChange({
+        entityType: "taskList",
+        entityId: "list-1",
+        action: "taskList.update",
+        payload: {
+          patch: { name: "项目更新" },
+          updatedAt: "2026-05-19T11:00:00.000Z",
+        },
+      }),
+      { deviceId: "desk-a" },
+    );
+    expect(op.op).toBe("patch");
+    expect(op.params).toEqual({
+      name: "项目更新",
+      updatedAt: "2026-05-19T11:00:00.000Z",
+    });
   });
 });
 
 describe("Entity → Task 解码", () => {
-  function makeEntity(payload: Record<string, unknown>): Entity<unknown> {
+  function makeEntity(
+    payload: Record<string, unknown>,
+    overrides: Partial<Entity<unknown>> = {},
+  ): Entity<unknown> {
     return {
       id: "t-1",
       type: TASK_ENTITY_TYPE,
@@ -139,6 +188,7 @@ describe("Entity → Task 解码", () => {
       payload,
       updatedAt: "2026-05-19T13:00:00.000Z",
       originDevice: "desk-b",
+      ...overrides,
     };
   }
 
@@ -148,9 +198,16 @@ describe("Entity → Task 解码", () => {
       notes: "备注",
       status: "active",
       priority: 2,
+      startAt: null,
       dueAt: "2026-05-20T09:00:00.000Z",
       estimateMin: 30,
+      resources: [],
+      reminders: [],
+      checklist: [],
+      parentId: null,
+      childOrder: 0,
       tags: ["a", "b"],
+      listId: "inbox",
       createdAt: "2026-05-18T10:00:00.000Z",
       completedAt: null,
     });
@@ -160,13 +217,73 @@ describe("Entity → Task 解码", () => {
       notes: "备注",
       status: "active",
       priority: 2,
+      startAt: null,
       dueAt: "2026-05-20T09:00:00.000Z",
       estimateMin: 30,
+      resources: [],
+      reminders: [],
+      checklist: [],
+      parentId: null,
+      childOrder: 0,
       tags: ["a", "b"],
+      listId: "inbox",
       createdAt: "2026-05-18T10:00:00.000Z",
       updatedAt: "2026-05-19T13:00:00.000Z",
       completedAt: null,
     });
+  });
+
+  it("合法任务时间字段解码后统一规范化为 ISO", () => {
+    const task = entityToTask(
+      makeEntity(
+        {
+          title: "跨时区任务",
+          status: "completed",
+          priority: 1,
+          startAt: "2026-05-20T09:00:00+08:00",
+          dueAt: "2026-05-21T10:00:00+08:00",
+          createdAt: "2026-05-18T10:00:00+08:00",
+          completedAt: "2026-05-22T11:00:00+08:00",
+        },
+        { updatedAt: "2026-05-19T13:00:00+08:00" },
+      ),
+    );
+
+    expect(task.startAt).toBe("2026-05-20T01:00:00.000Z");
+    expect(task.dueAt).toBe("2026-05-21T02:00:00.000Z");
+    expect(task.createdAt).toBe("2026-05-18T02:00:00.000Z");
+    expect(task.updatedAt).toBe("2026-05-19T05:00:00.000Z");
+    expect(task.completedAt).toBe("2026-05-22T03:00:00.000Z");
+  });
+
+  it("远端任务时间字段非法时抛错避免写脏数据", () => {
+    const cases: Array<{
+      readonly payload: Record<string, unknown>;
+      readonly entity?: Partial<Entity<unknown>>;
+    }> = [
+      { payload: { startAt: "" } },
+      { payload: { dueAt: "不是日期" } },
+      { payload: { completedAt: "not-a-date" } },
+      { payload: { createdAt: "" } },
+      { payload: {}, entity: { updatedAt: "不是日期" } },
+    ];
+
+    for (const item of cases) {
+      expect(() =>
+        entityToTask(
+          makeEntity(
+            {
+              title: "坏时间",
+              status: "active",
+              priority: 0,
+              createdAt: "2026-05-18T10:00:00.000Z",
+              ...item.payload,
+            },
+            item.entity,
+          ),
+        ),
+      ).toThrow(/WebDAV 同步：.*必须是有效的 ISO 日期/);
+    }
   });
 
   it("notes/dueAt/estimateMin/completedAt 缺省时回落为 null", () => {
@@ -182,6 +299,69 @@ describe("Entity → Task 解码", () => {
     expect(task.estimateMin).toBeNull();
     expect(task.completedAt).toBeNull();
     expect(task.tags).toEqual([]);
+    expect(task.resources).toEqual([]);
+    expect(task.reminders).toEqual([]);
+    expect(task.checklist).toEqual([]);
+    expect(task.listId).toBe("inbox");
+  });
+
+  it("完整解码合法提醒字段", () => {
+    const reminder = {
+      id: "reminder-1",
+      triggerAt: "2026-05-20T08:30:00.000Z",
+      status: "pending",
+      message: "开会",
+    };
+    const task = entityToTask(
+      makeEntity({
+        title: "提醒任务",
+        status: "active",
+        priority: 0,
+        createdAt: "2026-05-18T10:00:00.000Z",
+        reminders: [reminder],
+      }),
+    );
+
+    expect(task.reminders).toEqual([reminder]);
+  });
+
+  it("远端提醒时间非法时抛错避免写脏数据", () => {
+    expect(() =>
+      entityToTask(
+        makeEntity({
+          title: "坏提醒",
+          status: "active",
+          priority: 0,
+          createdAt: "2026-05-18T10:00:00.000Z",
+          reminders: [
+            {
+              id: "reminder-1",
+              triggerAt: "",
+              status: "pending",
+              message: null,
+            },
+          ],
+        }),
+      ),
+    ).toThrow(/triggerAt.*ISO/);
+    expect(() =>
+      entityToTask(
+        makeEntity({
+          title: "坏提醒",
+          status: "active",
+          priority: 0,
+          createdAt: "2026-05-18T10:00:00.000Z",
+          reminders: [
+            {
+              id: "reminder-1",
+              triggerAt: "不是日期",
+              status: "pending",
+              message: null,
+            },
+          ],
+        }),
+      ),
+    ).toThrow(/triggerAt.*ISO/);
   });
 
   it("status / priority 越界时抛错避免写脏数据", () => {
@@ -231,5 +411,50 @@ describe("Entity → Task 解码", () => {
         }),
       ),
     ).toThrow(/tags/);
+  });
+});
+
+describe("Entity → TaskList 解码", () => {
+  it("完整字段照射成 TaskList，updatedAt 来自 entity 顶层", () => {
+    const entity: Entity<unknown> = {
+      id: "list-1",
+      type: TASK_LIST_ENTITY_TYPE,
+      schemaVersion: 1,
+      payload: {
+        name: "项目",
+        color: "#ff0000",
+        archived: false,
+        order: 2,
+        createdAt: "2026-05-18T10:00:00.000Z",
+      },
+      updatedAt: "2026-05-19T13:00:00.000Z",
+      originDevice: "desk-b",
+    };
+
+    expect(entityToTaskList(entity)).toEqual({
+      id: "list-1",
+      name: "项目",
+      color: "#ff0000",
+      archived: false,
+      order: 2,
+      createdAt: "2026-05-18T10:00:00.000Z",
+      updatedAt: "2026-05-19T13:00:00.000Z",
+    });
+  });
+
+  it("清单字段非法时抛错避免写脏数据", () => {
+    const entity: Entity<unknown> = {
+      id: "list-1",
+      type: TASK_LIST_ENTITY_TYPE,
+      schemaVersion: 1,
+      payload: {
+        name: 1,
+        createdAt: "2026-05-18T10:00:00.000Z",
+      },
+      updatedAt: "2026-05-19T13:00:00.000Z",
+      originDevice: "desk-b",
+    };
+
+    expect(() => entityToTaskList(entity)).toThrow(/taskList.name/);
   });
 });
