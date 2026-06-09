@@ -18,22 +18,28 @@ const creating = ref(false);
 const newName = ref("");
 const editingListId = ref<string | null>(null);
 const editingName = ref("");
+const listError = ref<string | null>(null);
 
 onMounted(() => {
   void loadLists();
 });
 
 async function loadLists() {
-  lists.value = await repository.listLists();
+  try {
+    lists.value = await repository.listLists();
+    listError.value = null;
+  } catch (e) {
+    listError.value = String(e);
+  }
 }
 
 async function createList() {
   if (!newName.value.trim()) return;
-  await repository.createList({ name: newName.value });
-  newName.value = "";
-  creating.value = false;
-  await loadLists();
-  notifyTaskListsChanged();
+  await runListMutation(async () => {
+    await repository.createList({ name: newName.value });
+    newName.value = "";
+    creating.value = false;
+  });
 }
 
 function beginRename(list: TaskList) {
@@ -43,16 +49,29 @@ function beginRename(list: TaskList) {
 
 async function saveRename(list: TaskList) {
   if (!editingName.value.trim()) return;
-  await repository.updateList(list.id, { name: editingName.value });
-  editingListId.value = null;
-  await loadLists();
-  notifyTaskListsChanged();
+  await runListMutation(async () => {
+    await repository.updateList(list.id, { name: editingName.value });
+    editingListId.value = null;
+  });
 }
 
 async function archiveList(list: TaskList) {
-  await repository.archiveList(list.id);
-  await loadLists();
-  notifyTaskListsChanged();
+  await runListMutation(() => repository.archiveList(list.id));
+}
+
+async function runListMutation(mutation: () => Promise<unknown>) {
+  listError.value = null;
+  try {
+    await mutation();
+    notifyTaskListsChanged();
+    await loadLists();
+  } catch (e) {
+    listError.value = String(e);
+  }
+}
+
+function displayError(value: string) {
+  return value.replace(/^Error:\s*/, "错误：");
 }
 </script>
 
@@ -88,6 +107,7 @@ async function archiveList(list: TaskList) {
         <button type="submit" aria-label="保存清单"><Check :size="13" aria-hidden="true" /></button>
         <button type="button" aria-label="取消新增清单" @click="creating = false"><X :size="13" aria-hidden="true" /></button>
       </form>
+      <p v-if="listError" class="state state--error state--inline sb-list-error">{{ displayError(listError) }}</p>
       <nav class="sb-tree" aria-label="任务清单">
         <div v-for="list in lists.filter((item) => item.id !== 'inbox')" :key="list.id" class="sb-list-row">
           <form v-if="editingListId === list.id" class="sb-list-form" @submit.prevent="saveRename(list)">
@@ -204,5 +224,12 @@ async function archiveList(list: TaskList) {
   height: 26px;
   min-width: 0;
   padding: 4px 7px;
+}
+
+.sb-list-error {
+  margin: 0;
+  padding: 0 8px;
+  font-size: 12px;
+  line-height: 1.4;
 }
 </style>
