@@ -1,4 +1,4 @@
-export const TASK_LISTS_CHANGED_EVENT = 'momo:task-lists-changed';
+export const TASK_LISTS_CHANGED_EVENT = 'liliatodo:task-lists-changed';
 
 export function notifyTaskListsChanged() {
   window.dispatchEvent(new CustomEvent(TASK_LISTS_CHANGED_EVENT));

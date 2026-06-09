@@ -9,7 +9,7 @@ import {
 } from "../domain/tasks";
 import type { SqlDatabase } from "./taskRepository";
 
-export const MOMO_DATABASE_PATH = "sqlite:momo.db";
+export const LILIATODO_DATABASE_PATH = "sqlite:liliatodo.db";
 export const SYNC_STATE_ID = "default";
 
 export const INSERT_TASK_SQL = `INSERT INTO tasks (

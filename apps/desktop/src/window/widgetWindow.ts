@@ -2,7 +2,7 @@ import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 
 export const WIDGET_WINDOW_OPTIONS = {
   url: "/widget",
-  title: "Momo 小组件",
+  title: "LiliaTodo 小组件",
   decorations: false,
   transparent: true,
   alwaysOnTop: true,

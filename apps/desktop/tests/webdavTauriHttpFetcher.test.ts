@@ -18,7 +18,7 @@ describe("createTauriHttpFetcher", () => {
     });
     const result = await fetcher.request({
       method: "PROPFIND",
-      url: "https://dav.jianguoyun.com/dav/momo/",
+      url: "https://dav.jianguoyun.com/dav/liliatodo/",
       headers: {
         Authorization: "Basic xxx",
         Depth: "1",
@@ -28,7 +28,7 @@ describe("createTauriHttpFetcher", () => {
     });
     expect(fetchSpy).toHaveBeenCalledTimes(1);
     const [calledUrl, calledInit] = fetchSpy.mock.calls[0];
-    expect(calledUrl).toBe("https://dav.jianguoyun.com/dav/momo/");
+    expect(calledUrl).toBe("https://dav.jianguoyun.com/dav/liliatodo/");
     expect(calledInit.method).toBe("PROPFIND");
     expect(calledInit.body).toBe("<propfind/>");
     expect((calledInit.headers as Record<string, string>)["Depth"]).toBe("1");
@@ -50,7 +50,7 @@ describe("createTauriHttpFetcher", () => {
     await expect(
       fetcher.request({
         method: "GET",
-        url: "https://dav.jianguoyun.com/dav/momo/x.json",
+        url: "https://dav.jianguoyun.com/dav/liliatodo/x.json",
         headers: {},
       }),
     ).rejects.toThrow(/network down/);

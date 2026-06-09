@@ -4,7 +4,7 @@ import {
   type RouterHistory,
 } from "vue-router";
 
-export function createMomoRouter(history: RouterHistory = createWebHistory()) {
+export function createLiliaTodoRouter(history: RouterHistory = createWebHistory()) {
   return createRouter({
     history,
     routes: [
@@ -31,4 +31,4 @@ export function createMomoRouter(history: RouterHistory = createWebHistory()) {
   });
 }
 
-export const router = createMomoRouter();
+export const router = createLiliaTodoRouter();

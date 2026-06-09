@@ -55,7 +55,7 @@ function yarnSpawn() {
   };
 }
 
-const startPort = parsePort(process.env.MOMO_TAURI_DEV_PORT);
+const startPort = parsePort(process.env.LILIATODO_TAURI_DEV_PORT);
 const port = await findAvailablePort(startPort);
 const devUrl = `http://localhost:${port}`;
 const config = JSON.stringify({
@@ -72,11 +72,11 @@ const args = [
 ];
 const env = {
   ...process.env,
-  MOMO_TAURI_DEV_PORT: String(port),
-  MOMO_TAURI_DEV_STRICT_PORT: "1",
+  LILIATODO_TAURI_DEV_PORT: String(port),
+  LILIATODO_TAURI_DEV_STRICT_PORT: "1",
 };
 
-if (process.env.MOMO_TAURI_DEV_DRY_RUN === "1") {
+if (process.env.LILIATODO_TAURI_DEV_DRY_RUN === "1") {
   const spawnConfig = yarnSpawn();
   console.log(
     JSON.stringify({
@@ -85,15 +85,15 @@ if (process.env.MOMO_TAURI_DEV_DRY_RUN === "1") {
       args,
       devUrl,
       env: {
-        MOMO_TAURI_DEV_PORT: env.MOMO_TAURI_DEV_PORT,
-        MOMO_TAURI_DEV_STRICT_PORT: env.MOMO_TAURI_DEV_STRICT_PORT,
+        LILIATODO_TAURI_DEV_PORT: env.LILIATODO_TAURI_DEV_PORT,
+        LILIATODO_TAURI_DEV_STRICT_PORT: env.LILIATODO_TAURI_DEV_STRICT_PORT,
       },
     }),
   );
   process.exit(0);
 }
 
-console.log(`[momo] 正在启动 Tauri dev server：${devUrl}`);
+console.log(`[liliatodo] 正在启动 Tauri dev server：${devUrl}`);
 
 const spawnConfig = yarnSpawn();
 const child = spawn(spawnConfig.command, [...spawnConfig.argsPrefix, ...args], {
@@ -104,7 +104,7 @@ const child = spawn(spawnConfig.command, [...spawnConfig.argsPrefix, ...args], {
 });
 
 child.on("error", (error) => {
-  console.error(`[momo] 启动 Tauri dev 失败：${error.message}`);
+  console.error(`[liliatodo] 启动 Tauri dev 失败：${error.message}`);
   process.exitCode = 1;
 });
 

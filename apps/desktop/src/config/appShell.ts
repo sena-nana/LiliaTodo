@@ -11,11 +11,11 @@ import {
 import { defineAsyncComponent, type Component } from "vue";
 import type { RouteLocationRaw } from "vue-router";
 
-export const APP_TITLE = "Momo";
+export const APP_TITLE = "LiliaTodo";
 
 export const SIDEBAR_CONFIG = {
-  widthStorageKey: "momo.sidebarWidth",
-  collapsedStorageKey: "momo.sidebarCollapsed",
+  widthStorageKey: "liliatodo.sidebarWidth",
+  collapsedStorageKey: "liliatodo.sidebarCollapsed",
   minWidth: 164,
   maxWidth: 420,
   defaultWidth: 184,

@@ -2,7 +2,7 @@
 import { ref, onMounted } from "vue";
 import { getVersion, getName } from "@tauri-apps/api/app";
 
-const appName = ref("Momo");
+const appName = ref("LiliaTodo");
 const appVersion = ref("");
 
 onMounted(async () => {

@@ -35,14 +35,14 @@ describe("工作区验证脚本", () => {
     expect(packageJson.packageManager).toBe("yarn@4.14.1");
   });
 
-  it("桌面端 Tauri dev 脚本使用 Momo 动态端口变量", () => {
+  it("桌面端 Tauri dev 脚本使用 LiliaTodo 动态端口变量", () => {
     const desktopRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
     const run = spawnSync("node", ["scripts/tauri-dev.mjs", "--verbose"], {
       cwd: desktopRoot,
       env: {
         ...process.env,
-        MOMO_TAURI_DEV_DRY_RUN: "1",
-        MOMO_TAURI_DEV_PORT: "34120",
+        LILIATODO_TAURI_DEV_DRY_RUN: "1",
+        LILIATODO_TAURI_DEV_PORT: "34120",
       },
       encoding: "utf-8",
     });
@@ -59,8 +59,8 @@ describe("工作区验证脚本", () => {
     expect(parsed.args).toContain("--config");
     expect(parsed.args).toContain("--verbose");
     expect(parsed.env).toMatchObject({
-      MOMO_TAURI_DEV_PORT: "34120",
-      MOMO_TAURI_DEV_STRICT_PORT: "1",
+      LILIATODO_TAURI_DEV_PORT: "34120",
+      LILIATODO_TAURI_DEV_STRICT_PORT: "1",
     });
   });
 
@@ -92,6 +92,6 @@ describe("工作区验证脚本", () => {
       encoding: "utf-8",
     });
     expect(bad.status).toBe(1);
-    expect(bad.stderr).toContain("Momo 需要通过 Corepack 使用 Yarn 4。");
+    expect(bad.stderr).toContain("LiliaTodo 需要通过 Corepack 使用 Yarn 4。");
   });
 });

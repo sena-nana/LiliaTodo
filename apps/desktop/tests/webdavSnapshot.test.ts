@@ -219,7 +219,7 @@ class StubWebdavClient implements WebdavClient {
 describe("listSnapshots / pickLatestSnapshot / writeSnapshot / loadSnapshot", () => {
   it("写后能列出并选最新", async () => {
     const client = new StubWebdavClient();
-    const layout = createWebdavLayout("/momo");
+    const layout = createWebdavLayout("/liliatodo");
     const e = makeEntity("task", "a", { title: "A" });
     await writeSnapshot({
       client,
@@ -246,7 +246,7 @@ describe("listSnapshots / pickLatestSnapshot / writeSnapshot / loadSnapshot", ()
 
   it("snapshots 目录缺失返回空列表", async () => {
     const client = new StubWebdavClient();
-    const layout = createWebdavLayout("/momo");
+    const layout = createWebdavLayout("/liliatodo");
     const result = await listSnapshots(client, layout);
     expect(result.snapshots).toEqual([]);
     expect(await pickLatestSnapshot(client, layout)).toBeNull();
@@ -255,7 +255,7 @@ describe("listSnapshots / pickLatestSnapshot / writeSnapshot / loadSnapshot", ()
   it("loadSnapshot 指向不存在文件时抛错", async () => {
     const client = new StubWebdavClient();
     await expect(
-      loadSnapshot(client, { timestamp: "202601010000", path: "/momo/snapshots/202601010000.jsonl" }),
+      loadSnapshot(client, { timestamp: "202601010000", path: "/liliatodo/snapshots/202601010000.jsonl" }),
     ).rejects.toThrow(/snapshot 文件不存在/);
   });
 });

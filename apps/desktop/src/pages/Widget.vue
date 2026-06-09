@@ -54,7 +54,7 @@ function formatToday() {
   <main class="widget">
     <header class="widget__header" data-tauri-drag-region>
       <div data-tauri-drag-region>
-        <h1>Momo 小组件</h1>
+        <h1>LiliaTodo 小组件</h1>
         <p>{{ formatToday() }}<template v-if="dueReminderCount"> · {{ dueReminderCount }} 个提醒已到</template></p>
       </div>
       <span>{{ activeTaskCount }}</span>

@@ -1,7 +1,7 @@
 // BE-12：WebDAV 同步层统一出口。
 //
 // 暴露给上层 SyncRunner 与 Settings 配置面板，不暴露内部子模块的辅助函数。
-// 仅依赖 `@momo/schema` 与 `sync/types/{entity,op}`，详见 paths.ts 边界注释。
+// 仅依赖 `@liliatodo/schema` 与 `sync/types/{entity,op}`，详见 paths.ts 边界注释。
 
 export {
   WebdavConflictError,

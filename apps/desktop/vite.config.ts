@@ -6,10 +6,10 @@ import vue from "@vitejs/plugin-vue";
 // @ts-expect-error process 是 Node.js 全局对象
 const host = process.env.TAURI_DEV_HOST;
 // @ts-expect-error process 是 Node.js 全局对象
-const momoDevPort = Number.parseInt(process.env.MOMO_TAURI_DEV_PORT ?? "", 10);
+const liliatodoDevPort = Number.parseInt(process.env.LILIATODO_TAURI_DEV_PORT ?? "", 10);
 // @ts-expect-error process 是 Node.js 全局对象
-const strictPort = process.env.MOMO_TAURI_DEV_STRICT_PORT === "1";
-const port = Number.isInteger(momoDevPort) ? momoDevPort : 1420;
+const strictPort = process.env.LILIATODO_TAURI_DEV_STRICT_PORT === "1";
+const port = Number.isInteger(liliatodoDevPort) ? liliatodoDevPort : 1420;
 
 export default defineConfig(async () => ({
   plugins: [vue()],

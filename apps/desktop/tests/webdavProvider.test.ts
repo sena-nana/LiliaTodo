@@ -174,7 +174,7 @@ describe("BE-12 WebdavSyncProvider 端到端骨架", () => {
     const result = await provider.push(ops);
     expect(result.acceptedCount).toBe(2);
     expect(result.chunkPath).toBe(
-      "/momo/oplog/deviceA/20260519/000000.jsonl",
+      "/liliatodo/oplog/deviceA/20260519/000000.jsonl",
     );
     const persisted = await client.get(result.chunkPath!);
     expect(persisted).not.toBeNull();
@@ -206,8 +206,8 @@ describe("BE-12 WebdavSyncProvider 端到端骨架", () => {
     const second = await provider.push([
       makeOp({ ts: "2026-05-19T11:00:00.000Z" }),
     ]);
-    expect(first.chunkPath).toBe("/momo/oplog/deviceA/20260519/000000.jsonl");
-    expect(second.chunkPath).toBe("/momo/oplog/deviceA/20260519/000001.jsonl");
+    expect(first.chunkPath).toBe("/liliatodo/oplog/deviceA/20260519/000000.jsonl");
+    expect(second.chunkPath).toBe("/liliatodo/oplog/deviceA/20260519/000001.jsonl");
   });
 
   it("pull 从空 cursor 拉取全部 ops 并返回新 cursor", async () => {

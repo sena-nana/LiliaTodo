@@ -76,7 +76,7 @@ describe("pickLockStrategy", () => {
 describe("createEtagOptimisticLockStrategy", () => {
   it("把 stat 拿到的 etag 作为 token 传给 work", async () => {
     const stat: WebdavStat = {
-      path: "/momo/entities/task/x.json",
+      path: "/liliatodo/entities/task/x.json",
       etag: "abc",
       lastModified: "2026-01-01T00:00:00.000Z",
       size: 10,
@@ -89,7 +89,7 @@ describe("createEtagOptimisticLockStrategy", () => {
     });
     const strategy = createEtagOptimisticLockStrategy(client);
     const work = vi.fn(async () => "ok");
-    const result = await strategy.withLock("/momo/entities/task/x.json", work);
+    const result = await strategy.withLock("/liliatodo/entities/task/x.json", work);
     expect(result).toBe("ok");
     expect(work).toHaveBeenCalledTimes(1);
     const token = work.mock.calls[0][0];
@@ -106,7 +106,7 @@ describe("createEtagOptimisticLockStrategy", () => {
     });
     const strategy = createEtagOptimisticLockStrategy(client);
     const work = vi.fn(async () => undefined);
-    await strategy.withLock("/momo/entities/task/new.json", work);
+    await strategy.withLock("/liliatodo/entities/task/new.json", work);
     const token = work.mock.calls[0][0];
     expect(token.expectedEtag).toBeNull();
     expect(token.expectedLastModified).toBeNull();
@@ -116,7 +116,7 @@ describe("createEtagOptimisticLockStrategy", () => {
 describe("createReadBeforeWriteLockStrategy", () => {
   it("写前后各 stat 一次，返回 work 结果", async () => {
     const stat: WebdavStat = {
-      path: "/momo/entities/task/x.json",
+      path: "/liliatodo/entities/task/x.json",
       etag: null,
       lastModified: "2026-01-01T00:00:00.000Z",
       size: 10,
@@ -126,7 +126,7 @@ describe("createReadBeforeWriteLockStrategy", () => {
     const client = makeClient({ stat: statSpy });
     const strategy = createReadBeforeWriteLockStrategy(client);
     const work = vi.fn(async () => "done");
-    const result = await strategy.withLock("/momo/entities/task/x.json", work);
+    const result = await strategy.withLock("/liliatodo/entities/task/x.json", work);
     expect(result).toBe("done");
     expect(statSpy).toHaveBeenCalledTimes(2);
     const token = work.mock.calls[0][0];

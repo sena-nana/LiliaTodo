@@ -17,21 +17,21 @@ import {
 } from "../src/sync/webdav/paths";
 
 describe("BE-12 WebDAV 路径布局", () => {
-  it("默认 root 为 /momo", () => {
-    expect(WEBDAV_DEFAULT_ROOT).toBe("/momo");
+  it("默认 root 为 /liliatodo", () => {
+    expect(WEBDAV_DEFAULT_ROOT).toBe("/liliatodo");
     const layout = createWebdavLayout();
-    expect(layout.root).toBe("/momo");
-    expect(layout.schemaVersion).toBe("/momo/schema-version");
-    expect(layout.deviceLocks).toBe("/momo/device-locks");
-    expect(layout.entities).toBe("/momo/entities");
-    expect(layout.oplog).toBe("/momo/oplog");
-    expect(layout.snapshots).toBe("/momo/snapshots");
+    expect(layout.root).toBe("/liliatodo");
+    expect(layout.schemaVersion).toBe("/liliatodo/schema-version");
+    expect(layout.deviceLocks).toBe("/liliatodo/device-locks");
+    expect(layout.entities).toBe("/liliatodo/entities");
+    expect(layout.oplog).toBe("/liliatodo/oplog");
+    expect(layout.snapshots).toBe("/liliatodo/snapshots");
   });
 
   it("normalizeRoot 处理前后斜杠", () => {
-    expect(normalizeRoot("momo")).toBe("/momo");
-    expect(normalizeRoot("/momo/")).toBe("/momo");
-    expect(normalizeRoot("/momo")).toBe("/momo");
+    expect(normalizeRoot("liliatodo")).toBe("/liliatodo");
+    expect(normalizeRoot("/liliatodo/")).toBe("/liliatodo");
+    expect(normalizeRoot("/liliatodo")).toBe("/liliatodo");
     expect(normalizeRoot("/foo/bar/")).toBe("/foo/bar");
   });
 
@@ -43,10 +43,10 @@ describe("BE-12 WebDAV 路径布局", () => {
   it("entityPath / entityCollectionPath 按 plan D 节布局", () => {
     const layout = createWebdavLayout();
     expect(entityPath(layout, "task", "abc-123")).toBe(
-      "/momo/entities/task/abc-123.json",
+      "/liliatodo/entities/task/abc-123.json",
     );
     expect(entityCollectionPath(layout, "notification")).toBe(
-      "/momo/entities/notification",
+      "/liliatodo/entities/notification",
     );
   });
 
@@ -59,27 +59,27 @@ describe("BE-12 WebDAV 路径布局", () => {
   it("oplog 路径按 device/yyyymmdd/seq 布局", () => {
     const layout = createWebdavLayout();
     expect(oplogDeviceCollectionPath(layout, "deviceA")).toBe(
-      "/momo/oplog/deviceA",
+      "/liliatodo/oplog/deviceA",
     );
     expect(oplogDayCollectionPath(layout, "deviceA", "20260519")).toBe(
-      "/momo/oplog/deviceA/20260519",
+      "/liliatodo/oplog/deviceA/20260519",
     );
     expect(oplogChunkPath(layout, "deviceA", "20260519", 7)).toBe(
-      "/momo/oplog/deviceA/20260519/000007.jsonl",
+      "/liliatodo/oplog/deviceA/20260519/000007.jsonl",
     );
   });
 
   it("deviceLockPath 按 device 名命名", () => {
     const layout = createWebdavLayout();
     expect(deviceLockPath(layout, "deviceA")).toBe(
-      "/momo/device-locks/deviceA.lock",
+      "/liliatodo/device-locks/deviceA.lock",
     );
   });
 
   it("snapshotPath 校验 yyyymmddhhmm", () => {
     const layout = createWebdavLayout();
     expect(snapshotPath(layout, "202605191230")).toBe(
-      "/momo/snapshots/202605191230.jsonl",
+      "/liliatodo/snapshots/202605191230.jsonl",
     );
     expect(() => snapshotPath(layout, "2026051912")).toThrow(/yyyymmddhhmm/);
   });
@@ -100,13 +100,13 @@ describe("BE-12 WebDAV 路径布局", () => {
   });
 
   it("自定义 root 不影响命名规则", () => {
-    const layout = createWebdavLayout("/dav/momo-prod");
-    expect(layout.root).toBe("/dav/momo-prod");
+    const layout = createWebdavLayout("/dav/liliatodo-prod");
+    expect(layout.root).toBe("/dav/liliatodo-prod");
     expect(entityPath(layout, "task", "t1")).toBe(
-      "/dav/momo-prod/entities/task/t1.json",
+      "/dav/liliatodo-prod/entities/task/t1.json",
     );
     expect(oplogChunkPath(layout, "deviceA", "20260519", 1)).toBe(
-      "/dav/momo-prod/oplog/deviceA/20260519/000001.jsonl",
+      "/dav/liliatodo-prod/oplog/deviceA/20260519/000001.jsonl",
     );
   });
 });

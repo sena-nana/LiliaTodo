@@ -141,13 +141,13 @@ describe("任务领域", () => {
 });
 
 describe("TaskRepository 仓储", () => {
-  it("初始化 schema 并加载固定 momo 数据库", async () => {
+  it("初始化 schema 并加载固定 liliatodo 数据库", async () => {
     const db = new RecordingDatabase();
     const repository = createTaskRepository(() => Promise.resolve(db));
 
     await repository.init();
 
-    expect(repository.databasePath).toBe("sqlite:momo.db");
+    expect(repository.databasePath).toBe("sqlite:liliatodo.db");
     expect(db.executedSql.join("\n")).toContain("CREATE TABLE IF NOT EXISTS tasks");
     expect(db.executedSql.join("\n")).toContain("CREATE TABLE IF NOT EXISTS schema_migrations");
     expect(db.executedSql.join("\n")).toContain("CREATE TABLE IF NOT EXISTS local_changes");
@@ -312,7 +312,7 @@ describe("TaskRepository 仓储", () => {
     const repository = createTaskRepository(() => Promise.resolve(db));
 
     await expect(repository.getStats()).resolves.toEqual({
-      databasePath: "sqlite:momo.db",
+      databasePath: "sqlite:liliatodo.db",
       totalTasks: 4,
       activeTasks: 2,
       completedTasks: 1,
