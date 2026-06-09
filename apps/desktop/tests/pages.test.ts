@@ -12,6 +12,7 @@ import type { CreateTaskInput, Task, TodayTaskGroups } from "../src/domain/tasks
 import type { WebdavSyncController } from "../src/sync/defaultSettingsSyncRuntime";
 import type {
   WebdavRunOnceResult,
+  WebdavRunReport,
   WebdavRuntimeResolution,
   WebdavSecretsStore,
 } from "../src/sync/webdav";
@@ -21,6 +22,7 @@ import Calendar from "../src/pages/Calendar.vue";
 import SyncSettings from "../src/pages/settings/SyncSettings.vue";
 import Widget from "../src/pages/Widget.vue";
 import App from "../src/App.vue";
+import Settings from "../src/pages/Settings.vue";
 import { createMomoRouter } from "../src/router";
 import { normalizeSettingsTab } from "../src/config/appShell";
 
@@ -419,6 +421,45 @@ describe("桌面端 MVP 页面", () => {
     expect(screen.queryByText(/远程同步配置/)).not.toBeInTheDocument();
   });
 
+  it("设置页通过 WebDAV controller 订阅同步完成通知", async () => {
+    const repository = fakeRepository();
+    const controller = fakeWebdavController({ kind: "enabled" });
+    const router = createMomoRouter(createMemoryHistory());
+    await router.push("/settings?tab=sync");
+    await router.isReady();
+
+    renderWithRepository(Settings, repository, {
+      global: {
+        plugins: [router],
+        provide: {
+          [WebdavSyncControllerKey as symbol]: controller,
+          [WebdavSecretsStoreKey as symbol]: fakeSecretsStore({
+            baseUrl: "https://dav.jianguoyun.com/dav",
+            root: "/momo",
+            username: "demo",
+            password: "secret",
+            deviceId: "desk-1",
+          }),
+        },
+      },
+    });
+
+    expect(await screen.findByText("WebDAV 同步（坚果云优先）")).toBeInTheDocument();
+    expect(controller.onRunCompleted).toHaveBeenCalledTimes(1);
+
+    controller.emitRunCompleted({
+      pushedOpsCount: 0,
+      markedSyncedCount: 0,
+      pulledOpsCount: 2,
+      appliedTaskCount: 2,
+      deletedTaskCount: 0,
+      serverCursor: "cursor-after",
+      message: "已拉取 2 条远端变更",
+    });
+
+    expect(await screen.findByText("已拉取 2 条远端变更")).toBeInTheDocument();
+  });
+
   it("设置 tab 使用同步作为默认回退", () => {
     expect(normalizeSettingsTab("sync")).toBe("sync");
     expect(normalizeSettingsTab("appearance")).toBe("appearance");
@@ -498,7 +539,11 @@ interface FakeWebdavControllerOptions {
 
 function fakeWebdavController(
   options: FakeWebdavControllerOptions,
-): WebdavSyncController & { runOnce: ReturnType<typeof vi.fn> } {
+): WebdavSyncController & {
+  runOnce: ReturnType<typeof vi.fn>;
+  onRunCompleted: ReturnType<typeof vi.fn>;
+  emitRunCompleted(report: WebdavRunReport): void;
+} {
   const result: WebdavRunOnceResult =
     options.result ?? { ok: false, error: "尚未配置 WebDAV 凭据" };
   const resolution: WebdavRuntimeResolution =
@@ -519,9 +564,17 @@ function fakeWebdavController(
       }
       : { kind: "disabled", reason: "尚未配置 WebDAV 凭据" };
   const runOnce = vi.fn().mockResolvedValue(result);
+  const listeners = new Set<(report: WebdavRunReport) => void>();
   return {
     inspect: vi.fn().mockResolvedValue(resolution),
     runOnce,
+    onRunCompleted: vi.fn((listener: (report: WebdavRunReport) => void) => {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    }),
+    emitRunCompleted(report: WebdavRunReport) {
+      listeners.forEach((listener) => listener(report));
+    },
   };
 }
 

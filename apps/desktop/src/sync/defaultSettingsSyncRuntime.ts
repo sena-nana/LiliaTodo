@@ -10,15 +10,20 @@
 //   - 单测里直接注入 in-memory secretsStore，无需 Tauri 运行时。
 
 import type {
+  WebdavRunReport,
   WebdavRunOnceResult,
   WebdavRuntimeResolution,
 } from "./webdav";
+
+export type WebdavRunCompletedListener = (report: WebdavRunReport) => void;
 
 export interface WebdavSyncController {
   /** 探测当前 WebDAV runtime 状态（凭据/装配是否就绪），UI 用来显示提示。 */
   inspect(): Promise<WebdavRuntimeResolution>;
   /** 执行一次 push+pull；凭据缺失或装配失败时返回 ok:false。 */
   runOnce(): Promise<WebdavRunOnceResult>;
+  /** 订阅成功完成的同步报告；返回取消订阅函数。 */
+  onRunCompleted(listener: WebdavRunCompletedListener): () => void;
 }
 
 export interface DefaultSettingsSyncRuntimeOptions {
@@ -44,6 +49,18 @@ export function createDefaultSettingsSyncRuntime({
 function createWebdavController(
   factory: () => Promise<WebdavRuntimeResolution>,
 ): WebdavSyncController {
+  const completedListeners = new Set<WebdavRunCompletedListener>();
+
+  function notifyRunCompleted(report: WebdavRunReport) {
+    completedListeners.forEach((listener) => {
+      try {
+        listener(report);
+      } catch {
+        // UI 订阅者异常不应反向破坏同步结果。
+      }
+    });
+  }
+
   return {
     inspect() {
       return factory().catch((error) => ({
@@ -68,7 +85,17 @@ function createWebdavController(
       if (resolution.kind === "disabled") {
         return { ok: false, error: resolution.reason };
       }
-      return resolution.runner.runOnce();
+      const result = await resolution.runner.runOnce();
+      if (result.ok) {
+        notifyRunCompleted(result.report);
+      }
+      return result;
+    },
+    onRunCompleted(listener) {
+      completedListeners.add(listener);
+      return () => {
+        completedListeners.delete(listener);
+      };
     },
   };
 }
