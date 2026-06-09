@@ -157,6 +157,25 @@ describe("TaskRepository 仓储", () => {
     expect(db.executedSql.join("\n")).toContain("CREATE TABLE IF NOT EXISTS entity_sync_versions");
   });
 
+  it("收件箱查询脱离仓储对象调用时仍加载默认清单任务", async () => {
+    const db = new RecordingDatabase({
+      taskRows: [
+        taskRow({ id: "inbox-1", title: "收件箱任务", list_id: "inbox" }),
+      ],
+    });
+    const repository = createTaskRepository(() => Promise.resolve(db));
+    const listInbox = repository.listInbox;
+
+    await expect(listInbox()).resolves.toEqual([
+      expect.objectContaining({
+        id: "inbox-1",
+        title: "收件箱任务",
+        listId: "inbox",
+      }),
+    ]);
+    expect(db.paramsForLastSql("WHERE status = 'active' AND list_id = $1")).toEqual(["inbox"]);
+  });
+
   it("创建规范化 active 任务行并记录本地变更", async () => {
     const db = new RecordingDatabase();
     const repository = createTaskRepository(() => Promise.resolve(db), {

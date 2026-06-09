@@ -390,6 +390,18 @@ export function createTaskRepository(
     }
   }
 
+  async function listTasksByList(listId: string) {
+    await init();
+    const db = await getDb();
+    const rows = await db.select<TaskRow>(
+      `SELECT * FROM tasks
+       WHERE status = 'active' AND list_id = $1
+       ORDER BY child_order ASC, COALESCE(start_at, due_at, created_at) ASC, priority DESC`,
+      [listId],
+    );
+    return rows.map(mapTaskRow);
+  }
+
   return {
     databasePath: MOMO_DATABASE_PATH,
     init,
@@ -616,17 +628,7 @@ export function createTaskRepository(
       await deleteEntityRemoteVersion(db, 'taskCategory', categoryId);
     },
 
-    async listTasksByList(listId) {
-      await init();
-      const db = await getDb();
-      const rows = await db.select<TaskRow>(
-        `SELECT * FROM tasks
-         WHERE status = 'active' AND list_id = $1
-         ORDER BY child_order ASC, COALESCE(start_at, due_at, created_at) ASC, priority DESC`,
-        [listId],
-      );
-      return rows.map(mapTaskRow);
-    },
+    listTasksByList,
 
     async listTaskChildren(parentId) {
       await init();
@@ -908,7 +910,7 @@ export function createTaskRepository(
     },
 
     async listInbox() {
-      return this.listTasksByList(DEFAULT_TASK_LIST_ID);
+      return listTasksByList(DEFAULT_TASK_LIST_ID);
     },
 
     async listAgenda(start, end) {
