@@ -1,35 +1,33 @@
 <script setup lang="ts">
 import { onMounted, ref } from "vue";
-import { Check, Loader2, Pencil, RefreshCw, Save, Trash2, X } from "lucide-vue-next";
+import { Check, Loader2, Pencil, RefreshCw, Trash2 } from "lucide-vue-next";
 import { useTaskRepository } from "../data/TaskRepositoryContext";
-import type { Task, TaskPriority, UpdateTaskInput } from "../domain/tasks";
-import { buildEditableContextMenuItems, useContextMenu } from "../components/contextMenu";
-
-const contextMenu = useContextMenu();
-function onEditableContextMenu(event: MouseEvent) {
-  contextMenu.show(event, buildEditableContextMenuItems(event));
-}
-
-interface DraftTask {
-  title: string;
-  notes: string;
-  priority: TaskPriority;
-  dueAtInput: string;
-  estimateInput: string;
-}
+import { useTaskDetailDrawer } from "../composables/useTaskDetailDrawer";
+import type { Task } from "../domain/tasks";
+import { taskHasDueReminder } from "../domain/tasks";
+import TaskDetailDrawer from "../components/TaskDetailDrawer.vue";
 
 const repository = useTaskRepository();
 const tasks = ref<Task[]>([]);
-const editing = ref<string | null>(null);
-const draft = ref<DraftTask>({
-  title: "",
-  notes: "",
-  priority: 0,
-  dueAtInput: "",
-  estimateInput: "",
-});
 const loading = ref(true);
 const error = ref<string | null>(null);
+const {
+  selectedTask,
+  childTasks,
+  lists,
+  saving,
+  drawerError,
+  parentCandidates,
+  openTask,
+  saveTask,
+  completeTask,
+  closeTask,
+  loadLists,
+} = useTaskDetailDrawer({
+  repository,
+  reload: load,
+  getParentCandidates: () => tasks.value,
+});
 
 onMounted(() => {
   void load();
@@ -40,6 +38,7 @@ async function load() {
   error.value = null;
   try {
     tasks.value = await repository.listInbox();
+    await loadLists();
   } catch (e) {
     error.value = String(e);
   } finally {
@@ -47,78 +46,15 @@ async function load() {
   }
 }
 
-async function completeTask(task: Task) {
-  error.value = null;
-  try {
-    await repository.setStatus(task.id, "completed");
-    await load();
-  } catch (e) {
-    error.value = String(e);
-  }
-}
-
 async function deleteTask(task: Task) {
   error.value = null;
   try {
     await repository.deleteTask(task.id);
+    if (selectedTask.value?.id === task.id) closeTask();
     await load();
   } catch (e) {
     error.value = String(e);
   }
-}
-
-function beginEdit(task: Task) {
-  editing.value = task.id;
-  draft.value = {
-    title: task.title,
-    notes: task.notes ?? "",
-    priority: task.priority,
-    dueAtInput: isoToDateTimeInput(task.dueAt),
-    estimateInput: task.estimateMin?.toString() ?? "",
-  };
-}
-
-async function saveEdit(task: Task) {
-  if (!draft.value.title.trim()) return;
-  const patch: UpdateTaskInput = {
-    title: draft.value.title,
-    notes: draft.value.notes,
-    priority: draft.value.priority,
-  };
-  if (draft.value.dueAtInput) {
-    patch.dueAt = dateTimeInputToIso(draft.value.dueAtInput);
-  } else if (task.dueAt) {
-    patch.dueAt = null;
-  }
-  if (draft.value.estimateInput) {
-    patch.estimateMin = estimateInputToNumber(draft.value.estimateInput);
-  } else if (task.estimateMin != null) {
-    patch.estimateMin = null;
-  }
-  error.value = null;
-  try {
-    await repository.updateTask(task.id, patch);
-    editing.value = null;
-    await load();
-  } catch (e) {
-    error.value = String(e);
-  }
-}
-
-function isoToDateTimeInput(value: string | null) {
-  if (!value) return "";
-  const date = new Date(value);
-  const offsetDate = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
-  return offsetDate.toISOString().slice(0, 16);
-}
-
-function dateTimeInputToIso(value: string) {
-  return new Date(value).toISOString();
-}
-
-function estimateInputToNumber(value: string) {
-  const parsed = Number(value);
-  return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
 }
 
 function displayError(value: string) {
@@ -149,95 +85,43 @@ function displayError(value: string) {
       <li
         v-for="task in tasks"
         :key="task.id"
-        class="task-item task-item--actions"
+        class="task-item task-item--actions task-item--clickable"
+        @click="openTask(task)"
       >
-        <form
-          v-if="editing === task.id"
-          class="edit-row"
-          @submit.prevent="saveEdit(task)"
-        >
-          <input
-            v-model="draft.title"
-            :aria-label="`编辑 ${task.title} 标题`"
-            @contextmenu="onEditableContextMenu"
-          />
-          <input
-            v-model="draft.notes"
-            :aria-label="`编辑 ${task.title} 备注`"
-            placeholder="备注"
-            @contextmenu="onEditableContextMenu"
-          />
-          <select
-            v-model.number="draft.priority"
-            :aria-label="`编辑 ${task.title} 优先级`"
-          >
-            <option :value="0">P0</option>
-            <option :value="1">P1</option>
-            <option :value="2">P2</option>
-            <option :value="3">P3</option>
-          </select>
-          <input
-            v-model="draft.dueAtInput"
-            :aria-label="`编辑 ${task.title} 截止时间`"
-            type="datetime-local"
-            @contextmenu="onEditableContextMenu"
-          />
-          <input
-            v-model="draft.estimateInput"
-            :aria-label="`编辑 ${task.title} 估时分钟`"
-            type="number"
-            min="1"
-            step="1"
-            placeholder="min"
-            @contextmenu="onEditableContextMenu"
-          />
-          <button class="primary" type="submit" :aria-label="`保存 ${task.title}`">
-            <Save :size="16" aria-hidden="true" />
+        <div class="task-copy">
+          <span class="task-title">{{ task.title }}</span>
+          <span v-if="task.notes" class="task-meta">{{ task.notes }}</span>
+          <span class="task-meta">
+            <template v-if="task.startAt">开始 {{ task.startAt }}</template>
+            <template v-if="task.dueAt"> 截止 {{ task.dueAt }}</template>
+            <template v-if="taskHasDueReminder(task)"> 提醒已到</template>
+          </span>
+          <span v-if="task.priority > 0" class="task-badge">P{{ task.priority }}</span>
+        </div>
+        <div class="task-actions" @click.stop>
+          <button type="button" class="icon-button" :aria-label="`完成 ${task.title}`" @click="completeTask(task)">
+            <Check :size="16" aria-hidden="true" />
           </button>
-          <button
-            type="button"
-            :aria-label="`取消 ${task.title}`"
-            @click="editing = null"
-          >
-            <X :size="16" aria-hidden="true" />
+          <button type="button" class="icon-button" :aria-label="`编辑 ${task.title}`" @click="openTask(task)">
+            <Pencil :size="16" aria-hidden="true" />
           </button>
-        </form>
-        <template v-else>
-          <div class="task-copy">
-            <span class="task-title">{{ task.title }}</span>
-            <span v-if="task.notes" class="task-meta">{{ task.notes }}</span>
-            <span v-if="task.priority > 0" class="task-badge">
-              P{{ task.priority }}
-            </span>
-          </div>
-          <div class="task-actions">
-            <button
-              type="button"
-              class="icon-button"
-              :aria-label="`完成 ${task.title}`"
-              @click="completeTask(task)"
-            >
-              <Check :size="16" aria-hidden="true" />
-            </button>
-            <button
-              type="button"
-              class="icon-button"
-              :aria-label="`编辑 ${task.title}`"
-              @click="beginEdit(task)"
-            >
-              <Pencil :size="16" aria-hidden="true" />
-            </button>
-            <button
-              type="button"
-              class="icon-button icon-button--danger"
-              :aria-label="`删除 ${task.title}`"
-              @click="deleteTask(task)"
-            >
-              <Trash2 :size="16" aria-hidden="true" />
-            </button>
-          </div>
-        </template>
+          <button type="button" class="icon-button icon-button--danger" :aria-label="`删除 ${task.title}`" @click="deleteTask(task)">
+            <Trash2 :size="16" aria-hidden="true" />
+          </button>
+        </div>
       </li>
     </ul>
+    <TaskDetailDrawer
+      :task="selectedTask"
+      :lists="lists"
+      :parent-candidates="parentCandidates"
+      :children="childTasks"
+      :saving="saving"
+      :error="drawerError"
+      @close="closeTask"
+      @save="saveTask"
+      @complete="completeTask"
+      @open-task="openTask"
+    />
   </section>
 </template>

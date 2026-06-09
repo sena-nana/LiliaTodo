@@ -2,12 +2,31 @@
 import { onMounted, ref } from "vue";
 import { CalendarDays, Loader2, RefreshCw } from "lucide-vue-next";
 import { useTaskRepository } from "../data/TaskRepositoryContext";
+import { useTaskDetailDrawer } from "../composables/useTaskDetailDrawer";
 import type { Task } from "../domain/tasks";
+import TaskDetailDrawer from "../components/TaskDetailDrawer.vue";
 
 const repository = useTaskRepository();
 const tasks = ref<Task[]>([]);
 const loading = ref(true);
 const error = ref<string | null>(null);
+const {
+  selectedTask,
+  childTasks,
+  lists,
+  saving,
+  drawerError,
+  parentCandidates,
+  openTask,
+  saveTask,
+  completeTask,
+  closeTask,
+  loadLists,
+} = useTaskDetailDrawer({
+  repository,
+  reload: load,
+  getParentCandidates: () => tasks.value,
+});
 
 onMounted(() => {
   void load();
@@ -24,6 +43,7 @@ async function load() {
 
   try {
     tasks.value = await repository.listAgenda(start, end);
+    await loadLists();
   } catch (e) {
     error.value = String(e);
   } finally {
@@ -65,13 +85,26 @@ function displayError(value: string) {
       <p>未来 7 天暂无已安排任务。</p>
     </div>
     <ol v-if="!loading && !error && tasks.length > 0" class="timeline">
-      <li v-for="task in tasks" :key="task.id" class="timeline__item">
-        <time>{{ formatAgendaDate(task.dueAt) }}</time>
+      <li v-for="task in tasks" :key="task.id" class="timeline__item task-item--clickable" @click="openTask(task)">
+        <time>{{ formatAgendaDate(task.startAt ?? task.dueAt) }}</time>
         <div>
           <b>{{ task.title }}</b>
           <p v-if="task.notes">{{ task.notes }}</p>
+          <p v-if="task.dueAt">截止 {{ formatAgendaDate(task.dueAt) }}</p>
         </div>
       </li>
     </ol>
+    <TaskDetailDrawer
+      :task="selectedTask"
+      :lists="lists"
+      :parent-candidates="parentCandidates"
+      :children="childTasks"
+      :saving="saving"
+      :error="drawerError"
+      @close="closeTask"
+      @save="saveTask"
+      @complete="completeTask"
+      @open-task="openTask"
+    />
   </section>
 </template>

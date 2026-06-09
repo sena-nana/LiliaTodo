@@ -2,7 +2,7 @@
 import { computed, onMounted, ref } from "vue";
 import { AlertCircle, CheckCircle2, Clock, Loader2 } from "lucide-vue-next";
 import { useTaskRepository } from "../data/TaskRepositoryContext";
-import type { TodayTaskGroups } from "../domain/tasks";
+import type { Task, TodayTaskGroups } from "../domain/tasks";
 
 const repository = useTaskRepository();
 const groups = ref<TodayTaskGroups>({
@@ -10,10 +10,14 @@ const groups = ref<TodayTaskGroups>({
   dueToday: [],
   completedToday: [],
 });
+const dueReminderTasks = ref<Task[]>([]);
 const loading = ref(true);
 const error = ref<string | null>(null);
 const activeTaskCount = computed(
   () => groups.value.overdue.length + groups.value.dueToday.length,
+);
+const dueReminderCount = computed(
+  () => new Set(dueReminderTasks.value.map((task) => task.id)).size,
 );
 const completedPreview = computed(() => groups.value.completedToday.slice(0, 3));
 
@@ -22,8 +26,14 @@ onMounted(() => {
 });
 
 async function load() {
+  const now = new Date();
   try {
-    groups.value = await repository.listToday(new Date());
+    const [todayGroups, dueReminders] = await Promise.all([
+      repository.listToday(now),
+      repository.listDueReminders(now),
+    ]);
+    groups.value = todayGroups;
+    dueReminderTasks.value = dueReminders;
   } catch (e) {
     error.value = String(e);
   } finally {
@@ -45,7 +55,7 @@ function formatToday() {
     <header class="widget__header" data-tauri-drag-region>
       <div data-tauri-drag-region>
         <h1>Momo 小组件</h1>
-        <p>{{ formatToday() }}</p>
+        <p>{{ formatToday() }}<template v-if="dueReminderCount"> · {{ dueReminderCount }} 个提醒已到</template></p>
       </div>
       <span>{{ activeTaskCount }}</span>
     </header>

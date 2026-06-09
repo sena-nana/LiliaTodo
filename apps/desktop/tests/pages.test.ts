@@ -8,7 +8,6 @@ import {
   WebdavSyncControllerKey,
 } from "../src/data/TaskRepositoryContext";
 import type { TaskRepository } from "../src/data/taskRepository";
-import type { CreateTaskInput, Task, TodayTaskGroups } from "../src/domain/tasks";
 import type { WebdavSyncController } from "../src/sync/defaultSettingsSyncRuntime";
 import type {
   WebdavRunOnceResult,
@@ -25,6 +24,11 @@ import App from "../src/App.vue";
 import Settings from "../src/pages/Settings.vue";
 import { createMomoRouter } from "../src/router";
 import { normalizeSettingsTab } from "../src/config/appShell";
+import { TASK_LISTS_CHANGED_EVENT } from "../src/data/taskListEvents";
+import {
+  fakeTaskRepository as fakeRepository,
+  taskFixture as task,
+} from "./taskFixtures";
 
 vi.mock("@tauri-apps/api/window", () => ({
   getCurrentWindow: vi.fn(() => ({
@@ -145,16 +149,16 @@ describe("桌面端 MVP 页面", () => {
         name: "编辑 Inbox task",
       }),
     );
-    await fireEvent.update(screen.getByLabelText("编辑 Inbox task 标题"), "Updated task");
-    await fireEvent.update(screen.getByLabelText("编辑 Inbox task 备注"), "Deeper detail");
-    await fireEvent.update(screen.getByLabelText("编辑 Inbox task 优先级"), "2");
-    await fireEvent.click(screen.getByRole("button", { name: "保存 Inbox task" }));
+    await fireEvent.update(screen.getByLabelText("任务名"), "Updated task");
+    await fireEvent.update(screen.getByLabelText("详细内容"), "Deeper detail");
+    await fireEvent.update(screen.getByLabelText("优先级"), "2");
+    await fireEvent.click(screen.getByRole("button", { name: "保存" }));
 
-    expect(repository.updateTask).toHaveBeenCalledWith("inbox-1", {
+    expect(repository.updateTask).toHaveBeenCalledWith("inbox-1", expect.objectContaining({
       title: "Updated task",
       notes: "Deeper detail",
       priority: 2,
-    });
+    }));
   });
 
   it("编辑收件箱任务截止时间和估时", async () => {
@@ -173,17 +177,17 @@ describe("桌面端 MVP 页面", () => {
         name: "编辑 Inbox task",
       }),
     );
-    await fireEvent.update(screen.getByLabelText("编辑 Inbox task 截止时间"), "2026-05-19T14:15");
-    await fireEvent.update(screen.getByLabelText("编辑 Inbox task 估时分钟"), "30");
-    await fireEvent.click(screen.getByRole("button", { name: "保存 Inbox task" }));
+    await fireEvent.update(screen.getByLabelText("截止时间"), "2026-05-19T14:15");
+    await fireEvent.update(screen.getByLabelText("估时分钟"), "30");
+    await fireEvent.click(screen.getByRole("button", { name: "保存" }));
 
-    expect(repository.updateTask).toHaveBeenCalledWith("inbox-1", {
+    expect(repository.updateTask).toHaveBeenCalledWith("inbox-1", expect.objectContaining({
       title: "Inbox task",
       notes: "",
       priority: 0,
       dueAt: expect.any(String),
       estimateMin: 30,
-    });
+    }));
   });
 
   it("清除收件箱任务截止时间和估时", async () => {
@@ -209,17 +213,48 @@ describe("桌面端 MVP 页面", () => {
         name: "编辑 Inbox task",
       }),
     );
-    await fireEvent.update(screen.getByLabelText("编辑 Inbox task 截止时间"), "");
-    await fireEvent.update(screen.getByLabelText("编辑 Inbox task 估时分钟"), "");
-    await fireEvent.click(screen.getByRole("button", { name: "保存 Inbox task" }));
+    await fireEvent.update(screen.getByLabelText("截止时间"), "");
+    await fireEvent.update(screen.getByLabelText("估时分钟"), "");
+    await fireEvent.click(screen.getByRole("button", { name: "保存" }));
 
-    expect(repository.updateTask).toHaveBeenCalledWith("inbox-1", {
+    expect(repository.updateTask).toHaveBeenCalledWith("inbox-1", expect.objectContaining({
       title: "Inbox task",
       notes: "",
       priority: 0,
       dueAt: null,
       estimateMin: null,
+    }));
+  });
+
+  it("清空资源数量后保存为 null", async () => {
+    const repository = fakeRepository({
+      inbox: [
+        task({
+          id: "inbox-1",
+          title: "Inbox task",
+          resources: [
+            { id: "res-1", type: "budget", label: "预算", amount: 100, unit: "元" },
+          ],
+        }),
+      ],
     });
+
+    renderWithRepository(Inbox, repository);
+
+    const item = await screen.findByText("Inbox task");
+    const row = item.closest("li");
+    expect(row).not.toBeNull();
+    await fireEvent.click(
+      within(row as HTMLElement).getByRole("button", { name: "编辑 Inbox task" }),
+    );
+    await fireEvent.update(screen.getByPlaceholderText("数量"), "");
+    await fireEvent.click(screen.getByRole("button", { name: "保存" }));
+
+    expect(repository.updateTask).toHaveBeenCalledWith("inbox-1", expect.objectContaining({
+      resources: [
+        { id: "res-1", type: "budget", label: "预算", amount: null, unit: "元" },
+      ],
+    }));
   });
 
   it("使用重试恢复收件箱加载错误", async () => {
@@ -478,6 +513,25 @@ describe("桌面端 MVP 页面", () => {
     expect(screen.getByRole("link", { name: "设置" })).toBeInTheDocument();
   });
 
+  it("清单变更事件会触发当前清单页重新加载", async () => {
+    const repository = fakeRepository({
+      lists: [{ id: "list-1", name: "项目", color: null, archived: false, order: 1, createdAt: "2026-05-16T00:00:00.000Z", updatedAt: "2026-05-16T00:00:00.000Z" }],
+      listTasks: {
+        "list-1": [task({ id: "task-1", title: "项目任务", listId: "list-1" })],
+      },
+    });
+
+    await renderAppAt("/lists/list-1", repository);
+
+    expect(await screen.findByText("项目任务")).toBeInTheDocument();
+    await waitFor(() => expect(repository.listTasksByList).toHaveBeenCalledTimes(1));
+
+    window.dispatchEvent(new CustomEvent(TASK_LISTS_CHANGED_EVENT));
+
+    await waitFor(() => expect(repository.listTasksByList).toHaveBeenCalledTimes(2));
+    expect(repository.listTasksByList).toHaveBeenLastCalledWith("list-1");
+  });
+
   it("未知路由回到今日页", async () => {
     const repository = fakeRepository();
 
@@ -500,6 +554,60 @@ describe("桌面端 MVP 页面", () => {
     expect(await screen.findByText("Momo 小组件")).toBeInTheDocument();
     expect(await screen.findByText("Late invoice")).toBeInTheDocument();
     expect(screen.getByText("Focus block")).toBeInTheDocument();
+  });
+
+  it("小组件从全库到期提醒显示提醒数量", async () => {
+    const repository = fakeRepository({
+      today: {
+        overdue: [],
+        dueToday: [],
+        completedToday: [],
+      },
+      dueReminders: [
+        task({
+          id: "future-reminder",
+          title: "Future reminder",
+          dueAt: "2026-05-30T10:00:00.000Z",
+          reminders: [
+            {
+              id: "reminder-1",
+              triggerAt: "2026-05-16T08:00:00.000Z",
+              status: "pending",
+              message: null,
+            },
+          ],
+        }),
+      ],
+    });
+
+    renderWithRepository(Widget, repository);
+
+    expect(await screen.findByText(/1 个提醒已到/)).toBeInTheDocument();
+  });
+
+  it("小组件加载今日任务和到期提醒时复用同一个时间点", async () => {
+    const repository = fakeRepository();
+
+    renderWithRepository(Widget, repository);
+
+    await screen.findByText("Momo 小组件");
+    await waitFor(() => expect(repository.listDueReminders).toHaveBeenCalledTimes(1));
+
+    const todayNow = vi.mocked(repository.listToday).mock.calls[0]?.[0];
+    const reminderNow = vi.mocked(repository.listDueReminders).mock.calls[0]?.[0];
+    expect(todayNow).toBeInstanceOf(Date);
+    expect(reminderNow).toBe(todayNow);
+  });
+
+  it("小组件到期提醒查询失败时进入错误态", async () => {
+    const repository = fakeRepository();
+    vi.mocked(repository.listDueReminders).mockRejectedValueOnce(
+      new Error("reminder unavailable"),
+    );
+
+    renderWithRepository(Widget, repository);
+
+    expect(await screen.findByText("Error: reminder unavailable")).toBeInTheDocument();
   });
 });
 
@@ -583,79 +691,6 @@ function fakeSecretsStore(saved: Parameters<WebdavSecretsStore["save"]>[0] | nul
     load: vi.fn().mockResolvedValue(saved),
     save: vi.fn().mockResolvedValue(undefined),
     clear: vi.fn().mockResolvedValue(undefined),
-  };
-}
-
-function fakeRepository(overrides: {
-  today?: TodayTaskGroups;
-  inbox?: Task[];
-  agenda?: Task[];
-} = {}): TaskRepository {
-  const today = overrides.today ?? {
-    overdue: [],
-    dueToday: [],
-    completedToday: [],
-  };
-  const syncState = {
-    serverCursor: null,
-    lastSyncedAt: null,
-    lastError: null,
-    updatedAt: null,
-  };
-
-  return {
-    databasePath: "sqlite:momo.db",
-    init: vi.fn().mockResolvedValue(undefined),
-    createTask: vi
-      .fn()
-      .mockImplementation((input: CreateTaskInput) =>
-        Promise.resolve(task({ title: input.title, dueAt: input.dueAt ?? null })),
-      ),
-    updateTask: vi.fn(),
-    setStatus: vi.fn().mockResolvedValue(task({ status: "completed" })),
-    deleteTask: vi.fn().mockResolvedValue(undefined),
-    applyRemoteTask: vi.fn().mockResolvedValue(undefined),
-    deleteRemoteTask: vi.fn().mockResolvedValue(undefined),
-    listToday: vi.fn().mockResolvedValue(today),
-    listInbox: vi.fn().mockResolvedValue(overrides.inbox ?? []),
-    listAgenda: vi.fn().mockResolvedValue(overrides.agenda ?? []),
-    getStats: vi.fn().mockResolvedValue({
-      databasePath: "sqlite:momo.db",
-      totalTasks: 0,
-      activeTasks: 0,
-      completedTasks: 0,
-      pendingLocalChanges: 0,
-    }),
-    listPendingChanges: vi.fn().mockResolvedValue([]),
-    markChangeSynced: vi.fn().mockResolvedValue(undefined),
-    getSyncState: vi.fn().mockResolvedValue(syncState),
-    saveSyncState: vi.fn().mockResolvedValue(syncState),
-    recordSyncRun: vi.fn().mockResolvedValue({
-      id: "run-1",
-      status: "succeeded",
-      startedAt: "2026-05-16T12:00:00.000Z",
-      finishedAt: "2026-05-16T12:00:00.000Z",
-      message: "WebDAV 同步完成（无新增变更）",
-      serverCursor: "cursor-0",
-    }),
-    listRecentSyncRuns: vi.fn().mockResolvedValue([]),
-  };
-}
-
-function task(overrides: Partial<Task> = {}): Task {
-  return {
-    id: "task",
-    title: "Task",
-    notes: null,
-    status: "active",
-    priority: 0,
-    dueAt: null,
-    estimateMin: null,
-    tags: [],
-    createdAt: "2026-05-16T00:00:00.000Z",
-    updatedAt: "2026-05-16T00:00:00.000Z",
-    completedAt: null,
-    ...overrides,
   };
 }
 

@@ -7,6 +7,7 @@ import AppShell from "./layouts/AppShell.vue";
 import Today from "./pages/Today.vue";
 import Inbox from "./pages/Inbox.vue";
 import Calendar from "./pages/Calendar.vue";
+import TaskListPage from "./pages/TaskListPage.vue";
 import Widget from "./pages/Widget.vue";
 import Settings from "./pages/Settings.vue";
 
@@ -23,6 +24,7 @@ export function createMomoRouter(history: RouterHistory = createWebHistory()) {
           { path: "", redirect: "/today" },
           { path: "today", component: Today, meta: { sidebar: "main", returnable: true } },
           { path: "inbox", component: Inbox, meta: { sidebar: "main", returnable: true } },
+          { path: "lists/:listId", component: TaskListPage, meta: { sidebar: "main", returnable: true } },
           { path: "calendar", component: Calendar, meta: { sidebar: "main", returnable: true } },
           {
             path: "settings",

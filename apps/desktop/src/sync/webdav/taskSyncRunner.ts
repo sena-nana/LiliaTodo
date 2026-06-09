@@ -20,8 +20,11 @@ import {
 } from "./merge";
 import type { SyncProvider } from "./provider";
 import {
+  entityToTaskList,
   entityToTask,
   localChangeToOp,
+  TASK_LIST_ENTITY_TYPE,
+  TASK_LIST_SCHEMA_VERSION,
   TASK_ENTITY_TYPE,
   TASK_SCHEMA_VERSION,
 } from "./taskBridge";
@@ -32,6 +35,8 @@ export interface WebdavRunReport {
   readonly pulledOpsCount: number;
   readonly appliedTaskCount: number;
   readonly deletedTaskCount: number;
+  readonly appliedTaskListCount: number;
+  readonly deletedTaskListCount: number;
   readonly serverCursor: string;
   readonly message: string;
 }
@@ -53,6 +58,8 @@ export interface CreateWebdavTaskSyncRunnerOptions {
     | "getSyncState"
     | "applyRemoteTask"
     | "deleteRemoteTask"
+    | "applyRemoteList"
+    | "deleteRemoteList"
     | "saveSyncState"
     | "recordSyncRun"
   >;
@@ -96,6 +103,8 @@ export function createWebdavTaskSyncRunner({
           pulledOpsCount: pullReport.pulledOpsCount,
           appliedTaskCount: pullReport.appliedTaskCount,
           deletedTaskCount: pullReport.deletedTaskCount,
+          appliedTaskListCount: pullReport.appliedTaskListCount,
+          deletedTaskListCount: pullReport.deletedTaskListCount,
           serverCursor: pullReport.serverCursor,
           message: buildMessage({ pushReport, pullReport }),
         };
@@ -141,17 +150,17 @@ async function pushPending(input: {
 }): Promise<PushReport> {
   const { provider, repository, deviceId, actor, syncedAt } = input;
   const pending = await repository.listPendingChanges();
-  const taskChanges = pending.filter((c) => c.entityType === TASK_ENTITY_TYPE);
-  if (taskChanges.length === 0) {
+  const entityChanges = pending.filter((c) => isSupportedEntityType(c.entityType));
+  if (entityChanges.length === 0) {
     return { pushedOpsCount: 0, markedSyncedCount: 0 };
   }
-  const ops: Op[] = taskChanges.map((change) =>
+  const ops: Op[] = entityChanges.map((change) =>
     localChangeToOp(change, { deviceId, actor })
   );
   const result = await provider.push(ops);
   let markedSyncedCount = 0;
   if (result.acceptedCount > 0) {
-    for (const change of taskChanges) {
+    for (const change of entityChanges) {
       await repository.markChangeSynced(change.id, syncedAt);
       markedSyncedCount += 1;
     }
@@ -163,6 +172,8 @@ interface PullReport {
   readonly pulledOpsCount: number;
   readonly appliedTaskCount: number;
   readonly deletedTaskCount: number;
+  readonly appliedTaskListCount: number;
+  readonly deletedTaskListCount: number;
   readonly serverCursor: string;
 }
 
@@ -173,20 +184,22 @@ async function pullAndApply(input: {
   const { provider, repository } = input;
   const syncState = await repository.getSyncState();
   const { ops, cursor } = await provider.pull(syncState.serverCursor);
-  const taskOps = ops.filter((op) => op.target.entityType === TASK_ENTITY_TYPE);
-  if (taskOps.length === 0) {
+  const entityOps = ops.filter((op) => isSupportedEntityType(op.target.entityType));
+  if (entityOps.length === 0) {
     return {
       pulledOpsCount: 0,
       appliedTaskCount: 0,
       deletedTaskCount: 0,
+      appliedTaskListCount: 0,
+      deletedTaskListCount: 0,
       serverCursor: cursor,
     };
   }
   const merged: MergeOpsAcrossEntitiesResult = await mergeOpsAcrossEntities(
-    taskOps,
+    entityOps,
     {
       async loadEntity(entityType, entityId) {
-        if (entityType !== TASK_ENTITY_TYPE) return null;
+        if (!isSupportedEntityType(entityType)) return null;
         const fetched = await provider.getEntity<Record<string, unknown>>(
           entityType,
           entityId,
@@ -198,26 +211,41 @@ async function pullAndApply(input: {
 
   let appliedTaskCount = 0;
   let deletedTaskCount = 0;
+  let appliedTaskListCount = 0;
+  let deletedTaskListCount = 0;
   for (const entry of merged.entries) {
     const { entity } = entry.result;
     if (entity === null) {
-      await repository.deleteRemoteTask(entry.entityId);
-      deletedTaskCount += 1;
+      if (entry.entityType === TASK_ENTITY_TYPE) {
+        await repository.deleteRemoteTask(entry.entityId);
+        deletedTaskCount += 1;
+      } else if (entry.entityType === TASK_LIST_ENTITY_TYPE) {
+        await repository.deleteRemoteList(entry.entityId);
+        deletedTaskListCount += 1;
+      }
       continue;
     }
     const normalizedEntity: EntityWithUnknownPayload = {
       ...entity,
-      schemaVersion: entity.schemaVersion || TASK_SCHEMA_VERSION,
+      schemaVersion: Math.max(entity.schemaVersion ?? 0, schemaVersionForEntity(entity.type)),
     };
     await provider.pushEntity(normalizedEntity);
-    const task = entityToTask(normalizedEntity);
-    await repository.applyRemoteTask(task, normalizedEntity.schemaVersion);
-    appliedTaskCount += 1;
+    if (normalizedEntity.type === TASK_ENTITY_TYPE) {
+      const task = entityToTask(normalizedEntity);
+      await repository.applyRemoteTask(task, normalizedEntity.schemaVersion);
+      appliedTaskCount += 1;
+    } else if (normalizedEntity.type === TASK_LIST_ENTITY_TYPE) {
+      const list = entityToTaskList(normalizedEntity);
+      await repository.applyRemoteList(list, normalizedEntity.schemaVersion);
+      appliedTaskListCount += 1;
+    }
   }
   return {
-    pulledOpsCount: taskOps.length,
+    pulledOpsCount: entityOps.length,
     appliedTaskCount,
     deletedTaskCount,
+    appliedTaskListCount,
+    deletedTaskListCount,
     serverCursor: cursor,
   };
 }
@@ -237,10 +265,24 @@ function buildMessage(input: {
   if (pullReport.deletedTaskCount > 0) {
     segments.push(`已删除 ${pullReport.deletedTaskCount} 条远端任务`);
   }
+  if (pullReport.appliedTaskListCount > 0) {
+    segments.push(`已应用 ${pullReport.appliedTaskListCount} 个远端清单`);
+  }
+  if (pullReport.deletedTaskListCount > 0) {
+    segments.push(`已删除 ${pullReport.deletedTaskListCount} 个远端清单`);
+  }
   if (segments.length === 0) {
     return "WebDAV 同步完成（无新增变更）";
   }
   return segments.join("，");
+}
+
+function isSupportedEntityType(entityType: string): entityType is typeof TASK_ENTITY_TYPE | typeof TASK_LIST_ENTITY_TYPE {
+  return entityType === TASK_ENTITY_TYPE || entityType === TASK_LIST_ENTITY_TYPE;
+}
+
+function schemaVersionForEntity(entityType: string) {
+  return entityType === TASK_LIST_ENTITY_TYPE ? TASK_LIST_SCHEMA_VERSION : TASK_SCHEMA_VERSION;
 }
 
 async function recordRunBestEffort(
