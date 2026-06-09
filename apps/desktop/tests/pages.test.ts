@@ -424,13 +424,19 @@ describe("桌面端 MVP 页面", () => {
       result: {
         ok: true,
         report: {
-          pushedOpsCount: 1,
-          markedSyncedCount: 1,
+          pushedOpsCount: 2,
+          pushedTaskChangeCount: 1,
+          pushedTaskListChangeCount: 1,
+          markedSyncedCount: 2,
+          markedTaskChangeSyncedCount: 1,
+          markedTaskListChangeSyncedCount: 1,
           pulledOpsCount: 0,
           appliedTaskCount: 0,
           deletedTaskCount: 0,
+          appliedTaskListCount: 0,
+          deletedTaskListCount: 0,
           serverCursor: "cursor-after",
-          message: "已上传 1 条本地变更",
+          message: "已上传 1 条本地任务变更，已上传 1 个本地清单变更",
         },
       },
     });
@@ -456,7 +462,7 @@ describe("桌面端 MVP 页面", () => {
 
     await waitFor(() => expect(controller.runOnce).toHaveBeenCalledTimes(1));
     expect(
-      await screen.findByText("已上传 1 条本地变更"),
+      await screen.findByText("已上传 1 条本地任务变更，已上传 1 个本地清单变更"),
     ).toBeInTheDocument();
   });
 
@@ -592,10 +598,16 @@ describe("桌面端 MVP 页面", () => {
 
     controller.emitRunCompleted({
       pushedOpsCount: 0,
+      pushedTaskChangeCount: 0,
+      pushedTaskListChangeCount: 0,
       markedSyncedCount: 0,
+      markedTaskChangeSyncedCount: 0,
+      markedTaskListChangeSyncedCount: 0,
       pulledOpsCount: 2,
       appliedTaskCount: 2,
       deletedTaskCount: 0,
+      appliedTaskListCount: 0,
+      deletedTaskListCount: 0,
       serverCursor: "cursor-after",
       message: "已拉取 2 条远端变更",
     });

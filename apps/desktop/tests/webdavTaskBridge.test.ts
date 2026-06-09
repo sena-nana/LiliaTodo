@@ -174,6 +174,27 @@ describe("LocalChange → Op 翻译", () => {
       updatedAt: "2026-05-19T11:00:00.000Z",
     });
   });
+
+  it("taskList.archive 折算为 archived patch", () => {
+    const op = localChangeToOp(
+      baseChange({
+        entityType: "taskList",
+        entityId: "list-1",
+        action: "taskList.archive",
+        payload: {
+          id: "list-1",
+          archived: true,
+          updatedAt: "2026-05-19T12:00:00.000Z",
+        },
+      }),
+      { deviceId: "desk-a" },
+    );
+    expect(op.op).toBe("patch");
+    expect(op.params).toEqual({
+      archived: true,
+      updatedAt: "2026-05-19T12:00:00.000Z",
+    });
+  });
 });
 
 describe("Entity → Task 解码", () => {

@@ -152,7 +152,11 @@ describe("WebDAV task 同步 runner", () => {
       ok: true,
       report: {
         pushedOpsCount: 0,
+        pushedTaskChangeCount: 0,
+        pushedTaskListChangeCount: 0,
         markedSyncedCount: 0,
+        markedTaskChangeSyncedCount: 0,
+        markedTaskListChangeSyncedCount: 0,
         pulledOpsCount: 0,
         appliedTaskCount: 0,
         deletedTaskCount: 0,
@@ -222,7 +226,12 @@ describe("WebDAV task 同步 runner", () => {
     expect(state.markedIds).toEqual(["lc-1", "lc-2"]);
     if (result.ok) {
       expect(result.report.pushedOpsCount).toBe(2);
+      expect(result.report.pushedTaskChangeCount).toBe(2);
+      expect(result.report.pushedTaskListChangeCount).toBe(0);
       expect(result.report.markedSyncedCount).toBe(2);
+      expect(result.report.markedTaskChangeSyncedCount).toBe(2);
+      expect(result.report.markedTaskListChangeSyncedCount).toBe(0);
+      expect(result.report.message).toBe("已上传 2 条本地任务变更");
     }
   });
 
@@ -315,6 +324,12 @@ describe("WebDAV task 同步 runner", () => {
       target: { entityType: "taskList", entityId: "list-1" },
     });
     expect(state.markedIds).toEqual(["lc-list"]);
+    if (result.ok) {
+      expect(result.report.pushedTaskChangeCount).toBe(0);
+      expect(result.report.pushedTaskListChangeCount).toBe(1);
+      expect(result.report.markedTaskListChangeSyncedCount).toBe(1);
+      expect(result.report.message).toBe("已上传 1 个本地清单变更");
+    }
   });
 
   it("纯 pull：remote put op 经 LWW 合并 → pushEntity + applyRemoteTask", async () => {
@@ -449,8 +464,27 @@ describe("WebDAV task 同步 runner", () => {
     }
   });
 
-  it("远端 taskList put 和 delete 会分派到清单仓储接口", async () => {
+  it("远端 taskList put、archive patch 和 delete 会分派到清单仓储接口", async () => {
     const state = freshState();
+    const entities = new Map<string, Entity<Record<string, unknown>>>([
+      [
+        "taskList:list-remote",
+        {
+          id: "list-remote",
+          type: "taskList",
+          schemaVersion: 1,
+          payload: {
+            name: "远端清单",
+            color: null,
+            archived: false,
+            order: 1,
+            createdAt: "2026-05-19T09:00:00.000Z",
+          },
+          updatedAt: "2026-05-19T10:00:00.000Z",
+          originDevice: "desk-b",
+        },
+      ],
+    ]);
     const remoteOps: Op[] = [
       {
         op: "put",
@@ -467,6 +501,17 @@ describe("WebDAV task 同步 runner", () => {
         originDevice: "desk-b",
       },
       {
+        op: "patch",
+        target: { entityType: "taskList", entityId: "list-remote" },
+        params: {
+          archived: true,
+          updatedAt: "2026-05-19T10:30:00.000Z",
+        },
+        ts: "2026-05-19T10:30:00.000Z",
+        actor: "desk-b",
+        originDevice: "desk-b",
+      },
+      {
         op: "delete",
         target: { entityType: "taskList", entityId: "list-old" },
         params: null,
@@ -476,6 +521,7 @@ describe("WebDAV task 同步 runner", () => {
       },
     ];
     const provider = makeProviderStub({
+      entities,
       pullResult: { ops: remoteOps, cursor: "cursor-lists" },
     });
     const runner = createWebdavTaskSyncRunner({
@@ -491,8 +537,9 @@ describe("WebDAV task 同步 runner", () => {
       list: {
         id: "list-remote",
         name: "远端清单",
-        archived: false,
+        archived: true,
         order: 1,
+        updatedAt: "2026-05-19T10:30:00.000Z",
       },
       remoteVersion: 1,
     });
@@ -500,6 +547,7 @@ describe("WebDAV task 同步 runner", () => {
     if (result.ok) {
       expect(result.report.appliedTaskListCount).toBe(1);
       expect(result.report.deletedTaskListCount).toBe(1);
+      expect(result.report.message).toBe("已应用 1 个远端清单，已删除 1 个远端清单");
     }
   });
 
