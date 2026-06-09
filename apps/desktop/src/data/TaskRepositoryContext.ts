@@ -1,20 +1,12 @@
 import { inject, type App, type InjectionKey } from "vue";
-import {
-  createTaskRepository,
-  type TaskRepository,
-} from "./taskRepository";
-import type { WebdavSyncController } from "../sync/defaultSettingsSyncRuntime";
-import type { WebdavSecretsStore } from "../sync/webdav";
+import { createLazyTaskRepository } from "./lazyTaskRepository";
+import type { TaskRepository } from "./taskRepository";
 
-const defaultRepository = createTaskRepository();
+const defaultRepository = createLazyTaskRepository();
 
 export const TaskRepositoryKey: InjectionKey<TaskRepository> = Symbol(
   "TaskRepository",
 );
-export const WebdavSyncControllerKey: InjectionKey<WebdavSyncController | null> =
-  Symbol("WebdavSyncController");
-export const WebdavSecretsStoreKey: InjectionKey<WebdavSecretsStore | null> =
-  Symbol("WebdavSecretsStore");
 
 export function installTaskRepository(
   app: App,

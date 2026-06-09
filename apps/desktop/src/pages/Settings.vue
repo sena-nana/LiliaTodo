@@ -6,7 +6,7 @@ import {
   SETTINGS_TABS,
   normalizeSettingsTab,
 } from "../config/appShell";
-import { WebdavSyncControllerKey } from "../data/TaskRepositoryContext";
+import { WebdavSyncControllerKey } from "../sync/settingsSyncContext";
 import type { WebdavRunReport } from "../sync/webdav";
 import "../styles/page.css";
 

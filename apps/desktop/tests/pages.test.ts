@@ -2,11 +2,11 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/vue
 import { createMemoryHistory } from "vue-router";
 import { describe, expect, it, vi } from "vitest";
 import type { Component } from "vue";
+import { TaskRepositoryKey } from "../src/data/TaskRepositoryContext";
 import {
-  TaskRepositoryKey,
   WebdavSecretsStoreKey,
   WebdavSyncControllerKey,
-} from "../src/data/TaskRepositoryContext";
+} from "../src/sync/settingsSyncContext";
 import type { TaskRepository } from "../src/data/taskRepository";
 import type { WebdavSyncController } from "../src/sync/defaultSettingsSyncRuntime";
 import type {
@@ -742,9 +742,8 @@ describe("桌面端 MVP 页面", () => {
     const repository = fakeRepository();
     const listChangeListener = vi.fn();
     vi.mocked(repository.listLists)
-      .mockResolvedValue([inbox, project])
       .mockResolvedValueOnce([inbox])
-      .mockResolvedValueOnce([inbox]);
+      .mockResolvedValueOnce([inbox, project]);
     window.addEventListener(TASK_LISTS_CHANGED_EVENT, listChangeListener);
 
     try {
@@ -758,7 +757,7 @@ describe("桌面端 MVP 页面", () => {
         expect(repository.createList).toHaveBeenCalledWith({ name: "项目" }),
       );
       expect(await screen.findByRole("link", { name: "项目" })).toBeInTheDocument();
-      expect(repository.listLists).toHaveBeenCalledTimes(3);
+      expect(repository.listLists).toHaveBeenCalledTimes(2);
       expect(listChangeListener).toHaveBeenCalledTimes(1);
     } finally {
       window.removeEventListener(TASK_LISTS_CHANGED_EVENT, listChangeListener);
@@ -799,9 +798,8 @@ describe("桌面端 MVP 页面", () => {
     const repository = fakeRepository();
     const listChangeListener = vi.fn();
     vi.mocked(repository.listLists)
-      .mockResolvedValue([inbox, renamed])
       .mockResolvedValueOnce([inbox, project])
-      .mockResolvedValueOnce([inbox, project]);
+      .mockResolvedValueOnce([inbox, renamed]);
     window.addEventListener(TASK_LISTS_CHANGED_EVENT, listChangeListener);
 
     try {
@@ -815,7 +813,7 @@ describe("桌面端 MVP 页面", () => {
         expect(repository.updateList).toHaveBeenCalledWith("list-1", { name: "项目二" }),
       );
       expect(await screen.findByRole("link", { name: "项目二" })).toBeInTheDocument();
-      expect(repository.listLists).toHaveBeenCalledTimes(3);
+      expect(repository.listLists).toHaveBeenCalledTimes(2);
       expect(listChangeListener).toHaveBeenCalledTimes(1);
     } finally {
       window.removeEventListener(TASK_LISTS_CHANGED_EVENT, listChangeListener);
@@ -869,9 +867,8 @@ describe("桌面端 MVP 页面", () => {
     const repository = fakeRepository();
     const listChangeListener = vi.fn();
     vi.mocked(repository.listLists)
-      .mockResolvedValue([inbox])
       .mockResolvedValueOnce([inbox, project])
-      .mockResolvedValueOnce([inbox, project]);
+      .mockResolvedValueOnce([inbox]);
     window.addEventListener(TASK_LISTS_CHANGED_EVENT, listChangeListener);
 
     try {
@@ -883,7 +880,7 @@ describe("桌面端 MVP 页面", () => {
       await waitFor(() =>
         expect(screen.queryByRole("link", { name: "项目" })).not.toBeInTheDocument(),
       );
-      expect(repository.listLists).toHaveBeenCalledTimes(3);
+      expect(repository.listLists).toHaveBeenCalledTimes(2);
       expect(listChangeListener).toHaveBeenCalledTimes(1);
     } finally {
       window.removeEventListener(TASK_LISTS_CHANGED_EVENT, listChangeListener);
@@ -896,8 +893,6 @@ describe("桌面端 MVP 页面", () => {
     const repository = fakeRepository();
     const listChangeListener = vi.fn();
     vi.mocked(repository.listLists)
-      .mockResolvedValue([inbox, project])
-      .mockResolvedValueOnce([inbox, project])
       .mockResolvedValueOnce([inbox, project])
       .mockRejectedValueOnce(new Error("清单刷新失败"));
     window.addEventListener(TASK_LISTS_CHANGED_EVENT, listChangeListener);

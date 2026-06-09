@@ -62,11 +62,9 @@ async function load() {
     },
     execute: () => Promise.all([
       repository.listInbox(),
-      repository.listLists(),
     ]),
-    commit: ([nextTasks, nextLists]) => {
+    commit: ([nextTasks]) => {
       tasks.value = nextTasks;
-      lists.value = nextLists;
     },
     fail: (e) => {
       error.value = String(e);
