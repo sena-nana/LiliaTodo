@@ -9,7 +9,7 @@ import { useTaskDetailDrawer } from "../composables/useTaskDetailDrawer";
 import { useTaskListActions } from "../composables/useTaskListActions";
 import type { Task } from "../domain/tasks";
 import { taskHasDueReminder } from "../domain/tasks";
-import TaskDetailDrawer from "../components/TaskDetailDrawer.vue";
+import { AsyncTaskDetailDrawer } from "../components/AsyncTaskDetailDrawer";
 
 const route = useRoute();
 const repository = useTaskRepository();
@@ -160,7 +160,8 @@ function displayError(value: string) {
         </div>
       </li>
     </ul>
-    <TaskDetailDrawer
+    <AsyncTaskDetailDrawer
+      v-if="selectedTask"
       :task="selectedTask"
       :lists="lists"
       :parent-candidates="parentCandidates"

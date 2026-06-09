@@ -4,7 +4,7 @@ import { CalendarDays, Loader2, RefreshCw } from "lucide-vue-next";
 import { useTaskRepository } from "../data/TaskRepositoryContext";
 import { useTaskDetailDrawer } from "../composables/useTaskDetailDrawer";
 import type { Task } from "../domain/tasks";
-import TaskDetailDrawer from "../components/TaskDetailDrawer.vue";
+import { AsyncTaskDetailDrawer } from "../components/AsyncTaskDetailDrawer";
 
 const repository = useTaskRepository();
 const tasks = ref<Task[]>([]);
@@ -93,7 +93,8 @@ function displayError(value: string) {
         </div>
       </li>
     </ol>
-    <TaskDetailDrawer
+    <AsyncTaskDetailDrawer
+      v-if="selectedTask"
       :task="selectedTask"
       :lists="lists"
       :parent-candidates="parentCandidates"

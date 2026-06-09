@@ -207,10 +207,11 @@ describe("桌面端 MVP 页面", () => {
         name: "编辑 Inbox task",
       }),
     );
-    await fireEvent.update(screen.getByLabelText("任务名"), "Updated task");
-    await fireEvent.update(screen.getByLabelText("详细内容"), "Deeper detail");
-    await fireEvent.update(screen.getByLabelText("优先级"), "2");
-    await fireEvent.click(screen.getByRole("button", { name: "保存" }));
+    const drawer = await screen.findByRole(drawerRole, { name: "任务详情" });
+    await fireEvent.update(within(drawer).getByLabelText("任务名"), "Updated task");
+    await fireEvent.update(within(drawer).getByLabelText("详细内容"), "Deeper detail");
+    await fireEvent.update(within(drawer).getByLabelText("优先级"), "2");
+    await fireEvent.click(within(drawer).getByRole("button", { name: "保存" }));
 
     expect(repository.updateTask).toHaveBeenCalledWith("inbox-1", expect.objectContaining({
       title: "Updated task",
@@ -235,9 +236,10 @@ describe("桌面端 MVP 页面", () => {
         name: "编辑 Inbox task",
       }),
     );
-    await fireEvent.update(screen.getByLabelText("截止时间"), "2026-05-19T14:15");
-    await fireEvent.update(screen.getByLabelText("估时分钟"), "30");
-    await fireEvent.click(screen.getByRole("button", { name: "保存" }));
+    const drawer = await screen.findByRole(drawerRole, { name: "任务详情" });
+    await fireEvent.update(within(drawer).getByLabelText("截止时间"), "2026-05-19T14:15");
+    await fireEvent.update(within(drawer).getByLabelText("估时分钟"), "30");
+    await fireEvent.click(within(drawer).getByRole("button", { name: "保存" }));
 
     expect(repository.updateTask).toHaveBeenCalledWith("inbox-1", expect.objectContaining({
       title: "Inbox task",
@@ -271,9 +273,10 @@ describe("桌面端 MVP 页面", () => {
         name: "编辑 Inbox task",
       }),
     );
-    await fireEvent.update(screen.getByLabelText("截止时间"), "");
-    await fireEvent.update(screen.getByLabelText("估时分钟"), "");
-    await fireEvent.click(screen.getByRole("button", { name: "保存" }));
+    const drawer = await screen.findByRole(drawerRole, { name: "任务详情" });
+    await fireEvent.update(within(drawer).getByLabelText("截止时间"), "");
+    await fireEvent.update(within(drawer).getByLabelText("估时分钟"), "");
+    await fireEvent.click(within(drawer).getByRole("button", { name: "保存" }));
 
     expect(repository.updateTask).toHaveBeenCalledWith("inbox-1", expect.objectContaining({
       title: "Inbox task",
@@ -305,8 +308,9 @@ describe("桌面端 MVP 页面", () => {
     await fireEvent.click(
       within(row as HTMLElement).getByRole("button", { name: "编辑 Inbox task" }),
     );
-    await fireEvent.update(screen.getByPlaceholderText("数量"), "");
-    await fireEvent.click(screen.getByRole("button", { name: "保存" }));
+    const drawer = await screen.findByRole(drawerRole, { name: "任务详情" });
+    await fireEvent.update(within(drawer).getByPlaceholderText("数量"), "");
+    await fireEvent.click(within(drawer).getByRole("button", { name: "保存" }));
 
     expect(repository.updateTask).toHaveBeenCalledWith("inbox-1", expect.objectContaining({
       resources: [
@@ -337,8 +341,9 @@ describe("桌面端 MVP 页面", () => {
     await fireEvent.click(
       within(row as HTMLElement).getByRole("button", { name: "编辑 Inbox task" }),
     );
-    await fireEvent.click(screen.getByRole("button", { name: "下移检查项 1" }));
-    await fireEvent.click(screen.getByRole("button", { name: "保存" }));
+    const drawer = await screen.findByRole(drawerRole, { name: "任务详情" });
+    await fireEvent.click(within(drawer).getByRole("button", { name: "下移检查项 1" }));
+    await fireEvent.click(within(drawer).getByRole("button", { name: "保存" }));
 
     await waitFor(() => expect(repository.updateTask).toHaveBeenCalledWith("inbox-1", expect.objectContaining({
       checklist: [
