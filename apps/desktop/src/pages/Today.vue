@@ -43,7 +43,6 @@ const {
   completeTask,
   deleteTask,
   closeTask,
-  loadLists,
 } = useTaskDetailDrawer({
   repository,
   reload: load,
@@ -59,7 +58,6 @@ async function load() {
   error.value = null;
   try {
     groups.value = await repository.listToday(new Date());
-    await loadLists();
   } catch (e) {
     error.value = String(e);
   } finally {

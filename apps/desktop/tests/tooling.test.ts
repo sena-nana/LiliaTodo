@@ -88,12 +88,17 @@ describe("测试工具链", () => {
       "..",
     );
     const appSource = readFileSync(resolve(desktopRoot, "src/App.vue"), "utf-8");
+    const bootstrapSource = readFileSync(
+      resolve(desktopRoot, "src/sync/settingsSyncBootstrap.ts"),
+      "utf-8",
+    );
     const defaultRuntimeSource = readFileSync(
       resolve(desktopRoot, "src/sync/defaultSettingsSyncRuntime.ts"),
       "utf-8",
     );
 
-    expect(appSource).toContain("createDefaultSettingsSyncRuntime");
+    expect(appSource).toContain("createLazySettingsSyncRuntime");
+    expect(bootstrapSource).toContain("createDefaultSettingsSyncRuntime");
     for (const forbidden of [
       "createRemoteSyncRunner",
       "createRemoteSyncConfig",
@@ -104,6 +109,7 @@ describe("测试工具链", () => {
       "RunLocalSyncSimulationKey",
     ]) {
       expect(appSource).not.toContain(forbidden);
+      expect(bootstrapSource).not.toContain(forbidden);
       expect(defaultRuntimeSource).not.toContain(forbidden);
     }
   });

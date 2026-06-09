@@ -2,7 +2,7 @@ import { computed, inject, onMounted, reactive, ref } from "vue";
 import {
   WebdavSecretsStoreKey,
   WebdavSyncControllerKey,
-} from "../data/TaskRepositoryContext";
+} from "../sync/settingsSyncContext";
 import { WEBDAV_DEFAULT_ROOT, type WebdavSecrets } from "../sync/webdav";
 import type { WebdavRunReport, WebdavSecretsStore } from "../sync/webdav";
 import type { WebdavSyncController } from "../sync/defaultSettingsSyncRuntime";

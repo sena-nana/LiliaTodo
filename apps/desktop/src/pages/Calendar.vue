@@ -22,7 +22,6 @@ const {
   completeTask,
   deleteTask,
   closeTask,
-  loadLists,
 } = useTaskDetailDrawer({
   repository,
   reload: load,
@@ -44,7 +43,6 @@ async function load() {
 
   try {
     tasks.value = await repository.listAgenda(start, end);
-    await loadLists();
   } catch (e) {
     error.value = String(e);
   } finally {
