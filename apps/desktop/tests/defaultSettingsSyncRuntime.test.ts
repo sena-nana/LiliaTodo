@@ -58,6 +58,47 @@ describe("默认设置页 WebDAV 同步装配", () => {
     expect(runOnce).toHaveBeenCalledTimes(1);
   });
 
+  it("WebDAV runOnce 成功后通知订阅者", async () => {
+    const report = {
+      pushedOpsCount: 1,
+      markedSyncedCount: 1,
+      pulledOpsCount: 0,
+      appliedTaskCount: 0,
+      deletedTaskCount: 0,
+      serverCursor: "cursor-after",
+      message: "已上传 1 条本地变更",
+    };
+    const runOnce = vi
+      .fn<() => Promise<WebdavRunOnceResult>>()
+      .mockResolvedValue({ ok: true, report });
+    const runtime = createDefaultSettingsSyncRuntime({
+      webdavRuntimeFactory: async () => ({
+        kind: "enabled",
+        runner: { runOnce },
+        secrets: {
+          baseUrl: "https://dav.jianguoyun.com/dav",
+          root: "/momo",
+          username: "u",
+          password: "p",
+          deviceId: "desk-a",
+        },
+        layout: {} as never,
+        provider: {} as never,
+        client: {} as never,
+      }),
+    });
+    const listener = vi.fn();
+
+    const unsubscribe = runtime.webdav!.onRunCompleted(listener);
+    await runtime.webdav!.runOnce();
+
+    expect(listener).toHaveBeenCalledWith(report);
+
+    unsubscribe();
+    await runtime.webdav!.runOnce();
+    expect(listener).toHaveBeenCalledTimes(1);
+  });
+
   it("factory 抛错时 runOnce 包成 ok:false", async () => {
     const runtime = createDefaultSettingsSyncRuntime({
       webdavRuntimeFactory: () => Promise.reject(new Error("装配崩了")),
