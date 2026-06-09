@@ -6,7 +6,7 @@ import { useTaskDetailDrawer } from "../composables/useTaskDetailDrawer";
 import type { Task, TodayTaskGroups } from "../domain/tasks";
 import { taskHasDueReminder } from "../domain/tasks";
 import { buildEditableContextMenuItems, useContextMenu } from "../components/contextMenu";
-import TaskDetailDrawer from "../components/TaskDetailDrawer.vue";
+import { AsyncTaskDetailDrawer } from "../components/AsyncTaskDetailDrawer";
 
 const contextMenu = useContextMenu();
 function onEditableContextMenu(event: MouseEvent) {
@@ -230,7 +230,8 @@ function displayError(value: string) {
         </ul>
       </section>
     </div>
-    <TaskDetailDrawer
+    <AsyncTaskDetailDrawer
+      v-if="selectedTask"
       :task="selectedTask"
       :lists="lists"
       :parent-candidates="parentCandidates"

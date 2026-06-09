@@ -1,13 +1,14 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, defineAsyncComponent } from "vue";
 import { RouterView } from "vue-router";
 import { APP_TITLE, SETTINGS_TABS, normalizeSettingsTab } from "../config/appShell";
 import { useRouteReturnTarget } from "../composables/useRouteReturnTarget";
 import { useShellSidebar } from "../composables/useShellSidebar";
 import TitleBar from "../components/TitleBar.vue";
-import SecondaryPanel from "./SecondaryPanel.vue";
-import SettingsSidebar from "./SettingsSidebar.vue";
 import "../styles/shell.css";
+
+const SecondaryPanel = defineAsyncComponent(() => import("./SecondaryPanel.vue"));
+const SettingsSidebar = defineAsyncComponent(() => import("./SettingsSidebar.vue"));
 
 const { route, returnTo } = useRouteReturnTarget("/today");
 const sidebarLocked = computed(() => route.meta.lockSidebar === true);

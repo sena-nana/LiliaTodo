@@ -3,7 +3,6 @@ import {
   createWebHistory,
   type RouterHistory,
 } from "vue-router";
-import AppShell from "./layouts/AppShell.vue";
 
 export function createMomoRouter(history: RouterHistory = createWebHistory()) {
   return createRouter({
@@ -12,7 +11,7 @@ export function createMomoRouter(history: RouterHistory = createWebHistory()) {
       { path: "/widget", component: () => import("./pages/Widget.vue") },
       {
         path: "/",
-        component: AppShell,
+        component: () => import("./layouts/AppShell.vue"),
         meta: { sidebar: "main", returnable: true },
         children: [
           { path: "", redirect: "/today" },

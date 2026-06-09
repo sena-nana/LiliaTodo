@@ -81,6 +81,40 @@ describe("测试工具链", () => {
     ).toEqual([]);
   });
 
+  it("任务详情抽屉和主窗口外壳保持按需加载", () => {
+    const desktopRoot = resolve(
+      dirname(fileURLToPath(import.meta.url)),
+      "..",
+    );
+    const routerSource = readFileSync(resolve(desktopRoot, "src/router.ts"), "utf-8");
+    const shellSource = readFileSync(resolve(desktopRoot, "src/layouts/AppShell.vue"), "utf-8");
+    const asyncDrawerSource = readFileSync(
+      resolve(desktopRoot, "src/components/AsyncTaskDetailDrawer.ts"),
+      "utf-8",
+    );
+    const taskPageSources = [
+      "src/pages/Today.vue",
+      "src/pages/Inbox.vue",
+      "src/pages/Calendar.vue",
+      "src/pages/TaskListPage.vue",
+    ].map((file) => [
+      file,
+      readFileSync(resolve(desktopRoot, file), "utf-8"),
+    ] as const);
+
+    expect(routerSource).not.toMatch(/import\s+AppShell\s+from/);
+    expect(routerSource).toContain('component: () => import("./layouts/AppShell.vue")');
+    expect(shellSource).toContain('defineAsyncComponent(() => import("./SecondaryPanel.vue"))');
+    expect(shellSource).toContain('defineAsyncComponent(() => import("./SettingsSidebar.vue"))');
+    expect(asyncDrawerSource).toContain('import("./TaskDetailDrawer.vue")');
+    for (const [file, source] of taskPageSources) {
+      expect(source, file).not.toMatch(/import\s+TaskDetailDrawer\s+from/);
+      expect(source, file).toContain('import { AsyncTaskDetailDrawer } from "../components/AsyncTaskDetailDrawer"');
+      expect(source, file).toContain("<AsyncTaskDetailDrawer");
+      expect(source, file).toContain('v-if="selectedTask"');
+    }
+  });
+
   it("确保默认设置页路由只装配 WebDAV runner，不再引用旧本地/远程 runner", () => {
     // 目的：防止阶段 80 下线的本地模拟 / 远程 HTTP runner 被悄悄恢复成默认 runner。
     const desktopRoot = resolve(
