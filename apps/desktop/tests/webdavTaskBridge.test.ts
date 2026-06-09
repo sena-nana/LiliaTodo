@@ -3,8 +3,10 @@ import type { Entity } from "../src/sync/types/entity";
 import type { LocalChange } from "../src/data/taskRepository";
 import {
   entityToTaskList,
+  entityToTaskCategory,
   entityToTask,
   localChangeToOp,
+  TASK_CATEGORY_ENTITY_TYPE,
   TASK_LIST_ENTITY_TYPE,
   TASK_ENTITY_TYPE,
 } from "../src/sync/webdav/taskBridge";
@@ -229,6 +231,7 @@ describe("Entity → Task 解码", () => {
       childOrder: 0,
       tags: ["a", "b"],
       listId: "inbox",
+      categoryId: null,
       createdAt: "2026-05-18T10:00:00.000Z",
       completedAt: null,
     });
@@ -248,6 +251,7 @@ describe("Entity → Task 解码", () => {
       childOrder: 0,
       tags: ["a", "b"],
       listId: "inbox",
+      categoryId: null,
       createdAt: "2026-05-18T10:00:00.000Z",
       updatedAt: "2026-05-19T13:00:00.000Z",
       completedAt: null,
@@ -458,7 +462,6 @@ describe("Entity → TaskList 解码", () => {
       color: "#ff0000",
       archived: false,
       order: 2,
-      groupId: null,
       createdAt: "2026-05-18T10:00:00.000Z",
       updatedAt: "2026-05-19T13:00:00.000Z",
     });
@@ -478,5 +481,32 @@ describe("Entity → TaskList 解码", () => {
     };
 
     expect(() => entityToTaskList(entity)).toThrow(/taskList.name/);
+  });
+});
+
+describe("Entity → TaskCategory 解码", () => {
+  it("完整字段照射成 TaskCategory，updatedAt 来自 entity 顶层", () => {
+    const entity: Entity<unknown> = {
+      id: "category-1",
+      type: TASK_CATEGORY_ENTITY_TYPE,
+      schemaVersion: 1,
+      payload: {
+        listId: "list-1",
+        name: "工作",
+        order: 2,
+        createdAt: "2026-05-18T10:00:00.000Z",
+      },
+      updatedAt: "2026-05-19T13:00:00.000Z",
+      originDevice: "desk-b",
+    };
+
+    expect(entityToTaskCategory(entity)).toEqual({
+      id: "category-1",
+      listId: "list-1",
+      name: "工作",
+      order: 2,
+      createdAt: "2026-05-18T10:00:00.000Z",
+      updatedAt: "2026-05-19T13:00:00.000Z",
+    });
   });
 });

@@ -1,13 +1,13 @@
 import { vi } from "vitest";
 import type { TaskRepository } from "../src/data/taskRepository";
 import type {
-  CreateTaskListGroupInput,
+  CreateTaskCategoryInput,
   CreateTaskInput,
   Task,
-  TaskListGroup,
+  TaskCategory,
   TaskList,
   TodayTaskGroups,
-  UpdateTaskListGroupInput,
+  UpdateTaskCategoryInput,
   UpdateTaskInput,
 } from "../src/domain/tasks";
 
@@ -16,7 +16,7 @@ export interface FakeTaskRepositoryOverrides {
   inbox?: Task[];
   agenda?: Task[];
   lists?: TaskList[];
-  listGroups?: TaskListGroup[];
+  categories?: Record<string, TaskCategory[]>;
   children?: Record<string, Task[]>;
   listTasks?: Record<string, Task[]>;
   dueReminders?: Task[];
@@ -59,6 +59,7 @@ export function fakeTaskRepository(
         dueAt: input.dueAt ?? null,
         estimateMin: input.estimateMin ?? null,
         listId: input.listId ?? "inbox",
+        categoryId: input.categoryId ?? null,
       })),
     ),
     updateTask: vi.fn().mockImplementation((id: string, patch: UpdateTaskInput) =>
@@ -72,6 +73,8 @@ export function fakeTaskRepository(
     deleteRemoteTask: vi.fn().mockResolvedValue(undefined),
     applyRemoteList: vi.fn().mockResolvedValue(undefined),
     deleteRemoteList: vi.fn().mockResolvedValue(undefined),
+    applyRemoteCategory: vi.fn().mockResolvedValue(undefined),
+    deleteRemoteCategory: vi.fn().mockResolvedValue(undefined),
     listTasksByList: vi.fn().mockImplementation((listId: string) =>
       Promise.resolve(overrides.listTasks?.[listId] ?? (listId === "inbox" ? overrides.inbox ?? [] : [])),
     ),
@@ -88,20 +91,21 @@ export function fakeTaskRepository(
         name: patch.name ?? "清单",
         color: patch.color ?? null,
         order: patch.order ?? 0,
-        groupId: "groupId" in patch ? patch.groupId ?? null : null,
       })),
     ),
     archiveList: vi.fn().mockImplementation((id) =>
       Promise.resolve(taskListFixture({ id, archived: true })),
     ),
-    listListGroups: vi.fn().mockResolvedValue(overrides.listGroups ?? []),
-    createListGroup: vi.fn().mockImplementation((input: CreateTaskListGroupInput) =>
-      Promise.resolve(taskListGroupFixture({ id: "group-new", name: input.name })),
+    listCategoriesByList: vi.fn().mockImplementation((listId: string) =>
+      Promise.resolve(overrides.categories?.[listId] ?? []),
     ),
-    updateListGroup: vi.fn().mockImplementation((id: string, patch: UpdateTaskListGroupInput) =>
-      Promise.resolve(taskListGroupFixture({ id, name: patch.name ?? "分类", order: patch.order ?? 0 })),
+    createCategory: vi.fn().mockImplementation((input: CreateTaskCategoryInput) =>
+      Promise.resolve(taskCategoryFixture({ id: "category-new", listId: input.listId, name: input.name })),
     ),
-    deleteListGroup: vi.fn().mockResolvedValue(undefined),
+    updateCategory: vi.fn().mockImplementation((id: string, patch: UpdateTaskCategoryInput) =>
+      Promise.resolve(taskCategoryFixture({ id, name: patch.name ?? "分类", order: patch.order ?? 0 })),
+    ),
+    deleteCategory: vi.fn().mockResolvedValue(undefined),
     listPendingChanges: vi.fn().mockResolvedValue([]),
     markChangeSynced: vi.fn().mockResolvedValue(undefined),
     getSyncState: vi.fn().mockResolvedValue(syncState),
@@ -148,6 +152,7 @@ export function taskFixture(overrides: Partial<Task> = {}): Task {
     childOrder: 0,
     tags: [],
     listId: "inbox",
+    categoryId: null,
     createdAt: "2026-05-16T00:00:00.000Z",
     updatedAt: "2026-05-16T00:00:00.000Z",
     completedAt: null,
@@ -162,16 +167,16 @@ export function taskListFixture(overrides: Partial<TaskList> = {}): TaskList {
     color: null,
     archived: false,
     order: 0,
-    groupId: null,
     createdAt: "2026-05-16T00:00:00.000Z",
     updatedAt: "2026-05-16T00:00:00.000Z",
     ...overrides,
   };
 }
 
-export function taskListGroupFixture(overrides: Partial<TaskListGroup> = {}): TaskListGroup {
+export function taskCategoryFixture(overrides: Partial<TaskCategory> = {}): TaskCategory {
   return {
-    id: "group",
+    id: "category",
+    listId: "inbox",
     name: "分类",
     order: 0,
     createdAt: "2026-05-16T00:00:00.000Z",

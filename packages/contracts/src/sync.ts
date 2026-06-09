@@ -1,4 +1,5 @@
 export type {
+  TaskCategoryDto,
   TaskChecklistItemDto,
   TaskDto,
   TaskListDto,
@@ -10,8 +11,9 @@ export type {
 } from "../../schema/src/task";
 import type { TaskDto } from "../../schema/src/task";
 import type { TaskListDto } from "../../schema/src/task";
+import type { TaskCategoryDto } from "../../schema/src/task";
 
-export const SYNC_CONTRACT_VERSION = 2;
+export const SYNC_CONTRACT_VERSION = 3;
 
 export type LocalChangeActionDto =
   | "task.create"
@@ -21,9 +23,12 @@ export type LocalChangeActionDto =
   | "taskList.create"
   | "taskList.update"
   | "taskList.archive"
-  | "taskList.delete";
+  | "taskList.delete"
+  | "taskCategory.create"
+  | "taskCategory.update"
+  | "taskCategory.delete";
 
-export type LocalChangeEntityTypeDto = "task" | "taskList";
+export type LocalChangeEntityTypeDto = "task" | "taskList" | "taskCategory";
 
 export interface LocalChangeDto {
   id: string;
@@ -89,8 +94,10 @@ export interface DeltaPullResponse {
   contractVersion: typeof SYNC_CONTRACT_VERSION;
   tasks: TaskDto[];
   taskLists: TaskListDto[];
+  taskCategories: TaskCategoryDto[];
   deletedTaskIds: string[];
   deletedTaskListIds: string[];
+  deletedTaskCategoryIds: string[];
   serverCursor: string;
   serverTime: string;
 }

@@ -3,6 +3,7 @@ import type { Op } from '../types/op';
 import type { LocalChange } from '../../data/taskRepository';
 import type {
   Task,
+  TaskCategory,
   TaskChecklistItem,
   TaskList,
   TaskPriority,
@@ -13,8 +14,10 @@ import type {
 
 export const TASK_ENTITY_TYPE = 'task';
 export const TASK_LIST_ENTITY_TYPE = 'taskList';
-export const TASK_SCHEMA_VERSION = 2;
+export const TASK_CATEGORY_ENTITY_TYPE = 'taskCategory';
+export const TASK_SCHEMA_VERSION = 3;
 export const TASK_LIST_SCHEMA_VERSION = 1;
+export const TASK_CATEGORY_SCHEMA_VERSION = 1;
 
 export interface LocalChangeToOpOptions {
   readonly deviceId: string;
@@ -29,7 +32,7 @@ const VALID_TASK_STATUSES: ReadonlySet<TaskStatus> = new Set<TaskStatus>([
 const ISO_DATE_TIME_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/;
 
 export function localChangeToOp(change: LocalChange, options: LocalChangeToOpOptions): Op {
-  if (change.entityType !== TASK_ENTITY_TYPE && change.entityType !== TASK_LIST_ENTITY_TYPE) {
+  if (!isSupportedChangeEntityType(change.entityType)) {
     throw new Error(`WebDAV 同步：不支持的实体类型：${change.entityType}`);
   }
   const actor = options.actor ?? options.deviceId;
@@ -63,6 +66,12 @@ export function localChangeToOp(change: LocalChange, options: LocalChangeToOpOpt
       return { op: 'patch', params: unwrapTaskListArchivePayload(change.payload), ...base };
     case 'taskList.delete':
       return { op: 'delete', params: null, ...base };
+    case 'taskCategory.create':
+      return { op: 'put', params: unwrapTaskCategoryCreatePayload(change.payload), ...base };
+    case 'taskCategory.update':
+      return { op: 'patch', params: unwrapTaskCategoryUpdatePayload(change.payload), ...base };
+    case 'taskCategory.delete':
+      return { op: 'delete', params: null, ...base };
   }
 }
 
@@ -87,6 +96,7 @@ export function entityToTask(entity: Entity<unknown>): Task {
     childOrder: asIntegerWithDefault(payload.childOrder, 0, 'task.childOrder'),
     tags: asStringArray(payload.tags),
     listId: asStringWithDefault(payload.listId, 'inbox'),
+    categoryId: asNullableString(payload.categoryId),
     createdAt: asRequiredIsoString(payload.createdAt, 'task.createdAt'),
     updatedAt: asRequiredIsoString(entity.updatedAt, 'task.updatedAt'),
     completedAt: asNullableIsoString(payload.completedAt, 'task.completedAt'),
@@ -104,9 +114,23 @@ export function entityToTaskList(entity: Entity<unknown>): TaskList {
     color: asNullableString(payload.color),
     archived: asBooleanWithDefault(payload.archived, false, 'taskList.archived'),
     order: asIntegerWithDefault(payload.order, 0, 'taskList.order'),
-    groupId: null,
     createdAt: asRequiredIsoString(payload.createdAt, 'taskList.createdAt'),
     updatedAt: asRequiredIsoString(entity.updatedAt, 'taskList.updatedAt'),
+  };
+}
+
+export function entityToTaskCategory(entity: Entity<unknown>): TaskCategory {
+  if (entity.type !== TASK_CATEGORY_ENTITY_TYPE) {
+    throw new Error(`WebDAV 同步：非 taskCategory entity 不能转 TaskCategory：${entity.type}`);
+  }
+  const payload = isPlainObject(entity.payload) ? (entity.payload as Record<string, unknown>) : {};
+  return {
+    id: entity.id,
+    listId: asStringWithDefault(payload.listId, 'inbox'),
+    name: asString(payload.name, 'taskCategory.name'),
+    order: asIntegerWithDefault(payload.order, 0, 'taskCategory.order'),
+    createdAt: asRequiredIsoString(payload.createdAt, 'taskCategory.createdAt'),
+    updatedAt: asRequiredIsoString(entity.updatedAt, 'taskCategory.updatedAt'),
   };
 }
 
@@ -177,6 +201,33 @@ function unwrapTaskListArchivePayload(raw: unknown): Record<string, unknown> {
   const fields: Record<string, unknown> = { archived: true };
   if (typeof record.updatedAt === 'string') fields.updatedAt = record.updatedAt;
   return fields;
+}
+
+function unwrapTaskCategoryCreatePayload(raw: unknown): Record<string, unknown> {
+  if (!isPlainObject(raw)) {
+    throw new Error('WebDAV 同步：taskCategory.create payload 必须为对象');
+  }
+  return { ...(raw as Record<string, unknown>) };
+}
+
+function unwrapTaskCategoryUpdatePayload(raw: unknown): Record<string, unknown> {
+  if (!isPlainObject(raw)) {
+    throw new Error('WebDAV 同步：taskCategory.update payload 必须为对象');
+  }
+  const record = raw as Record<string, unknown>;
+  const patch = record.patch;
+  if (!isPlainObject(patch)) {
+    throw new Error('WebDAV 同步：taskCategory.update.patch 缺失或非对象');
+  }
+  const fields = { ...(patch as Record<string, unknown>) };
+  if (typeof record.updatedAt === 'string') {
+    fields.updatedAt = record.updatedAt;
+  }
+  return fields;
+}
+
+function isSupportedChangeEntityType(entityType: string): entityType is typeof TASK_ENTITY_TYPE | typeof TASK_LIST_ENTITY_TYPE | typeof TASK_CATEGORY_ENTITY_TYPE {
+  return entityType === TASK_ENTITY_TYPE || entityType === TASK_LIST_ENTITY_TYPE || entityType === TASK_CATEGORY_ENTITY_TYPE;
 }
 
 function isPlainObject(value: unknown): boolean {

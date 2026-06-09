@@ -27,7 +27,7 @@ import { normalizeSettingsTab } from "../src/config/appShell";
 import { TASK_LISTS_CHANGED_EVENT } from "../src/data/taskListEvents";
 import {
   fakeTaskRepository as fakeRepository,
-  taskListGroupFixture,
+  taskCategoryFixture,
   taskListFixture,
   taskFixture as task,
 } from "./taskFixtures";
@@ -769,31 +769,28 @@ describe("桌面端 MVP 页面", () => {
     }
   });
 
-  it("侧边栏支持新增分类并广播清单刷新事件", async () => {
-    const group = taskListGroupFixture({ id: "group-1", name: "工作", order: 0 });
-    const repository = fakeRepository();
-    const listChangeListener = vi.fn();
-    vi.mocked(repository.listListGroups)
-      .mockResolvedValue([group])
+  it("清单页面支持新增清单内分类", async () => {
+    const project = taskListFixture({ id: "list-1", name: "项目", order: 1 });
+    const category = taskCategoryFixture({ id: "category-1", listId: "list-1", name: "工作" });
+    const repository = fakeRepository({
+      lists: [taskListFixture(), project],
+      categories: { "list-1": [] },
+    });
+    vi.mocked(repository.listCategoriesByList)
       .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([group]);
-    window.addEventListener(TASK_LISTS_CHANGED_EVENT, listChangeListener);
+      .mockResolvedValueOnce([category]);
+    vi.mocked(repository.createCategory).mockResolvedValue(category);
 
-    try {
-      await renderAppAt("/calendar", repository);
+    await renderAppAt("/lists/list-1", repository);
 
-      await fireEvent.click(await screen.findByRole("button", { name: "新增分类" }));
-      await fireEvent.update(screen.getByLabelText("分类名称"), "工作");
-      await fireEvent.click(screen.getByRole("button", { name: "保存分类" }));
+    await fireEvent.click(await screen.findByRole("button", { name: "新增分类" }));
+    await fireEvent.update(screen.getByLabelText("分类名称"), "工作");
+    await fireEvent.click(screen.getByRole("button", { name: "保存分类" }));
 
-      await waitFor(() =>
-        expect(repository.createListGroup).toHaveBeenCalledWith({ name: "工作" }),
-      );
-      expect(await screen.findByText("工作")).toBeInTheDocument();
-      expect(listChangeListener).toHaveBeenCalledTimes(1);
-    } finally {
-      window.removeEventListener(TASK_LISTS_CHANGED_EVENT, listChangeListener);
-    }
+    await waitFor(() =>
+      expect(repository.createCategory).toHaveBeenCalledWith({ listId: "list-1", name: "工作" }),
+    );
+    expect(await screen.findByRole("button", { name: "工作" })).toBeInTheDocument();
   });
 
   it("侧边栏支持重命名清单并广播清单刷新事件", async () => {
@@ -825,14 +822,12 @@ describe("桌面端 MVP 页面", () => {
     }
   });
 
-  it("侧边栏支持清单上下移动和移动到分类", async () => {
+  it("侧边栏支持清单上下移动", async () => {
     const inbox = taskListFixture();
     const first = taskListFixture({ id: "list-1", name: "项目一", order: 0 });
     const second = taskListFixture({ id: "list-2", name: "项目二", order: 1 });
-    const group = taskListGroupFixture({ id: "group-1", name: "工作", order: 0 });
     const repository = fakeRepository({
       lists: [inbox, first, second],
-      listGroups: [group],
     });
 
     await renderAppAt("/calendar", repository);
@@ -841,29 +836,26 @@ describe("桌面端 MVP 页面", () => {
 
     await waitFor(() => expect(repository.updateList).toHaveBeenCalledWith("list-2", { order: 0 }));
     expect(repository.updateList).toHaveBeenCalledWith("list-1", { order: 1 });
-
-    await fireEvent.update(screen.getByLabelText("移动清单 项目一"), "group-1");
-
-    await waitFor(() => expect(repository.updateList).toHaveBeenCalledWith("list-1", { groupId: "group-1" }));
   });
 
-  it("侧边栏支持分类上下移动和删除分类", async () => {
-    const first = taskListGroupFixture({ id: "group-1", name: "工作", order: 0 });
-    const second = taskListGroupFixture({ id: "group-2", name: "生活", order: 1 });
+  it("清单页面支持分类上下移动和删除分类", async () => {
+    const first = taskCategoryFixture({ id: "category-1", listId: "list-1", name: "工作", order: 0 });
+    const second = taskCategoryFixture({ id: "category-2", listId: "list-1", name: "生活", order: 1 });
     const repository = fakeRepository({
-      listGroups: [first, second],
+      lists: [taskListFixture(), taskListFixture({ id: "list-1", name: "项目", order: 1 })],
+      categories: { "list-1": [first, second] },
     });
 
-    await renderAppAt("/calendar", repository);
+    await renderAppAt("/lists/list-1", repository);
 
     await fireEvent.click(await screen.findByRole("button", { name: "下移分类 工作" }));
 
-    await waitFor(() => expect(repository.updateListGroup).toHaveBeenCalledWith("group-2", { order: 0 }));
-    expect(repository.updateListGroup).toHaveBeenCalledWith("group-1", { order: 1 });
+    await waitFor(() => expect(repository.updateCategory).toHaveBeenCalledWith("category-2", { order: 0 }));
+    expect(repository.updateCategory).toHaveBeenCalledWith("category-1", { order: 1 });
 
     await fireEvent.click(screen.getByRole("button", { name: "删除分类 工作" }));
 
-    await waitFor(() => expect(repository.deleteListGroup).toHaveBeenCalledWith("group-1"));
+    await waitFor(() => expect(repository.deleteCategory).toHaveBeenCalledWith("category-1"));
   });
 
   it("侧边栏支持归档清单并广播清单刷新事件", async () => {

@@ -9,7 +9,7 @@ import type {
   SyncState,
   TaskRepository,
 } from "../src/data/taskRepository";
-import type { Task, TaskList } from "../src/domain/tasks";
+import type { Task, TaskCategory, TaskList } from "../src/domain/tasks";
 import type {
   SyncProvider,
   SyncPullResult,
@@ -24,8 +24,10 @@ interface FakeRepositoryState {
   savedStates: SaveSyncStateInput[];
   appliedTasks: Array<{ task: Task; remoteVersion?: number }>;
   appliedLists: Array<{ list: TaskList; remoteVersion?: number }>;
+  appliedCategories: Array<{ category: TaskCategory; remoteVersion?: number }>;
   deletedIds: string[];
   deletedListIds: string[];
+  deletedCategoryIds: string[];
   syncRuns: RecordSyncRunInput[];
 }
 
@@ -40,6 +42,8 @@ function makeRepositoryStub(
   | "deleteRemoteTask"
   | "applyRemoteList"
   | "deleteRemoteList"
+  | "applyRemoteCategory"
+  | "deleteRemoteCategory"
   | "saveSyncState"
   | "recordSyncRun"
 > {
@@ -64,6 +68,12 @@ function makeRepositoryStub(
     },
     async deleteRemoteList(id) {
       state.deletedListIds.push(id);
+    },
+    async applyRemoteCategory(category, remoteVersion) {
+      state.appliedCategories.push({ category, remoteVersion });
+    },
+    async deleteRemoteCategory(id) {
+      state.deletedCategoryIds.push(id);
     },
     async saveSyncState(input) {
       state.savedStates.push(input);
@@ -126,8 +136,10 @@ function freshState(overrides: Partial<FakeRepositoryState> = {}): FakeRepositor
     savedStates: [],
     appliedTasks: [],
     appliedLists: [],
+    appliedCategories: [],
     deletedIds: [],
     deletedListIds: [],
+    deletedCategoryIds: [],
     syncRuns: [],
     ...overrides,
   };
@@ -154,14 +166,18 @@ describe("WebDAV task 同步 runner", () => {
         pushedOpsCount: 0,
         pushedTaskChangeCount: 0,
         pushedTaskListChangeCount: 0,
+        pushedTaskCategoryChangeCount: 0,
         markedSyncedCount: 0,
         markedTaskChangeSyncedCount: 0,
         markedTaskListChangeSyncedCount: 0,
+        markedTaskCategoryChangeSyncedCount: 0,
         pulledOpsCount: 0,
         appliedTaskCount: 0,
         deletedTaskCount: 0,
         appliedTaskListCount: 0,
         deletedTaskListCount: 0,
+        appliedTaskCategoryCount: 0,
+        deletedTaskCategoryCount: 0,
         serverCursor: "cursor-empty",
         message: "WebDAV 同步完成（无新增变更）",
       },
@@ -228,6 +244,7 @@ describe("WebDAV task 同步 runner", () => {
       expect(result.report.pushedOpsCount).toBe(2);
       expect(result.report.pushedTaskChangeCount).toBe(2);
       expect(result.report.pushedTaskListChangeCount).toBe(0);
+      expect(result.report.pushedTaskCategoryChangeCount).toBe(0);
       expect(result.report.markedSyncedCount).toBe(2);
       expect(result.report.markedTaskChangeSyncedCount).toBe(2);
       expect(result.report.markedTaskListChangeSyncedCount).toBe(0);
@@ -383,7 +400,7 @@ describe("WebDAV task 同步 runner", () => {
     }
   });
 
-  it("旧 v1 task entity 收到 patch 后按 v2 写回并应用", async () => {
+  it("旧 v1 task entity 收到 patch 后按 v3 写回并应用", async () => {
     const state = freshState();
     const entities = new Map<string, Entity<Record<string, unknown>>>([
       [
@@ -430,8 +447,8 @@ describe("WebDAV task 同步 runner", () => {
     const result = await runner.runOnce();
 
     expect(result.ok).toBe(true);
-    expect(pushedEntities[0].schemaVersion).toBe(2);
-    expect(state.appliedTasks[0].remoteVersion).toBe(2);
+    expect(pushedEntities[0].schemaVersion).toBe(3);
+    expect(state.appliedTasks[0].remoteVersion).toBe(3);
     expect(state.appliedTasks[0].task.listId).toBe("inbox");
   });
 
