@@ -115,6 +115,10 @@ function formatDateTime(value: string | null) {
     minute: "2-digit",
   }).format(new Date(value));
 }
+
+function displayError(value: string) {
+  return value.replace(/^Error:\s*/, "错误：");
+}
 </script>
 
 <template>
@@ -164,7 +168,7 @@ function formatDateTime(value: string | null) {
       <p>正在加载本地任务...</p>
     </div>
     <div v-if="error" class="card state state--error">
-      <p>{{ error }}</p>
+      <p>{{ displayError(error) }}</p>
       <button type="button" @click="load">
         <RefreshCw :size="16" aria-hidden="true" />
         重试
