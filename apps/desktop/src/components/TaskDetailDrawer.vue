@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
-import { Check, Plus, Save, Trash2, X } from 'lucide-vue-next';
+import { ArrowDown, ArrowUp, Check, Plus, Save, Trash2, X } from 'lucide-vue-next';
 import type { Task, TaskChecklistItem, TaskList, TaskPriority, TaskReminder, TaskResource, TaskResourceType, UpdateTaskInput } from '../domain/tasks';
 import { taskHasDueReminder } from '../domain/tasks';
 import { buildEditableContextMenuItems, useContextMenu } from './contextMenu';
@@ -18,6 +18,7 @@ const emit = defineEmits<{
   close: [];
   save: [taskId: string, patch: UpdateTaskInput];
   complete: [task: Task];
+  delete: [task: Task];
   openTask: [task: Task];
 }>();
 
@@ -92,6 +93,18 @@ function addChecklistItem() {
 
 function removeChecklistItem(index: number) {
   draft.value.checklist.splice(index, 1);
+  normalizeChecklistOrder();
+}
+
+function moveChecklistItem(index: number, direction: -1 | 1) {
+  const targetIndex = index + direction;
+  if (targetIndex < 0 || targetIndex >= draft.value.checklist.length) return;
+  const [item] = draft.value.checklist.splice(index, 1);
+  draft.value.checklist.splice(targetIndex, 0, item);
+  normalizeChecklistOrder();
+}
+
+function normalizeChecklistOrder() {
   draft.value.checklist.forEach((item, order) => { item.order = order; });
 }
 
@@ -227,6 +240,8 @@ const resourceTypes: Array<{ value: TaskResourceType; label: string }> = [
             <div v-for="(item, index) in draft.checklist" :key="item.id" class="drawer-row drawer-row--check">
               <input v-model="item.done" type="checkbox" />
               <input v-model="item.title" placeholder="检查项" @contextmenu="onEditableContextMenu" />
+              <button type="button" class="icon-button" :aria-label="`上移检查项 ${index + 1}`" @click="moveChecklistItem(index, -1)"><ArrowUp :size="15" aria-hidden="true" /></button>
+              <button type="button" class="icon-button" :aria-label="`下移检查项 ${index + 1}`" @click="moveChecklistItem(index, 1)"><ArrowDown :size="15" aria-hidden="true" /></button>
               <button type="button" class="icon-button icon-button--danger" :aria-label="`删除检查项 ${index + 1}`" @click="removeChecklistItem(index)"><Trash2 :size="15" aria-hidden="true" /></button>
             </div>
           </section>
@@ -239,8 +254,11 @@ const resourceTypes: Array<{ value: TaskResourceType; label: string }> = [
 
           <p v-if="error" class="drawer-error">{{ error.replace(/^Error:\s*/, '错误：') }}</p>
           <footer class="task-drawer__footer">
-            <button type="button" @click="emit('complete', task)"><Check :size="16" aria-hidden="true" />完成</button>
-            <button type="submit" class="primary" :disabled="saving || !draft.title.trim()"><Save :size="16" aria-hidden="true" />保存</button>
+            <button type="button" class="icon-button icon-button--danger" :aria-label="`删除任务 ${task.title}`" @click="emit('delete', task)"><Trash2 :size="16" aria-hidden="true" /></button>
+            <div class="task-drawer__footer-actions">
+              <button type="button" @click="emit('complete', task)"><Check :size="16" aria-hidden="true" />完成</button>
+              <button type="submit" class="primary" :disabled="saving || !draft.title.trim()"><Save :size="16" aria-hidden="true" />保存</button>
+            </div>
           </footer>
         </form>
       </aside>
@@ -266,10 +284,11 @@ textarea { resize: vertical; min-height: 92px; padding: 8px 10px; border-radius:
 .drawer-row { display: grid; gap: 8px; align-items: center; margin-top: 8px; }
 .drawer-row--resource { grid-template-columns: 88px minmax(0, 1fr) 76px 70px 32px; }
 .drawer-row--reminder { grid-template-columns: 170px 90px minmax(0, 1fr) 54px 32px; }
-.drawer-row--check { grid-template-columns: 24px minmax(0, 1fr) 32px; }
+.drawer-row--check { grid-template-columns: 24px minmax(0, 1fr) 32px 32px 32px; }
 .drawer-row input[type='checkbox'] { width: 18px; height: 18px; }
 .child-row { width: 100%; height: auto; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--border-soft); }
 .child-row span:last-child, .drawer-empty { color: var(--text-muted); font-size: 12px; }
 .drawer-error { margin: 0; color: var(--err); }
+.task-drawer__footer-actions { display: flex; gap: 8px; align-items: center; }
 @media (max-width: 720px) { .drawer-grid, .drawer-row--resource, .drawer-row--reminder { grid-template-columns: 1fr; } }
 </style>

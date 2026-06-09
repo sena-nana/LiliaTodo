@@ -458,6 +458,7 @@ describe("Entity → TaskList 解码", () => {
       color: "#ff0000",
       archived: false,
       order: 2,
+      groupId: null,
       createdAt: "2026-05-18T10:00:00.000Z",
       updatedAt: "2026-05-19T13:00:00.000Z",
     });

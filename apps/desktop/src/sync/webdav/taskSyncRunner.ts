@@ -206,7 +206,7 @@ function emptyPushReport(): PushReport {
 }
 
 function countEntityChanges(
-  changes: readonly Array<{ readonly entityType: typeof TASK_ENTITY_TYPE | typeof TASK_LIST_ENTITY_TYPE }>,
+  changes: ReadonlyArray<{ readonly entityType: typeof TASK_ENTITY_TYPE | typeof TASK_LIST_ENTITY_TYPE }>,
 ): EntityChangeCounts {
   return changes.reduce<EntityChangeCounts>(
     (counts, change) =>

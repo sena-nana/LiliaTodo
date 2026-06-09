@@ -63,6 +63,17 @@ export function useTaskDetailDrawer(options: UseTaskDetailDrawerOptions) {
     }
   }
 
+  async function deleteTask(task: Task) {
+    drawerError.value = null;
+    try {
+      await options.repository.deleteTask(task.id);
+      closeTask();
+      await options.reload();
+    } catch (e) {
+      drawerError.value = String(e);
+    }
+  }
+
   function closeTask() {
     selectedTask.value = null;
   }
@@ -77,6 +88,7 @@ export function useTaskDetailDrawer(options: UseTaskDetailDrawerOptions) {
     openTask,
     saveTask,
     completeTask,
+    deleteTask,
     closeTask,
     loadLists,
   };

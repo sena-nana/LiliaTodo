@@ -41,6 +41,7 @@ const {
   openTask,
   saveTask,
   completeTask,
+  deleteTask,
   closeTask,
   loadLists,
 } = useTaskDetailDrawer({
@@ -241,6 +242,7 @@ function displayError(value: string) {
       @close="closeTask"
       @save="saveTask"
       @complete="completeTask"
+      @delete="deleteTask"
       @open-task="openTask"
     />
   </section>
