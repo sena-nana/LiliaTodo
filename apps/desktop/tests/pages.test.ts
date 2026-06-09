@@ -310,6 +310,113 @@ describe("桌面端 MVP 页面", () => {
     expect(await screen.findByText("Recovered agenda")).toBeInTheDocument();
   });
 
+  describe("TaskDetailDrawer 页面接入一致性", () => {
+    for (const scenario of drawerPageScenarios()) {
+      it(`${scenario.name}打开任务时加载抽屉依赖数据`, async () => {
+        const repository = scenario.makeRepository();
+
+        const drawer = await openDrawerTask(scenario, repository);
+
+        expect(repository.listTaskChildren).toHaveBeenCalledWith(scenario.taskId);
+        expect(repository.listLists).toHaveBeenCalled();
+        expectDrawerHeading(drawer, scenario.taskTitle);
+      });
+
+      it(`${scenario.name}在抽屉保存通用字段并刷新页面数据`, async () => {
+        const repository = scenario.makeRepository();
+        const drawer = await openDrawerTask(scenario, repository);
+
+        await saveCommonDrawerFields(drawer, scenario);
+
+        await waitFor(() => expect(repository.updateTask).toHaveBeenCalledWith(
+          scenario.taskId,
+          expect.objectContaining({
+            title: `${scenario.name}已更新`,
+            notes: `${scenario.name}详细内容`,
+            priority: 2,
+            listId: "project",
+          }),
+        ));
+        await expectPageReloaded(scenario, repository);
+      });
+
+      it(`${scenario.name}在抽屉完成任务后关闭抽屉并刷新页面`, async () => {
+        const repository = scenario.makeRepository();
+        const drawer = await openDrawerTask(scenario, repository);
+
+        await fireEvent.click(within(drawer).getByRole("button", { name: "完成" }));
+
+        await waitFor(() => expect(repository.setStatus).toHaveBeenCalledWith(
+          scenario.taskId,
+          "completed",
+        ));
+        await waitFor(() => expect(
+          screen.queryByRole(drawerRole, { name: "任务详情" }),
+        ).not.toBeInTheDocument());
+        await expectPageReloaded(scenario, repository);
+      });
+
+      it(`${scenario.name}在抽屉点击子任务会跳转到子任务详情`, async () => {
+        const child = task({
+          id: `${scenario.taskId}-child`,
+          title: `${scenario.name}子任务`,
+          parentId: scenario.taskId,
+        });
+        const repository = scenario.makeRepository({
+          children: {
+            [scenario.taskId]: [child],
+            [child.id]: [],
+          },
+        });
+        const drawer = await openDrawerTask(scenario, repository);
+
+        await fireEvent.click(
+          within(drawer).getByRole("button", { name: new RegExp(child.title) }),
+        );
+
+        await waitFor(() => expect(repository.listTaskChildren).toHaveBeenCalledWith(child.id));
+        expectDrawerHeading(getDrawer(), child.title);
+      });
+
+      it(`${scenario.name}打开任务失败时在抽屉显示错误且保持打开`, async () => {
+        const repository = scenario.makeRepository();
+        vi.mocked(repository.listTaskChildren).mockRejectedValueOnce(
+          new Error("children unavailable"),
+        );
+
+        await scenario.render(repository);
+        await clickPageTask(scenario);
+
+        await expectDrawerError("children unavailable");
+      });
+
+      it(`${scenario.name}保存失败时在抽屉显示错误且保持打开`, async () => {
+        const repository = scenario.makeRepository();
+        const drawer = await openDrawerTask(scenario, repository);
+        vi.mocked(repository.updateTask).mockRejectedValueOnce(
+          new Error("save unavailable"),
+        );
+
+        await fireEvent.update(within(drawer).getByLabelText("任务名"), `${scenario.name}保存失败`);
+        await fireEvent.click(within(drawer).getByRole("button", { name: "保存" }));
+
+        await expectDrawerError("save unavailable");
+      });
+
+      it(`${scenario.name}完成失败时在抽屉显示错误且保持打开`, async () => {
+        const repository = scenario.makeRepository();
+        const drawer = await openDrawerTask(scenario, repository);
+        vi.mocked(repository.setStatus).mockRejectedValueOnce(
+          new Error("complete unavailable"),
+        );
+
+        await fireEvent.click(within(drawer).getByRole("button", { name: "完成" }));
+
+        await expectDrawerError("complete unavailable");
+      });
+    }
+  });
+
   it("WebDAV 立即同步成功后在卡片上展示同步结果摘要", async () => {
     const repository = fakeRepository();
     const controller = fakeWebdavController({
@@ -826,6 +933,126 @@ function renderWithRepository(
       },
     },
   });
+}
+
+interface DrawerPageScenario {
+  name: string;
+  taskId: string;
+  taskTitle: string;
+  makeRepository: (overrides?: { children?: DrawerChildren }) => TaskRepository;
+  render: (repository: TaskRepository) => Promise<unknown> | unknown;
+  loadCount: (repository: TaskRepository) => number;
+}
+
+type DrawerTask = ReturnType<typeof task>;
+type DrawerChildren = Record<string, DrawerTask[]>;
+type FakeRepositoryOptions = Parameters<typeof fakeRepository>[0];
+
+const drawerRole = "complementary";
+
+function drawerPageScenarios(): DrawerPageScenario[] {
+  const lists = [
+    taskListFixture({ id: "inbox", name: "收件箱", order: 0 }),
+    taskListFixture({ id: "project", name: "项目", order: 1 }),
+  ];
+  const todayTask = task({ id: "today-task", title: "今日任务" });
+  const inboxTask = task({ id: "inbox-task", title: "收件箱任务" });
+  const calendarTask = task({
+    id: "calendar-task",
+    title: "日历任务",
+    dueAt: "2026-05-17T02:30:00.000Z",
+  });
+  const listTask = task({ id: "list-task", title: "清单任务", listId: "project" });
+  const createDrawerScenario = (
+    options: Omit<DrawerPageScenario, "taskId" | "taskTitle" | "makeRepository"> & {
+      task: DrawerTask;
+      repositoryOptions: (task: DrawerTask, children?: DrawerChildren) => FakeRepositoryOptions;
+    },
+  ): DrawerPageScenario => ({
+    name: options.name,
+    taskId: options.task.id,
+    taskTitle: options.task.title,
+    makeRepository: ({ children } = {}) => fakeRepository({
+      lists,
+      ...options.repositoryOptions(options.task, children),
+    }),
+    render: options.render,
+    loadCount: options.loadCount,
+  });
+
+  return [
+    createDrawerScenario({
+      name: "Today",
+      task: todayTask,
+      repositoryOptions: (item, children) => ({
+        today: { overdue: [], dueToday: [item], completedToday: [] },
+        children,
+      }),
+      render: (repository) => renderWithRepository(Today, repository),
+      loadCount: (repository) => vi.mocked(repository.listToday).mock.calls.length,
+    }),
+    createDrawerScenario({
+      name: "Inbox",
+      task: inboxTask,
+      repositoryOptions: (item, children) => ({ inbox: [item], children }),
+      render: (repository) => renderWithRepository(Inbox, repository),
+      loadCount: (repository) => vi.mocked(repository.listInbox).mock.calls.length,
+    }),
+    createDrawerScenario({
+      name: "Calendar",
+      task: calendarTask,
+      repositoryOptions: (item, children) => ({ agenda: [item], children }),
+      render: (repository) => renderWithRepository(Calendar, repository),
+      loadCount: (repository) => vi.mocked(repository.listAgenda).mock.calls.length,
+    }),
+    createDrawerScenario({
+      name: "TaskListPage",
+      task: listTask,
+      repositoryOptions: (item, children) => ({
+        listTasks: { project: [item] },
+        children,
+      }),
+      render: (repository) => renderAppAt("/lists/project", repository),
+      loadCount: (repository) => vi.mocked(repository.listTasksByList).mock.calls.length,
+    }),
+  ];
+}
+
+async function openDrawerTask(scenario: DrawerPageScenario, repository: TaskRepository) {
+  await scenario.render(repository);
+  await clickPageTask(scenario);
+  return screen.findByRole(drawerRole, { name: "任务详情" });
+}
+
+async function clickPageTask(scenario: DrawerPageScenario) {
+  const item = await screen.findByText(scenario.taskTitle);
+  await fireEvent.click(item);
+}
+
+function getDrawer() {
+  return screen.getByRole(drawerRole, { name: "任务详情" });
+}
+
+function expectDrawerHeading(drawer: HTMLElement, title: string) {
+  expect(within(drawer).getByRole("heading", { level: 2, name: title })).toBeInTheDocument();
+}
+
+async function saveCommonDrawerFields(drawer: HTMLElement, scenario: DrawerPageScenario) {
+  const controls = within(drawer);
+  await fireEvent.update(controls.getByLabelText("任务名"), `${scenario.name}已更新`);
+  await fireEvent.update(controls.getByLabelText("详细内容"), `${scenario.name}详细内容`);
+  await fireEvent.update(controls.getByLabelText("优先级"), "2");
+  await fireEvent.update(controls.getByLabelText("所属清单"), "project");
+  await fireEvent.click(controls.getByRole("button", { name: "保存" }));
+}
+
+async function expectPageReloaded(scenario: DrawerPageScenario, repository: TaskRepository) {
+  await waitFor(() => expect(scenario.loadCount(repository)).toBeGreaterThan(1));
+}
+
+async function expectDrawerError(message: string) {
+  expect(await screen.findByText(`错误：${message}`)).toBeInTheDocument();
+  expect(getDrawer()).toBeInTheDocument();
 }
 
 async function renderAppAt(path: string, repository: TaskRepository) {
