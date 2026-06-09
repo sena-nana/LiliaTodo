@@ -33,7 +33,7 @@ import {
   INSERT_TASK_LIST_SQL,
   INSERT_TASK_CATEGORY_SQL,
   INSERT_TASK_SQL,
-  MOMO_DATABASE_PATH,
+  LILIATODO_DATABASE_PATH,
   SCHEMA,
   SYNC_STATE_ID,
   appendUpdate,
@@ -221,7 +221,7 @@ export function createTaskRepository(
   const syncRunId = options.syncRunId ?? createId;
 
   async function getDb() {
-    dbPromise ??= loadDatabase(MOMO_DATABASE_PATH);
+    dbPromise ??= loadDatabase(LILIATODO_DATABASE_PATH);
     return dbPromise;
   }
 
@@ -403,7 +403,7 @@ export function createTaskRepository(
   }
 
   return {
-    databasePath: MOMO_DATABASE_PATH,
+    databasePath: LILIATODO_DATABASE_PATH,
     init,
 
     async createTask(input) {
@@ -966,7 +966,7 @@ export function createTaskRepository(
         activeTasks: Number(stats.active_tasks ?? 0),
         completedTasks: Number(stats.completed_tasks ?? 0),
         pendingLocalChanges: Number(stats.pending_local_changes ?? 0),
-        databasePath: MOMO_DATABASE_PATH,
+        databasePath: LILIATODO_DATABASE_PATH,
       };
     },
   };

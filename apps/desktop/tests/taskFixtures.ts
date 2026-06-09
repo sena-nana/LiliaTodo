@@ -51,7 +51,7 @@ export function fakeTaskRepository(
   }
 
   const repository = {
-    databasePath: "sqlite:momo.db",
+    databasePath: "sqlite:liliatodo.db",
     init: vi.fn().mockResolvedValue(undefined),
     createTask: vi.fn().mockImplementation((input: CreateTaskInput) =>
       Promise.resolve(taskFixture({
@@ -124,7 +124,7 @@ export function fakeTaskRepository(
     listAgenda: vi.fn().mockResolvedValue(overrides.agenda ?? []),
     listDueReminders: vi.fn().mockResolvedValue(overrides.dueReminders ?? []),
     getStats: vi.fn().mockResolvedValue({
-      databasePath: "sqlite:momo.db",
+      databasePath: "sqlite:liliatodo.db",
       totalTasks: 0,
       activeTasks: 0,
       completedTasks: 0,

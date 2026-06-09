@@ -2,7 +2,7 @@
 // 实现 plan D 节：
 //
 //   /<root>/
-//     schema-version                  # 客户端 @momo/schema 主版本号
+//     schema-version                  # 客户端 @liliatodo/schema 主版本号
 //     device-locks/<device>.lock      # 短期 lock，恢复用 ETag/feature detect
 //     entities/
 //       <entity-type>/<id>.json       # Entity<T> 快照
@@ -15,7 +15,7 @@
 //
 // 与 sync/types 共享同一份数据格式，未来切换 provider 时数据零迁移。
 
-export const WEBDAV_DEFAULT_ROOT = "/momo";
+export const WEBDAV_DEFAULT_ROOT = "/liliatodo";
 
 const SAFE_DEVICE_PATTERN = /^[A-Za-z0-9_\-]+$/;
 const SAFE_ENTITY_TYPE_PATTERN = /^[a-z][a-z0-9\-]*$/;

@@ -22,7 +22,7 @@ import SyncSettings from "../src/pages/settings/SyncSettings.vue";
 import Widget from "../src/pages/Widget.vue";
 import App from "../src/App.vue";
 import Settings from "../src/pages/Settings.vue";
-import { createMomoRouter } from "../src/router";
+import { createLiliaTodoRouter } from "../src/router";
 import { normalizeSettingsTab } from "../src/config/appShell";
 import { TASK_LISTS_CHANGED_EVENT } from "../src/data/taskListEvents";
 import {
@@ -550,7 +550,7 @@ describe("桌面端 MVP 页面", () => {
     });
     const secretsStore = fakeSecretsStore({
       baseUrl: "https://dav.jianguoyun.com/dav",
-      root: "/momo",
+      root: "/liliatodo",
       username: "demo",
       password: "secret",
       deviceId: "desk-1",
@@ -582,7 +582,7 @@ describe("桌面端 MVP 页面", () => {
     });
     const secretsStore = fakeSecretsStore({
       baseUrl: "https://dav.jianguoyun.com/dav",
-      root: "/momo",
+      root: "/liliatodo",
       username: "demo",
       password: "secret",
       deviceId: "desk-1",
@@ -611,7 +611,7 @@ describe("桌面端 MVP 页面", () => {
     const controller = fakeWebdavController({ kind: "enabled" });
     const secretsStore = fakeSecretsStore({
       baseUrl: "https://dav.jianguoyun.com/dav",
-      root: "/momo",
+      root: "/liliatodo",
       username: "demo",
       password: "secret",
       deviceId: "desk-1",
@@ -633,7 +633,7 @@ describe("桌面端 MVP 页面", () => {
     await waitFor(() =>
       expect(secretsStore.save).toHaveBeenCalledWith({
         baseUrl: "https://dav.jianguoyun.com/dav",
-        root: "/momo",
+        root: "/liliatodo",
         username: "demo-updated",
         password: "secret",
         deviceId: "desk-1",
@@ -681,7 +681,7 @@ describe("桌面端 MVP 页面", () => {
   it("设置页通过 WebDAV controller 订阅同步完成通知", async () => {
     const repository = fakeRepository();
     const controller = fakeWebdavController({ kind: "enabled" });
-    const router = createMomoRouter(createMemoryHistory());
+    const router = createLiliaTodoRouter(createMemoryHistory());
     await router.push("/settings?tab=sync");
     await router.isReady();
 
@@ -692,7 +692,7 @@ describe("桌面端 MVP 页面", () => {
           [WebdavSyncControllerKey as symbol]: controller,
           [WebdavSecretsStoreKey as symbol]: fakeSecretsStore({
             baseUrl: "https://dav.jianguoyun.com/dav",
-            root: "/momo",
+            root: "/liliatodo",
             username: "demo",
             password: "secret",
             deviceId: "desk-1",
@@ -1033,7 +1033,7 @@ describe("桌面端 MVP 页面", () => {
 
     renderWithRepository(Widget, repository);
 
-    expect(await screen.findByText("Momo 小组件")).toBeInTheDocument();
+    expect(await screen.findByText("LiliaTodo 小组件")).toBeInTheDocument();
     expect(await screen.findByText("Late invoice")).toBeInTheDocument();
     expect(screen.getByText("Focus block")).toBeInTheDocument();
   });
@@ -1072,7 +1072,7 @@ describe("桌面端 MVP 页面", () => {
 
     renderWithRepository(Widget, repository);
 
-    await screen.findByText("Momo 小组件");
+    await screen.findByText("LiliaTodo 小组件");
     await waitFor(() => expect(repository.listDueReminders).toHaveBeenCalledTimes(1));
 
     const todayNow = vi.mocked(repository.listToday).mock.calls[0]?.[0];
@@ -1231,7 +1231,7 @@ async function expectDrawerError(message: string) {
 }
 
 async function renderAppAt(path: string, repository: TaskRepository) {
-  const router = createMomoRouter(createMemoryHistory());
+  const router = createLiliaTodoRouter(createMemoryHistory());
   await router.push(path);
   await router.isReady();
 
@@ -1263,7 +1263,7 @@ function fakeWebdavController(
         runner: { runOnce: vi.fn() },
         secrets: {
           baseUrl: "https://dav.jianguoyun.com/dav",
-          root: "/momo",
+          root: "/liliatodo",
           username: "u",
           password: "p",
           deviceId: "desk-1",

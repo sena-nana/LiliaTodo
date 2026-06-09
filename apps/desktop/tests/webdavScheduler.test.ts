@@ -126,7 +126,7 @@ function createProviderStub(): { provider: SyncProvider; stubs: ProviderStubs } 
   const stubs: ProviderStubs = {
     push: vi.fn(async (_ops: Op[]) => ({
       acceptedCount: _ops.length,
-      chunkPath: "/momo/oplog/deviceA/20260519/000000.jsonl",
+      chunkPath: "/liliatodo/oplog/deviceA/20260519/000000.jsonl",
     })),
     pull: vi.fn(async (_since: string | null) => ({
       ops: [] as Op[],

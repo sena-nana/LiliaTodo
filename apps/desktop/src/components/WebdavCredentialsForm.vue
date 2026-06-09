@@ -26,7 +26,7 @@ defineEmits<{
     </label>
     <label class="field">
       <span>根目录</span>
-      <input v-model="form.root" type="text" autocomplete="off" placeholder="/momo" @contextmenu="$emit('editableContextMenu', $event)" />
+      <input v-model="form.root" type="text" autocomplete="off" placeholder="/liliatodo" @contextmenu="$emit('editableContextMenu', $event)" />
     </label>
     <label class="field">
       <span>用户名</span>

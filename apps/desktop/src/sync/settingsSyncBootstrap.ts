@@ -34,7 +34,7 @@ export function createLazySettingsSyncRuntime(repository: TaskRepository) {
       repository,
       secretsStore,
       httpFetcher,
-      userAgent: "Momo/0.1 (+webdav)",
+      userAgent: "LiliaTodo/0.1 (+webdav)",
     });
   }
 

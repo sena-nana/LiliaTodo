@@ -53,7 +53,7 @@ describe("detectWebdavCapabilities", () => {
     const client = makeClient();
     const caps = await detectWebdavCapabilities({
       client,
-      probePath: "/momo",
+      probePath: "/liliatodo",
     });
     expect(caps).toEqual(conservativeWebdavCapabilities);
   });
@@ -66,7 +66,7 @@ describe("detectWebdavCapabilities", () => {
     });
     const caps = await detectWebdavCapabilities({
       client,
-      probePath: "/momo",
+      probePath: "/liliatodo",
     });
     expect(caps).toEqual(conservativeWebdavCapabilities);
   });
@@ -84,7 +84,7 @@ describe("detectWebdavCapabilities", () => {
     });
     const caps = await detectWebdavCapabilities({
       client,
-      probePath: "/momo",
+      probePath: "/liliatodo",
     });
     expect(caps.supportsLock).toBe(true);
     expect(caps.vendor).toBe("nextcloud");
@@ -105,7 +105,7 @@ describe("detectWebdavCapabilities", () => {
     });
     const caps = await detectWebdavCapabilities({
       client,
-      probePath: "/momo",
+      probePath: "/liliatodo",
     });
     expect(caps.supportsLock).toBe(false);
     expect(caps.vendor).toBe("jianguoyun");
@@ -126,7 +126,7 @@ describe("detectWebdavCapabilities", () => {
     });
     const caps = await detectWebdavCapabilities({
       client,
-      probePath: "/momo",
+      probePath: "/liliatodo",
     });
     expect(caps.supportsLock).toBe(false);
   });

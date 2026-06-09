@@ -1,7 +1,7 @@
 // BE-12 sprint-4.3a：把 @tauri-apps/plugin-http 包装为 HttpFetcher。
 //
 // 为什么不直接用浏览器 fetch：
-//   - 坚果云不会给 Momo origin 加 Access-Control-Allow-Origin，浏览器进程
+//   - 坚果云不会给 LiliaTodo origin 加 Access-Control-Allow-Origin，浏览器进程
 //     发起的跨域 WebDAV 请求会被 CORS 预检拦下；
 //   - plugin-http 由 Tauri rust 端 reqwest 直接发起，绕过 webview 同源策略；
 //   - 域名白名单由 capabilities/default.json 的 http:default scope 收口，

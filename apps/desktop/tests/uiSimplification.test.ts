@@ -9,17 +9,17 @@ import Inbox from "../src/pages/Inbox.vue";
 import Calendar from "../src/pages/Calendar.vue";
 import SyncSettings from "../src/pages/settings/SyncSettings.vue";
 import AboutSettings from "../src/pages/settings/AboutSettings.vue";
-import { createMomoRouter } from "../src/router";
+import { createLiliaTodoRouter } from "../src/router";
 import { fakeTaskRepository } from "./taskFixtures";
 
 vi.mock("@tauri-apps/api/app", () => ({
-  getName: vi.fn().mockResolvedValue("Momo"),
+  getName: vi.fn().mockResolvedValue("LiliaTodo"),
   getVersion: vi.fn().mockResolvedValue("0.1.0"),
 }));
 
 describe("UI 精简", () => {
   it("侧边栏不再显示任务标题文本", async () => {
-    const router = createMomoRouter(createMemoryHistory());
+    const router = createLiliaTodoRouter(createMemoryHistory());
     await router.push("/today");
     await router.isReady();
 

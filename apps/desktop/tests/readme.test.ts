@@ -64,8 +64,8 @@ describe("桌面端 README 文档", () => {
     expect(content).not.toContain("本地同步模拟");
     expect(content).not.toContain("运行本地同步模拟");
     expect(content).not.toContain("远程同步配置");
-    expect(content).not.toContain("VITE_MOMO_SYNC_BASE_URL");
-    expect(content).not.toContain("VITE_MOMO_SYNC_TOKEN");
+    expect(content).not.toContain("VITE_LILIATODO_SYNC_BASE_URL");
+    expect(content).not.toContain("VITE_LILIATODO_SYNC_TOKEN");
     expect(content).not.toContain("createLocalSyncRunner()");
     expect(content).not.toContain("createRemoteSyncRunner()");
     expect(content).not.toContain("BE-01");

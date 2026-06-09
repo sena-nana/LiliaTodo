@@ -6,12 +6,12 @@
 //   - 未来若把凭据搬去 OS keychain（plugin-keyring）只换实现即可。
 //
 // secrets 文件以 plugin-store 的方式落到 OS 用户目录（Windows 上是
-// %APPDATA%/<bundleId>/momo-webdav-secrets.json），不写浏览器 localStorage。
+// %APPDATA%/<bundleId>/liliatodo-webdav-secrets.json），不写浏览器 localStorage。
 
 export interface WebdavSecrets {
   /** WebDAV base URL（含 scheme、host、用户库路径前缀；不带尾斜杠）。 */
   readonly baseUrl: string;
-  /** WebDAV 内部根目录，默认 `/momo`。 */
+  /** WebDAV 内部根目录，默认 `/liliatodo`。 */
   readonly root: string;
   /** WebDAV 用户名。 */
   readonly username: string;
@@ -27,7 +27,7 @@ export interface WebdavSecretsStore {
   clear(): Promise<void>;
 }
 
-const SECRETS_STORE_FILE = "momo-webdav-secrets.json";
+const SECRETS_STORE_FILE = "liliatodo-webdav-secrets.json";
 const SECRETS_KEY = "webdav";
 
 interface PluginStoreInstance {

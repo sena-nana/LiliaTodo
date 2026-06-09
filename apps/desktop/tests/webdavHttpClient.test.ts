@@ -33,7 +33,7 @@ function makeFetcher(
 function jianguoyunConfig(): WebdavConfig {
   return {
     baseUrl: "https://dav.jianguoyun.com/dav",
-    root: "/momo",
+    root: "/liliatodo",
     credentials: {
       kind: "basic",
       username: "user@example.com",
@@ -50,7 +50,7 @@ describe("createWebdavHttpClient — Basic 头与 URL 编码", () => {
       body: "",
     }));
     const client = createWebdavHttpClient({ config: jianguoyunConfig(), fetcher });
-    await client.options!("/momo");
+    await client.options!("/liliatodo");
     expect(calls).toHaveLength(1);
     expect(calls[0].headers["Authorization"]).toBe(
       "Basic " + btoa("user@example.com:secret-app-token"),
@@ -64,9 +64,9 @@ describe("createWebdavHttpClient — Basic 头与 URL 编码", () => {
       body: "",
     }));
     const client = createWebdavHttpClient({ config: jianguoyunConfig(), fetcher });
-    await client.get("/momo/entities/任务/a b.json");
+    await client.get("/liliatodo/entities/任务/a b.json");
     expect(calls[0].url).toBe(
-      "https://dav.jianguoyun.com/dav/momo/entities/" +
+      "https://dav.jianguoyun.com/dav/liliatodo/entities/" +
         encodeURIComponent("任务") +
         "/" +
         encodeURIComponent("a b.json"),
@@ -78,19 +78,19 @@ describe("ensureCollection", () => {
   it("201 / 200 视为创建成功", async () => {
     const { fetcher } = makeFetcher(() => ({ status: 201, headers: {}, body: "" }));
     const client = createWebdavHttpClient({ config: jianguoyunConfig(), fetcher });
-    await expect(client.ensureCollection("/momo/entities")).resolves.toBeUndefined();
+    await expect(client.ensureCollection("/liliatodo/entities")).resolves.toBeUndefined();
   });
 
   it("405 视为已存在", async () => {
     const { fetcher } = makeFetcher(() => ({ status: 405, headers: {}, body: "" }));
     const client = createWebdavHttpClient({ config: jianguoyunConfig(), fetcher });
-    await expect(client.ensureCollection("/momo/entities")).resolves.toBeUndefined();
+    await expect(client.ensureCollection("/liliatodo/entities")).resolves.toBeUndefined();
   });
 
   it("409 抛 WebdavConflictError 提示父目录缺失", async () => {
     const { fetcher } = makeFetcher(() => ({ status: 409, headers: {}, body: "" }));
     const client = createWebdavHttpClient({ config: jianguoyunConfig(), fetcher });
-    await expect(client.ensureCollection("/momo/a/b/c")).rejects.toBeInstanceOf(
+    await expect(client.ensureCollection("/liliatodo/a/b/c")).rejects.toBeInstanceOf(
       WebdavConflictError,
     );
   });
@@ -104,7 +104,7 @@ describe("put", () => {
       body: "",
     }));
     const client = createWebdavHttpClient({ config: jianguoyunConfig(), fetcher });
-    const result = await client.put("/momo/entities/task/x.json", "body", {
+    const result = await client.put("/liliatodo/entities/task/x.json", "body", {
       ifMatch: '"old-etag"',
     });
     expect(calls[0].headers["If-Match"]).toBe('"old-etag"');
@@ -115,7 +115,7 @@ describe("put", () => {
     const { fetcher } = makeFetcher(() => ({ status: 412, headers: {}, body: "" }));
     const client = createWebdavHttpClient({ config: jianguoyunConfig(), fetcher });
     await expect(
-      client.put("/momo/entities/task/x.json", "body", { ifMatch: '"old"' }),
+      client.put("/liliatodo/entities/task/x.json", "body", { ifMatch: '"old"' }),
     ).rejects.toBeInstanceOf(WebdavConflictError);
   });
 });
@@ -124,7 +124,7 @@ describe("get", () => {
   it("404 返回 null", async () => {
     const { fetcher } = makeFetcher(() => ({ status: 404, headers: {}, body: "" }));
     const client = createWebdavHttpClient({ config: jianguoyunConfig(), fetcher });
-    expect(await client.get("/momo/entities/task/missing.json")).toBeNull();
+    expect(await client.get("/liliatodo/entities/task/missing.json")).toBeNull();
   });
 
   it("200 返回 body + etag + lastModified", async () => {
@@ -134,7 +134,7 @@ describe("get", () => {
       body: "payload",
     }));
     const client = createWebdavHttpClient({ config: jianguoyunConfig(), fetcher });
-    const result = await client.get("/momo/entities/task/a.json");
+    const result = await client.get("/liliatodo/entities/task/a.json");
     expect(result).toEqual({
       body: "payload",
       etag: '"xyz"',
@@ -149,7 +149,7 @@ describe("delete", () => {
       const { fetcher } = makeFetcher(() => ({ status, headers: {}, body: "" }));
       const client = createWebdavHttpClient({ config: jianguoyunConfig(), fetcher });
       await expect(
-        client.delete("/momo/entities/task/x.json"),
+        client.delete("/liliatodo/entities/task/x.json"),
       ).resolves.toBeUndefined();
     }
   });
@@ -160,7 +160,7 @@ describe("stat — PROPFIND depth=0", () => {
     const body = `<?xml version="1.0" encoding="utf-8"?>
 <d:multistatus xmlns:d="DAV:">
   <d:response>
-    <d:href>/dav/momo/entities/task/a.json</d:href>
+    <d:href>/dav/liliatodo/entities/task/a.json</d:href>
     <d:propstat>
       <d:prop>
         <d:resourcetype/>
@@ -178,11 +178,11 @@ describe("stat — PROPFIND depth=0", () => {
       body,
     }));
     const client = createWebdavHttpClient({ config: jianguoyunConfig(), fetcher });
-    const stat = await client.stat("/momo/entities/task/a.json");
+    const stat = await client.stat("/liliatodo/entities/task/a.json");
     expect(calls[0].method).toBe("PROPFIND");
     expect(calls[0].headers["Depth"]).toBe("0");
     expect(stat).not.toBeNull();
-    expect(stat!.path).toBe("/momo/entities/task/a.json");
+    expect(stat!.path).toBe("/liliatodo/entities/task/a.json");
     expect(stat!.etag).toBe("abc");
     expect(stat!.size).toBe(42);
     expect(stat!.isDirectory).toBe(false);
@@ -192,7 +192,7 @@ describe("stat — PROPFIND depth=0", () => {
   it("404 返回 null", async () => {
     const { fetcher } = makeFetcher(() => ({ status: 404, headers: {}, body: "" }));
     const client = createWebdavHttpClient({ config: jianguoyunConfig(), fetcher });
-    expect(await client.stat("/momo/entities/task/none.json")).toBeNull();
+    expect(await client.stat("/liliatodo/entities/task/none.json")).toBeNull();
   });
 });
 
@@ -201,7 +201,7 @@ describe("list — PROPFIND depth=1", () => {
     const body = `<?xml version="1.0" encoding="utf-8"?>
 <d:multistatus xmlns:d="DAV:">
   <d:response>
-    <d:href>/dav/momo/entities/task/</d:href>
+    <d:href>/dav/liliatodo/entities/task/</d:href>
     <d:propstat>
       <d:prop>
         <d:resourcetype><d:collection/></d:resourcetype>
@@ -210,7 +210,7 @@ describe("list — PROPFIND depth=1", () => {
     </d:propstat>
   </d:response>
   <d:response>
-    <d:href>/dav/momo/entities/task/a.json</d:href>
+    <d:href>/dav/liliatodo/entities/task/a.json</d:href>
     <d:propstat>
       <d:prop>
         <d:resourcetype/>
@@ -220,7 +220,7 @@ describe("list — PROPFIND depth=1", () => {
     </d:propstat>
   </d:response>
   <d:response>
-    <d:href>/dav/momo/entities/task/b.json</d:href>
+    <d:href>/dav/liliatodo/entities/task/b.json</d:href>
     <d:propstat>
       <d:prop>
         <d:resourcetype/>
@@ -236,12 +236,12 @@ describe("list — PROPFIND depth=1", () => {
       body,
     }));
     const client = createWebdavHttpClient({ config: jianguoyunConfig(), fetcher });
-    const stats = await client.list("/momo/entities/task");
+    const stats = await client.list("/liliatodo/entities/task");
     expect(calls[0].headers["Depth"]).toBe("1");
     expect(stats).toHaveLength(2);
     expect(stats.map((s) => s.path).sort()).toEqual([
-      "/momo/entities/task/a.json",
-      "/momo/entities/task/b.json",
+      "/liliatodo/entities/task/a.json",
+      "/liliatodo/entities/task/b.json",
     ]);
     const weak = stats.find((s) => s.path.endsWith("b.json"));
     expect(weak?.etag).toBe("e2");
@@ -250,7 +250,7 @@ describe("list — PROPFIND depth=1", () => {
   it("404 返回空数组", async () => {
     const { fetcher } = makeFetcher(() => ({ status: 404, headers: {}, body: "" }));
     const client = createWebdavHttpClient({ config: jianguoyunConfig(), fetcher });
-    expect(await client.list("/momo/empty")).toEqual([]);
+    expect(await client.list("/liliatodo/empty")).toEqual([]);
   });
 });
 
@@ -266,7 +266,7 @@ describe("options — 探测服务能力", () => {
       body: "",
     }));
     const client = createWebdavHttpClient({ config: jianguoyunConfig(), fetcher });
-    const info = await client.options!("/momo");
+    const info = await client.options!("/liliatodo");
     expect(Array.from(info.davCompliance).sort()).toEqual(["1", "3"]);
     expect(info.allowMethods.has("PROPFIND")).toBe(true);
     expect(info.allowMethods.has("LOCK")).toBe(false);
@@ -282,7 +282,7 @@ describe("传输异常 → WebdavUnreachableError", () => {
       },
     };
     const client = createWebdavHttpClient({ config: jianguoyunConfig(), fetcher });
-    await expect(client.get("/momo/entities/task/x.json")).rejects.toBeInstanceOf(
+    await expect(client.get("/liliatodo/entities/task/x.json")).rejects.toBeInstanceOf(
       WebdavUnreachableError,
     );
   });
@@ -290,7 +290,7 @@ describe("传输异常 → WebdavUnreachableError", () => {
   it("非预期状态码也抛 WebdavUnreachableError", async () => {
     const { fetcher } = makeFetcher(() => ({ status: 500, headers: {}, body: "" }));
     const client = createWebdavHttpClient({ config: jianguoyunConfig(), fetcher });
-    await expect(client.get("/momo/entities/task/x.json")).rejects.toBeInstanceOf(
+    await expect(client.get("/liliatodo/entities/task/x.json")).rejects.toBeInstanceOf(
       WebdavUnreachableError,
     );
   });

@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Momo",
+  "productName": "LiliaTodo",
   "version": "0.1.0",
-  "identifier": "com.momo.desktop",
+  "identifier": "com.liliatodo.desktop",
   "build": {
     "beforeDevCommand": "yarn dev",
     "devUrl": "http://localhost:1420",
@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "Momo",
+        "title": "LiliaTodo",
         "width": 1200,
         "height": 800,
         "minWidth": 900,
@@ -24,7 +24,7 @@
       },
       {
         "label": "widget",
-        "title": "Momo Widget",
+        "title": "LiliaTodo Widget",
         "create": false,
         "decorations": false,
         "transparent": true,

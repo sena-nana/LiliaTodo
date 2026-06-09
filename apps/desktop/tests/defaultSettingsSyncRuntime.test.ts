@@ -37,7 +37,7 @@ describe("默认设置页 WebDAV 同步装配", () => {
       runner: { runOnce },
       secrets: {
         baseUrl: "https://dav.jianguoyun.com/dav",
-        root: "/momo",
+        root: "/liliatodo",
         username: "u",
         password: "p",
         deviceId: "desk-a",
@@ -89,7 +89,7 @@ describe("默认设置页 WebDAV 同步装配", () => {
         runner: { runOnce },
         secrets: {
           baseUrl: "https://dav.jianguoyun.com/dav",
-          root: "/momo",
+          root: "/liliatodo",
           username: "u",
           password: "p",
           deviceId: "desk-a",

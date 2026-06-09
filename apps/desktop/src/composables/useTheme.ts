@@ -2,7 +2,7 @@ import { ref, watch } from "vue";
 
 export type Theme = "dark" | "light";
 
-const STORAGE_KEY = "momo.theme";
+const STORAGE_KEY = "liliatodo.theme";
 const DEFAULT_THEME: Theme = "dark";
 
 function loadInitial(): Theme {

@@ -1,6 +1,6 @@
 import type { TaskRepository } from "./taskRepository";
 
-const MOMO_DATABASE_PATH = "sqlite:momo.db";
+const LILIATODO_DATABASE_PATH = "sqlite:liliatodo.db";
 
 type RepositoryMethodName = {
   [K in keyof TaskRepository]: TaskRepository[K] extends (...args: never[]) => unknown ? K : never;
@@ -25,7 +25,7 @@ function delegate<K extends RepositoryMethodName>(method: K): TaskRepository[K] 
 
 export function createLazyTaskRepository(): TaskRepository {
   return {
-    databasePath: MOMO_DATABASE_PATH,
+    databasePath: LILIATODO_DATABASE_PATH,
     init: delegate("init"),
     createTask: delegate("createTask"),
     updateTask: delegate("updateTask"),

@@ -512,17 +512,17 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@momo/contracts@workspace:packages/contracts":
+"@liliatodo/contracts@workspace:packages/contracts":
   version: 0.0.0-use.local
-  resolution: "@momo/contracts@workspace:packages/contracts"
+  resolution: "@liliatodo/contracts@workspace:packages/contracts"
   dependencies:
     typescript: "npm:~5.8.3"
   languageName: unknown
   linkType: soft
 
-"@momo/schema@workspace:packages/schema":
+"@liliatodo/schema@workspace:packages/schema":
   version: 0.0.0-use.local
-  resolution: "@momo/schema@workspace:packages/schema"
+  resolution: "@liliatodo/schema@workspace:packages/schema"
   dependencies:
     typescript: "npm:~5.8.3"
   languageName: unknown
@@ -2748,6 +2748,12 @@ __metadata:
   languageName: node
   linkType: hard
 
+"liliatodo-workspace@workspace:.":
+  version: 0.0.0-use.local
+  resolution: "liliatodo-workspace@workspace:."
+  languageName: unknown
+  linkType: soft
+
 "local-pkg@npm:^1.1.2":
   version: 1.1.2
   resolution: "local-pkg@npm:1.1.2"
@@ -2866,12 +2872,6 @@ __metadata:
   checksum: 10c0/aa826683a6daddf2aef65f9c8142e362731cf8e415a5591faf92fd51040a76697e45ab6dbb7a3b38be74e0f8c464825a7eabe827750455c7472421953f5da733
   languageName: node
   linkType: hard
-
-"momo-workspace@workspace:.":
-  version: 0.0.0-use.local
-  resolution: "momo-workspace@workspace:."
-  languageName: unknown
-  linkType: soft
 
 "muggle-string@npm:^0.4.1":
   version: 0.4.1

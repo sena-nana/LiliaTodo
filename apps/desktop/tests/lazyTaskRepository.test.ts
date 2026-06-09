@@ -7,7 +7,7 @@ describe("懒加载任务仓储", () => {
     vi.resetModules();
     const inboxTask = taskFixture({ id: "inbox-task", title: "收件箱任务" });
     const repository = {
-      databasePath: "sqlite:momo.db",
+      databasePath: "sqlite:liliatodo.db",
       listTasksByList: vi.fn().mockResolvedValue([inboxTask]),
       async listInbox(this: TaskRepository) {
         return this.listTasksByList("inbox");

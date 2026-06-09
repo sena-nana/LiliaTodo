@@ -16,7 +16,7 @@ interface Props {
   sidebarTogglesDisabled?: boolean;
 }
 
-withDefaults(defineProps<Props>(), { title: "Momo" });
+withDefaults(defineProps<Props>(), { title: "LiliaTodo" });
 
 defineEmits<{
   toggleLeftSidebar: [];

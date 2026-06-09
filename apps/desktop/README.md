@@ -1,4 +1,4 @@
-# Momo · Desktop（Tauri 2 + Vue 3 + TypeScript）
+# LiliaTodo · Desktop（Tauri 2 + Vue 3 + TypeScript）
 
 桌面端前端优先工具。当前完成了 Tauri 2 + Vue 3 + TypeScript 壳、本地 SQLite 任务存储、今日 / 收件箱 / 日历 / 设置四个主页面、小组件窗口，以及通过 WebDAV（坚果云优先）完成多端同步的主路径。
 
@@ -38,7 +38,7 @@ npm install
 
 ## 本地数据
 
-- SQLite 由 `@tauri-apps/plugin-sql` / `tauri-plugin-sql` 提供，连接固定为 `sqlite:momo.db`。
+- SQLite 由 `@tauri-apps/plugin-sql` / `tauri-plugin-sql` 提供，连接固定为 `sqlite:liliatodo.db`。
 - 前端通过 `TaskRepository` 访问数据，页面不直接写 SQL。
 - 当前 schema 包含 `schema_migrations`、`task_lists`、`tasks`、`local_changes`、`sync_state`、`sync_runs`、`task_sync_versions` 与 `entity_sync_versions`；`tags` 以 JSON text 存储，时间统一保存 ISO 字符串。
 - 今日页支持快速添加今日或收件箱任务、查看逾期/今日/今日完成；收件箱页支持编辑、完成、删除无截止日期任务；日历页先提供未来 7 天只读日程。

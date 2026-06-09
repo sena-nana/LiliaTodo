@@ -79,7 +79,7 @@ function stubRepository(): TaskRepository {
 
 const validSecrets: WebdavSecrets = {
   baseUrl: "https://dav.jianguoyun.com/dav",
-  root: "/momo",
+  root: "/liliatodo",
   username: "user@example.com",
   password: "app-secret",
   deviceId: "desk-a",
@@ -122,20 +122,20 @@ describe("createWebdavRuntime", () => {
       repository: stubRepository(),
       secretsStore: createInMemoryWebdavSecretsStore(validSecrets),
       httpFetcher: noopFetcher,
-      userAgent: "Momo/0.1 (+webdav-test)",
+      userAgent: "LiliaTodo/0.1 (+webdav-test)",
     });
     expect(resolution.kind).toBe("enabled");
     if (resolution.kind === "enabled") {
       expect(resolution.secrets).toEqual(validSecrets);
       // layout 由 root 推出；确认根路径包含用户配置
-      expect(resolution.layout.root.startsWith("/momo")).toBe(true);
+      expect(resolution.layout.root.startsWith("/liliatodo")).toBe(true);
       expect(typeof resolution.runner.runOnce).toBe("function");
       expect(typeof resolution.provider.push).toBe("function");
       expect(typeof resolution.client.ensureCollection).toBe("function");
     }
   });
 
-  it("root 为空字符串时退化到默认 /momo，仍能装配 runtime", async () => {
+  it("root 为空字符串时退化到默认 /liliatodo，仍能装配 runtime", async () => {
     // in-memory store 的 load 不会再校验初始值，把损坏 secrets 直接送进 runtime；
     // runtime 用 `secrets.root || WEBDAV_DEFAULT_ROOT` 兜底，避免冷启动崩页。
     const resolution = await createWebdavRuntime({
@@ -148,7 +148,7 @@ describe("createWebdavRuntime", () => {
     });
     expect(resolution.kind).toBe("enabled");
     if (resolution.kind === "enabled") {
-      expect(resolution.layout.root).toBe("/momo");
+      expect(resolution.layout.root).toBe("/liliatodo");
     }
   });
 });

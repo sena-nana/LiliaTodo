@@ -1,5 +1,5 @@
 # =============================================================================
-# Momo · root .gitignore
+# LiliaTodo · root .gitignore
 #
 # 子目录（apps/desktop、apps/desktop/src-tauri 等）已有各自的 .gitignore；
 # 这里收的是全仓通用 / 跨子项目 / 未来子项目（Android、Python sandbox、后端）

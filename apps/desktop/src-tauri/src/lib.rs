@@ -86,8 +86,8 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
         widget_item: widget_item.clone(),
     };
     app.manage(menu_state.clone());
-    TrayIconBuilder::with_id("momo-tray")
-        .tooltip("Momo")
+    TrayIconBuilder::with_id("liliatodo-tray")
+        .tooltip("LiliaTodo")
         .icon(app.default_window_icon().cloned().expect("窗口图标缺失"))
         .menu(&menu)
         .show_menu_on_left_click(false)
@@ -112,7 +112,7 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
                         "widget",
                         WebviewUrl::App("/widget".into()),
                     )
-                    .title("Momo 小组件")
+                    .title("LiliaTodo 小组件")
                     .decorations(false)
                     .transparent(true)
                     .always_on_top(true)

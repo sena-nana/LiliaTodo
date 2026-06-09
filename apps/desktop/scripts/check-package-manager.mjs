@@ -28,7 +28,7 @@ process.exit(1);
 function formatMessage(reason) {
   return [
     "",
-    "Momo 需要通过 Corepack 使用 Yarn 4。",
+    "LiliaTodo 需要通过 Corepack 使用 Yarn 4。",
     reason,
     "",
     `期望的包管理器：${requiredPackageManager}`,
