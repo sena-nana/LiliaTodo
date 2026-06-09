@@ -171,7 +171,7 @@ describe("测试工具链", () => {
     const styles = readFileSync(
       resolve(desktopRoot, "src/styles.css"),
       "utf-8",
-    );
+    ).replace(/\r\n/g, "\n");
 
     expect(styles).toContain("button {\n  background: transparent");
     expect(styles).toContain("button.primary");
