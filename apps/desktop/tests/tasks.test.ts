@@ -4,6 +4,7 @@ import {
   mapTaskRow,
   normalizeCreateTaskInput,
   normalizeUpdateTaskInput,
+  type TaskListGroupRow,
   type TaskListRow,
   type TaskRow,
 } from "../src/domain/tasks";
@@ -704,6 +705,7 @@ describe("TaskRepository 仓储", () => {
         color: null,
         archived: false,
         order: 2,
+        groupId: null,
         createdAt: "2026-05-16T10:00:00.000Z",
         updatedAt: "2026-05-16T11:00:00.000Z",
       },
@@ -717,6 +719,7 @@ describe("TaskRepository 仓储", () => {
       null,
       0,
       2,
+      null,
       "2026-05-16T10:00:00.000Z",
       "2026-05-16T11:00:00.000Z",
     ]);
@@ -730,6 +733,99 @@ describe("TaskRepository 仓储", () => {
       "inbox",
       "2026-05-16T12:00:00.000Z",
       "list-remote",
+    ]);
+    expect(db.calls.some((call) => call.sql.includes("INSERT INTO local_changes"))).toBe(false);
+  });
+
+  it("创建、重命名和删除清单分类只影响本地分组", async () => {
+    const db = new RecordingDatabase({
+      taskListGroups: [
+        {
+          id: "group-1",
+          name: "工作",
+          group_order: 1,
+          created_at: "2026-05-16T10:00:00.000Z",
+          updated_at: "2026-05-16T12:00:00.000Z",
+        },
+      ],
+    });
+    const ids = ["group-1"];
+    const repository = createTaskRepository(() => Promise.resolve(db), {
+      id: () => ids.shift() ?? "id",
+      now: () => new Date("2026-05-16T12:00:00.000Z"),
+    });
+
+    await expect(repository.createListGroup({ name: " 工作 " })).resolves.toMatchObject({
+      id: "group-1",
+      name: "工作",
+      order: 0,
+    });
+    await expect(repository.updateListGroup("group-1", { name: "工作区", order: 2 })).resolves.toMatchObject({
+      id: "group-1",
+      name: "工作",
+      order: 1,
+    });
+    await repository.deleteListGroup("group-1");
+
+    expect(db.paramsForSql("INSERT INTO task_list_groups")).toEqual([
+      "group-1",
+      "工作",
+      0,
+      "2026-05-16T12:00:00.000Z",
+      "2026-05-16T12:00:00.000Z",
+    ]);
+    expect(db.paramsForSql("UPDATE task_list_groups")).toEqual([
+      "工作区",
+      2,
+      "2026-05-16T12:00:00.000Z",
+      "group-1",
+    ]);
+    expect(db.paramsForSql("UPDATE task_lists SET group_id")).toEqual([
+      null,
+      "2026-05-16T12:00:00.000Z",
+      "group-1",
+    ]);
+    expect(db.paramsForSql("DELETE FROM task_list_groups")).toEqual(["group-1"]);
+    expect(db.calls.some((call) => call.sql.includes("INSERT INTO local_changes"))).toBe(false);
+  });
+
+  it("移动清单到分类会写 group_id 且不产生同步变更", async () => {
+    const db = new RecordingDatabase({
+      taskLists: [
+        {
+          id: "list-1",
+          name: "项目",
+          color: null,
+          archived: 0,
+          list_order: 1,
+          group_id: "group-1",
+          created_at: "2026-05-16T10:00:00.000Z",
+          updated_at: "2026-05-16T12:00:00.000Z",
+        },
+      ],
+      taskListGroups: [
+        {
+          id: "group-1",
+          name: "工作",
+          group_order: 0,
+          created_at: "2026-05-16T10:00:00.000Z",
+          updated_at: "2026-05-16T10:00:00.000Z",
+        },
+      ],
+    });
+    const repository = createTaskRepository(() => Promise.resolve(db), {
+      now: () => new Date("2026-05-16T12:00:00.000Z"),
+    });
+
+    await expect(repository.updateList("list-1", { groupId: "group-1" })).resolves.toMatchObject({
+      id: "list-1",
+      groupId: "group-1",
+    });
+
+    expect(db.paramsForLastSql("UPDATE task_lists SET")).toEqual([
+      "group-1",
+      "2026-05-16T12:00:00.000Z",
+      "list-1",
     ]);
     expect(db.calls.some((call) => call.sql.includes("INSERT INTO local_changes"))).toBe(false);
   });
@@ -819,6 +915,7 @@ class RecordingDatabase implements SqlDatabase {
     localChanges?: LocalChangeRow[];
     taskRows?: TaskRow[];
     taskLists?: TaskListRow[];
+    taskListGroups?: TaskListGroupRow[];
     taskSyncVersions?: TaskSyncVersionRow[];
     entitySyncVersions?: EntitySyncVersionRow[];
     syncState?: SyncStateRow[];
@@ -856,6 +953,9 @@ class RecordingDatabase implements SqlDatabase {
     }
     if (sql.includes("FROM task_lists")) {
       return (this.rows.taskLists ?? []) as T[];
+    }
+    if (sql.includes("FROM task_list_groups")) {
+      return (this.rows.taskListGroups ?? []) as T[];
     }
     if (sql.includes("FROM tasks")) {
       if (sql.includes("WHERE id = $1")) {

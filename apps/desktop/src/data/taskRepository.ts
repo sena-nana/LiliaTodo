@@ -4,21 +4,28 @@ import {
   DEFAULT_TASK_LIST_NAME,
   getDayBounds,
   groupTodayTasks,
+  mapTaskListGroupRow,
   mapTaskListRow,
   mapTaskRow,
+  normalizeCreateTaskListGroupInput,
   normalizeCreateTaskInput,
   normalizeCreateTaskListInput,
+  normalizeUpdateTaskListGroupInput,
   normalizeUpdateTaskInput,
   normalizeUpdateTaskListInput,
   taskHasDueReminder,
+  type CreateTaskListGroupInput,
   type CreateTaskInput,
   type CreateTaskListInput,
   type Task,
+  type TaskListGroup,
+  type TaskListGroupRow,
   type TaskList,
   type TaskListRow,
   type TaskRow,
   type TaskStatus,
   type TodayTaskGroups,
+  type UpdateTaskListGroupInput,
   type UpdateTaskInput,
   type UpdateTaskListInput,
 } from '../domain/tasks';
@@ -45,6 +52,10 @@ export interface TaskRepository {
   createList(input: CreateTaskListInput): Promise<TaskList>;
   updateList(id: string, patch: UpdateTaskListInput): Promise<TaskList>;
   archiveList(id: string): Promise<TaskList>;
+  listListGroups(): Promise<TaskListGroup[]>;
+  createListGroup(input: CreateTaskListGroupInput): Promise<TaskListGroup>;
+  updateListGroup(id: string, patch: UpdateTaskListGroupInput): Promise<TaskListGroup>;
+  deleteListGroup(id: string): Promise<void>;
   listPendingChanges(): Promise<LocalChange[]>;
   markChangeSynced(id: string, syncedAt?: Date): Promise<void>;
   getSyncState(): Promise<SyncState>;
@@ -219,14 +230,32 @@ export function createTaskRepository(
     return mapTaskListRow(row);
   }
 
+  async function selectListGroup(groupId: string) {
+    const db = await getDb();
+    const rows = await db.select<TaskListGroupRow>('SELECT * FROM task_list_groups WHERE id = $1 LIMIT 1', [groupId]);
+    const row = rows[0];
+    if (!row) {
+      throw new Error('分类不存在');
+    }
+    return mapTaskListGroupRow(row);
+  }
+
+  async function ensureListGroupExists(db: SqlDatabase, groupId: string | null | undefined) {
+    if (!groupId) return;
+    const rows = await db.select<TaskListGroupRow>('SELECT * FROM task_list_groups WHERE id = $1 LIMIT 1', [groupId]);
+    if (rows.length === 0) {
+      throw new Error('分类不存在');
+    }
+  }
+
   async function ensureListExists(db: SqlDatabase, listId: string, timestamp = now().toISOString()) {
     const rows = await db.select<TaskListRow>('SELECT * FROM task_lists WHERE id = $1 LIMIT 1', [listId]);
     if (rows.length > 0) return;
     await db.execute(
       `INSERT INTO task_lists (
-        id, name, color, archived, list_order, created_at, updated_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-      [listId, listId === DEFAULT_TASK_LIST_ID ? DEFAULT_TASK_LIST_NAME : '未命名清单', null, 0, 0, timestamp, timestamp],
+        id, name, color, archived, list_order, group_id, created_at, updated_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      [listId, listId === DEFAULT_TASK_LIST_ID ? DEFAULT_TASK_LIST_NAME : '未命名清单', null, 0, 0, null, timestamp, timestamp],
     );
   }
 
@@ -498,6 +527,7 @@ export function createTaskRepository(
           color = excluded.color,
           archived = excluded.archived,
           list_order = excluded.list_order,
+          group_id = COALESCE(task_lists.group_id, excluded.group_id),
           created_at = excluded.created_at,
           updated_at = excluded.updated_at`,
         taskListParams(list),
@@ -571,24 +601,31 @@ export function createTaskRepository(
         color: normalized.color,
         archived: false,
         order: 0,
+        groupId: normalized.groupId,
         createdAt: timestamp,
         updatedAt: timestamp,
       };
       const db = await getDb();
+      await ensureListGroupExists(db, list.groupId);
       await db.execute(
         `INSERT INTO task_lists (
-          id, name, color, archived, list_order, created_at, updated_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-        [list.id, list.name, list.color, 0, list.order, list.createdAt, list.updatedAt],
+          id, name, color, archived, list_order, group_id, created_at, updated_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+        [list.id, list.name, list.color, 0, list.order, list.groupId, list.createdAt, list.updatedAt],
       );
-      await recordLocalChange(db, 'taskList', list.id, 'taskList.create', list, timestamp);
+      await recordLocalChange(db, 'taskList', list.id, 'taskList.create', taskListSyncPayload(list), timestamp);
       return list;
     },
 
     async updateList(listId, patch) {
       await init();
-      if (listId === DEFAULT_TASK_LIST_ID && patch.name && patch.name.trim() !== DEFAULT_TASK_LIST_NAME) {
-        throw new Error('默认收件箱不能重命名');
+      if (listId === DEFAULT_TASK_LIST_ID) {
+        if (patch.name && patch.name.trim() !== DEFAULT_TASK_LIST_NAME) {
+          throw new Error('默认收件箱不能重命名');
+        }
+        if ('order' in patch || 'groupId' in patch) {
+          throw new Error('默认收件箱不能移动');
+        }
       }
       const normalized = normalizeUpdateTaskListInput(patch);
       const updates: string[] = [];
@@ -596,20 +633,27 @@ export function createTaskRepository(
       appendUpdate(updates, values, 'name', normalized.name);
       appendUpdate(updates, values, 'color', normalized.color);
       appendUpdate(updates, values, 'list_order', normalized.order);
+      appendUpdate(updates, values, 'group_id', normalized.groupId);
       if (updates.length > 0) {
         const timestamp = now().toISOString();
         appendUpdate(updates, values, 'updated_at', timestamp);
         values.push(listId);
         const db = await getDb();
+        if ('groupId' in normalized) {
+          await ensureListGroupExists(db, normalized.groupId);
+        }
         await db.execute(`UPDATE task_lists SET ${updates.join(', ')} WHERE id = $${values.length}`, values);
-        await recordLocalChange(
-          db,
-          'taskList',
-          listId,
-          'taskList.update',
-          await withBaseVersion(db, 'taskList', listId, { id: listId, patch: normalized, updatedAt: timestamp }),
-          timestamp,
-        );
+        const syncPatch = taskListSyncPatch(normalized);
+        if (Object.keys(syncPatch).length > 0) {
+          await recordLocalChange(
+            db,
+            'taskList',
+            listId,
+            'taskList.update',
+            await withBaseVersion(db, 'taskList', listId, { id: listId, patch: syncPatch, updatedAt: timestamp }),
+            timestamp,
+          );
+        }
       }
       return selectList(listId);
     },
@@ -651,6 +695,62 @@ export function createTaskRepository(
         );
       }
       return selectList(listId);
+    },
+
+    async listListGroups() {
+      await init();
+      const db = await getDb();
+      const rows = await db.select<TaskListGroupRow>(
+        `SELECT * FROM task_list_groups
+         ORDER BY group_order ASC, created_at ASC`,
+      );
+      return rows.map(mapTaskListGroupRow);
+    },
+
+    async createListGroup(input) {
+      await init();
+      const normalized = normalizeCreateTaskListGroupInput(input);
+      const timestamp = now().toISOString();
+      const group: TaskListGroup = {
+        id: id(),
+        name: normalized.name,
+        order: 0,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      };
+      const db = await getDb();
+      await db.execute(
+        `INSERT INTO task_list_groups (
+          id, name, group_order, created_at, updated_at
+        ) VALUES ($1, $2, $3, $4, $5)`,
+        [group.id, group.name, group.order, group.createdAt, group.updatedAt],
+      );
+      return group;
+    },
+
+    async updateListGroup(groupId, patch) {
+      await init();
+      const normalized = normalizeUpdateTaskListGroupInput(patch);
+      const updates: string[] = [];
+      const values: unknown[] = [];
+      appendUpdate(updates, values, 'name', normalized.name);
+      appendUpdate(updates, values, 'group_order', normalized.order);
+      if (updates.length > 0) {
+        const timestamp = now().toISOString();
+        appendUpdate(updates, values, 'updated_at', timestamp);
+        values.push(groupId);
+        const db = await getDb();
+        await db.execute(`UPDATE task_list_groups SET ${updates.join(', ')} WHERE id = $${values.length}`, values);
+      }
+      return selectListGroup(groupId);
+    },
+
+    async deleteListGroup(groupId) {
+      await init();
+      const timestamp = now().toISOString();
+      const db = await getDb();
+      await db.execute('UPDATE task_lists SET group_id = $1, updated_at = $2 WHERE group_id = $3', [null, timestamp, groupId]);
+      await db.execute('DELETE FROM task_list_groups WHERE id = $1', [groupId]);
     },
 
     async listPendingChanges() {
@@ -845,9 +945,20 @@ function taskListParams(list: TaskList) {
     list.color,
     list.archived ? 1 : 0,
     list.order,
+    list.groupId ?? null,
     list.createdAt,
     list.updatedAt,
   ];
+}
+
+function taskListSyncPayload(list: TaskList) {
+  const { groupId: _groupId, ...payload } = list;
+  return payload;
+}
+
+function taskListSyncPatch(patch: UpdateTaskListInput) {
+  const { groupId: _groupId, ...syncPatch } = patch;
+  return syncPatch;
 }
 
 const INSERT_TASK_SQL = `INSERT INTO tasks (
@@ -857,8 +968,8 @@ const INSERT_TASK_SQL = `INSERT INTO tasks (
 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)`;
 
 const INSERT_TASK_LIST_SQL = `INSERT INTO task_lists (
-  id, name, color, archived, list_order, created_at, updated_at
-) VALUES ($1, $2, $3, $4, $5, $6, $7)`;
+  id, name, color, archived, list_order, group_id, created_at, updated_at
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`;
 
 const SCHEMA = [
   `CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -872,6 +983,14 @@ const SCHEMA = [
     color TEXT,
     archived INTEGER NOT NULL DEFAULT 0 CHECK (archived IN (0, 1)),
     list_order INTEGER NOT NULL DEFAULT 0 CHECK (list_order >= 0),
+    group_id TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  )`,
+  `CREATE TABLE IF NOT EXISTS task_list_groups (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    group_order INTEGER NOT NULL DEFAULT 0 CHECK (group_order >= 0),
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
   )`,
@@ -945,6 +1064,8 @@ const SCHEMA = [
    VALUES (6, 'expand_task_concept', datetime('now'))`,
   `INSERT OR IGNORE INTO schema_migrations (version, name, applied_at)
    VALUES (7, 'create_entity_sync_versions', datetime('now'))`,
+  `INSERT OR IGNORE INTO schema_migrations (version, name, applied_at)
+   VALUES (8, 'create_task_list_groups', datetime('now'))`,
 ];
 
 const TASK_COLUMN_MIGRATIONS = [
@@ -957,8 +1078,22 @@ const TASK_COLUMN_MIGRATIONS = [
   `ALTER TABLE tasks ADD COLUMN list_id TEXT NOT NULL DEFAULT 'inbox'`,
 ];
 
+const TASK_LIST_COLUMN_MIGRATIONS = [
+  `ALTER TABLE task_lists ADD COLUMN group_id TEXT`,
+];
+
 async function runTaskMigrations(db: SqlDatabase) {
   for (const statement of TASK_COLUMN_MIGRATIONS) {
+    try {
+      await db.execute(statement);
+    } catch (error) {
+      const message = String((error as Error).message ?? error).toLowerCase();
+      if (!message.includes('duplicate') && !message.includes('exists')) {
+        throw error;
+      }
+    }
+  }
+  for (const statement of TASK_LIST_COLUMN_MIGRATIONS) {
     try {
       await db.execute(statement);
     } catch (error) {
@@ -981,9 +1116,9 @@ async function runTaskMigrations(db: SqlDatabase) {
 async function ensureDefaultList(db: SqlDatabase, timestamp: string) {
   await db.execute(
     `INSERT OR IGNORE INTO task_lists (
-      id, name, color, archived, list_order, created_at, updated_at
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-    [DEFAULT_TASK_LIST_ID, DEFAULT_TASK_LIST_NAME, null, 0, 0, timestamp, timestamp],
+      id, name, color, archived, list_order, group_id, created_at, updated_at
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+    [DEFAULT_TASK_LIST_ID, DEFAULT_TASK_LIST_NAME, null, 0, 0, null, timestamp, timestamp],
   );
 }
 

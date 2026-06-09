@@ -55,6 +55,15 @@ export interface TaskList {
   color: string | null;
   archived: boolean;
   order: number;
+  groupId: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface TaskListGroup {
+  id: string;
+  name: string;
+  order: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -94,11 +103,22 @@ export interface UpdateTaskInput {
 export interface CreateTaskListInput {
   name: string;
   color?: string | null;
+  groupId?: string | null;
 }
 
 export interface UpdateTaskListInput {
   name?: string;
   color?: string | null;
+  order?: number;
+  groupId?: string | null;
+}
+
+export interface CreateTaskListGroupInput {
+  name: string;
+}
+
+export interface UpdateTaskListGroupInput {
+  name?: string;
   order?: number;
 }
 
@@ -135,6 +155,15 @@ export interface TaskListRow {
   color: string | null;
   archived: number | boolean;
   list_order: number;
+  group_id?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TaskListGroupRow {
+  id: string;
+  name: string;
+  group_order: number;
   created_at: string;
   updated_at: string;
 }
@@ -197,6 +226,7 @@ export function normalizeCreateTaskListInput(input: CreateTaskListInput) {
   return {
     name,
     color: normalizeNullableText(input.color),
+    groupId: normalizeNullableId(input.groupId),
   };
 }
 
@@ -210,6 +240,28 @@ export function normalizeUpdateTaskListInput(input: UpdateTaskListInput) {
     patch.name = name;
   }
   if ('color' in input) patch.color = normalizeNullableText(input.color);
+  if ('order' in input) patch.order = normalizeOrder(input.order);
+  if ('groupId' in input) patch.groupId = normalizeNullableId(input.groupId);
+  return patch;
+}
+
+export function normalizeCreateTaskListGroupInput(input: CreateTaskListGroupInput) {
+  const name = input.name.trim();
+  if (!name) {
+    throw new Error('分类名称不能为空');
+  }
+  return { name };
+}
+
+export function normalizeUpdateTaskListGroupInput(input: UpdateTaskListGroupInput) {
+  const patch: UpdateTaskListGroupInput = {};
+  if ('name' in input) {
+    const name = input.name?.trim() ?? '';
+    if (!name) {
+      throw new Error('分类名称不能为空');
+    }
+    patch.name = name;
+  }
   if ('order' in input) patch.order = normalizeOrder(input.order);
   return patch;
 }
@@ -244,6 +296,17 @@ export function mapTaskListRow(row: TaskListRow): TaskList {
     color: row.color,
     archived: row.archived === true || row.archived === 1,
     order: row.list_order,
+    groupId: row.group_id ?? null,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+export function mapTaskListGroupRow(row: TaskListGroupRow): TaskListGroup {
+  return {
+    id: row.id,
+    name: row.name,
+    order: row.group_order,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };

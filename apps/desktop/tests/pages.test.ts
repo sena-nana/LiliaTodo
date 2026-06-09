@@ -27,6 +27,7 @@ import { normalizeSettingsTab } from "../src/config/appShell";
 import { TASK_LISTS_CHANGED_EVENT } from "../src/data/taskListEvents";
 import {
   fakeTaskRepository as fakeRepository,
+  taskListGroupFixture,
   taskListFixture,
   taskFixture as task,
 } from "./taskFixtures";
@@ -108,6 +109,40 @@ describe("桌面端 MVP 页面", () => {
     );
   });
 
+  it("收件箱页面支持直接新增任务", async () => {
+    const repository = fakeRepository();
+
+    renderWithRepository(Inbox, repository);
+
+    await fireEvent.update(await screen.findByLabelText("添加收件箱任务"), "收集灵感");
+    await fireEvent.click(screen.getByRole("button", { name: "添加任务" }));
+
+    await waitFor(() =>
+      expect(repository.createTask).toHaveBeenCalledWith({
+        title: "收集灵感",
+        listId: "inbox",
+      }),
+    );
+  });
+
+  it("清单页面支持直接新增任务到当前清单", async () => {
+    const repository = fakeRepository({
+      lists: [taskListFixture({ id: "project", name: "项目", order: 1 })],
+    });
+
+    await renderAppAt("/lists/project", repository);
+
+    await fireEvent.update(await screen.findByLabelText("添加清单任务"), "清单任务");
+    await fireEvent.click(screen.getByRole("button", { name: "添加任务" }));
+
+    await waitFor(() =>
+      expect(repository.createTask).toHaveBeenCalledWith({
+        title: "清单任务",
+        listId: "project",
+      }),
+    );
+  });
+
   it("显示收件箱任务并支持完成和删除操作", async () => {
     const repository = fakeRepository({
       inbox: [task({ id: "inbox-1", title: "Inbox task" })],
@@ -132,6 +167,28 @@ describe("桌面端 MVP 页面", () => {
 
     expect(repository.setStatus).toHaveBeenCalledWith("inbox-1", "completed");
     expect(repository.deleteTask).toHaveBeenCalledWith("inbox-1");
+  });
+
+  it("收件箱任务支持上下移动", async () => {
+    const repository = fakeRepository({
+      inbox: [
+        task({ id: "task-1", title: "任务一", childOrder: 0 }),
+        task({ id: "task-2", title: "任务二", childOrder: 1 }),
+      ],
+    });
+
+    renderWithRepository(Inbox, repository);
+
+    const item = await screen.findByText("任务一");
+    const row = item.closest("li");
+    expect(row).not.toBeNull();
+
+    await fireEvent.click(
+      within(row as HTMLElement).getByRole("button", { name: "下移 任务一" }),
+    );
+
+    await waitFor(() => expect(repository.updateTask).toHaveBeenCalledWith("task-2", { childOrder: 0 }));
+    expect(repository.updateTask).toHaveBeenCalledWith("task-1", { childOrder: 1 });
   });
 
   it("编辑收件箱任务标题、备注和优先级", async () => {
@@ -258,6 +315,39 @@ describe("桌面端 MVP 页面", () => {
     }));
   });
 
+  it("检查清单项支持上移下移并保存顺序", async () => {
+    const repository = fakeRepository({
+      inbox: [
+        task({
+          id: "inbox-1",
+          title: "Inbox task",
+          checklist: [
+            { id: "check-1", title: "第一项", done: false, order: 0 },
+            { id: "check-2", title: "第二项", done: false, order: 1 },
+          ],
+        }),
+      ],
+    });
+
+    renderWithRepository(Inbox, repository);
+
+    const item = await screen.findByText("Inbox task");
+    const row = item.closest("li");
+    expect(row).not.toBeNull();
+    await fireEvent.click(
+      within(row as HTMLElement).getByRole("button", { name: "编辑 Inbox task" }),
+    );
+    await fireEvent.click(screen.getByRole("button", { name: "下移检查项 1" }));
+    await fireEvent.click(screen.getByRole("button", { name: "保存" }));
+
+    await waitFor(() => expect(repository.updateTask).toHaveBeenCalledWith("inbox-1", expect.objectContaining({
+      checklist: [
+        { id: "check-2", title: "第二项", done: false, order: 0 },
+        { id: "check-1", title: "第一项", done: false, order: 1 },
+      ],
+    })));
+  });
+
   it("使用重试恢复收件箱加载错误", async () => {
     const repository = fakeRepository();
     vi.mocked(repository.listInbox)
@@ -350,6 +440,19 @@ describe("桌面端 MVP 页面", () => {
           scenario.taskId,
           "completed",
         ));
+        await waitFor(() => expect(
+          screen.queryByRole(drawerRole, { name: "任务详情" }),
+        ).not.toBeInTheDocument());
+        await expectPageReloaded(scenario, repository);
+      });
+
+      it(`${scenario.name}在抽屉删除任务后关闭抽屉并刷新页面`, async () => {
+        const repository = scenario.makeRepository();
+        const drawer = await openDrawerTask(scenario, repository);
+
+        await fireEvent.click(within(drawer).getByRole("button", { name: `删除任务 ${scenario.taskTitle}` }));
+
+        await waitFor(() => expect(repository.deleteTask).toHaveBeenCalledWith(scenario.taskId));
         await waitFor(() => expect(
           screen.queryByRole(drawerRole, { name: "任务详情" }),
         ).not.toBeInTheDocument());
@@ -662,6 +765,33 @@ describe("桌面端 MVP 页面", () => {
     }
   });
 
+  it("侧边栏支持新增分类并广播清单刷新事件", async () => {
+    const group = taskListGroupFixture({ id: "group-1", name: "工作", order: 0 });
+    const repository = fakeRepository();
+    const listChangeListener = vi.fn();
+    vi.mocked(repository.listListGroups)
+      .mockResolvedValue([group])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([group]);
+    window.addEventListener(TASK_LISTS_CHANGED_EVENT, listChangeListener);
+
+    try {
+      await renderAppAt("/calendar", repository);
+
+      await fireEvent.click(await screen.findByRole("button", { name: "新增分类" }));
+      await fireEvent.update(screen.getByLabelText("分类名称"), "工作");
+      await fireEvent.click(screen.getByRole("button", { name: "保存分类" }));
+
+      await waitFor(() =>
+        expect(repository.createListGroup).toHaveBeenCalledWith({ name: "工作" }),
+      );
+      expect(await screen.findByText("工作")).toBeInTheDocument();
+      expect(listChangeListener).toHaveBeenCalledTimes(1);
+    } finally {
+      window.removeEventListener(TASK_LISTS_CHANGED_EVENT, listChangeListener);
+    }
+  });
+
   it("侧边栏支持重命名清单并广播清单刷新事件", async () => {
     const inbox = taskListFixture();
     const project = taskListFixture({ id: "list-1", name: "项目", order: 1 });
@@ -692,6 +822,47 @@ describe("桌面端 MVP 页面", () => {
     }
   });
 
+  it("侧边栏支持清单上下移动和移动到分类", async () => {
+    const inbox = taskListFixture();
+    const first = taskListFixture({ id: "list-1", name: "项目一", order: 0 });
+    const second = taskListFixture({ id: "list-2", name: "项目二", order: 1 });
+    const group = taskListGroupFixture({ id: "group-1", name: "工作", order: 0 });
+    const repository = fakeRepository({
+      lists: [inbox, first, second],
+      listGroups: [group],
+    });
+
+    await renderAppAt("/calendar", repository);
+
+    await fireEvent.click(await screen.findByRole("button", { name: "下移清单 项目一" }));
+
+    await waitFor(() => expect(repository.updateList).toHaveBeenCalledWith("list-2", { order: 0 }));
+    expect(repository.updateList).toHaveBeenCalledWith("list-1", { order: 1 });
+
+    await fireEvent.update(screen.getByLabelText("移动清单 项目一"), "group-1");
+
+    await waitFor(() => expect(repository.updateList).toHaveBeenCalledWith("list-1", { groupId: "group-1" }));
+  });
+
+  it("侧边栏支持分类上下移动和删除分类", async () => {
+    const first = taskListGroupFixture({ id: "group-1", name: "工作", order: 0 });
+    const second = taskListGroupFixture({ id: "group-2", name: "生活", order: 1 });
+    const repository = fakeRepository({
+      listGroups: [first, second],
+    });
+
+    await renderAppAt("/calendar", repository);
+
+    await fireEvent.click(await screen.findByRole("button", { name: "下移分类 工作" }));
+
+    await waitFor(() => expect(repository.updateListGroup).toHaveBeenCalledWith("group-2", { order: 0 }));
+    expect(repository.updateListGroup).toHaveBeenCalledWith("group-1", { order: 1 });
+
+    await fireEvent.click(screen.getByRole("button", { name: "删除分类 工作" }));
+
+    await waitFor(() => expect(repository.deleteListGroup).toHaveBeenCalledWith("group-1"));
+  });
+
   it("侧边栏支持归档清单并广播清单刷新事件", async () => {
     const inbox = taskListFixture();
     const project = taskListFixture({ id: "list-1", name: "项目", order: 1 });
@@ -706,7 +877,7 @@ describe("桌面端 MVP 页面", () => {
     try {
       await renderAppAt("/calendar", repository);
 
-      await fireEvent.click(await screen.findByRole("button", { name: "归档 项目" }));
+      await fireEvent.click(await screen.findByRole("button", { name: "删除清单 项目" }));
 
       await waitFor(() => expect(repository.archiveList).toHaveBeenCalledWith("list-1"));
       await waitFor(() =>
@@ -734,7 +905,7 @@ describe("桌面端 MVP 页面", () => {
     try {
       await renderAppAt("/calendar", repository);
 
-      await fireEvent.click(await screen.findByRole("button", { name: "归档 项目" }));
+      await fireEvent.click(await screen.findByRole("button", { name: "删除清单 项目" }));
 
       await waitFor(() => expect(repository.archiveList).toHaveBeenCalledWith("list-1"));
       expect(await screen.findByText("错误：清单刷新失败")).toBeInTheDocument();

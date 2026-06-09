@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRoute } from "vue-router";
-import { Check, Loader2, Pencil, RefreshCw, Trash2 } from "lucide-vue-next";
+import { ArrowDown, ArrowUp, Check, Loader2, Pencil, Plus, RefreshCw, Trash2 } from "lucide-vue-next";
 import { useTaskRepository } from "../data/TaskRepositoryContext";
 import { onTaskListsChanged } from "../data/taskListEvents";
 import { useLatestAsyncRun } from "../composables/useLatestAsyncRun";
 import { useTaskDetailDrawer } from "../composables/useTaskDetailDrawer";
+import { useTaskListActions } from "../composables/useTaskListActions";
 import type { Task } from "../domain/tasks";
 import { taskHasDueReminder } from "../domain/tasks";
 import TaskDetailDrawer from "../components/TaskDetailDrawer.vue";
@@ -27,11 +28,21 @@ const {
   openTask,
   saveTask,
   completeTask,
+  deleteTask: deleteTaskFromDrawer,
   closeTask,
 } = useTaskDetailDrawer({
   repository,
   reload: load,
   getParentCandidates: () => tasks.value,
+});
+const { newTitle, quickAddSaving, createTask, moveTask } = useTaskListActions({
+  repository,
+  tasks,
+  reload: load,
+  listId: () => listId.value,
+  setError: (value) => {
+    error.value = value;
+  },
 });
 const listName = computed(() => lists.value.find((list) => list.id === listId.value)?.name ?? "清单");
 
@@ -49,6 +60,7 @@ onUnmounted(() => {
 
 watch(listId, () => {
   closeTask();
+  newTitle.value = "";
   void load();
 });
 
@@ -97,6 +109,16 @@ function displayError(value: string) {
     <header class="page-header">
       <h1>{{ listName }}</h1>
     </header>
+    <form class="quick-add" @submit.prevent="createTask">
+      <label class="sr-only" for="list-quick-add">添加清单任务</label>
+      <div class="row">
+        <input id="list-quick-add" v-model="newTitle" :placeholder="`添加到${listName}`" />
+        <button class="primary" type="submit" :disabled="quickAddSaving || !newTitle.trim()">
+          <Plus :size="16" aria-hidden="true" />
+          添加任务
+        </button>
+      </div>
+    </form>
     <div v-if="loading" class="card state">
       <Loader2 class="spin" :size="18" aria-hidden="true" />
       <p>正在加载清单...</p>
@@ -123,6 +145,12 @@ function displayError(value: string) {
           <button type="button" class="icon-button" :aria-label="`完成 ${task.title}`" @click="completeTask(task)">
             <Check :size="16" aria-hidden="true" />
           </button>
+          <button type="button" class="icon-button" :aria-label="`上移 ${task.title}`" @click="moveTask(task, -1)">
+            <ArrowUp :size="16" aria-hidden="true" />
+          </button>
+          <button type="button" class="icon-button" :aria-label="`下移 ${task.title}`" @click="moveTask(task, 1)">
+            <ArrowDown :size="16" aria-hidden="true" />
+          </button>
           <button type="button" class="icon-button" :aria-label="`编辑 ${task.title}`" @click="openTask(task)">
             <Pencil :size="16" aria-hidden="true" />
           </button>
@@ -142,6 +170,7 @@ function displayError(value: string) {
       @close="closeTask"
       @save="saveTask"
       @complete="completeTask"
+      @delete="deleteTaskFromDrawer"
       @open-task="openTask"
     />
   </section>

@@ -104,6 +104,7 @@ export function entityToTaskList(entity: Entity<unknown>): TaskList {
     color: asNullableString(payload.color),
     archived: asBooleanWithDefault(payload.archived, false, 'taskList.archived'),
     order: asIntegerWithDefault(payload.order, 0, 'taskList.order'),
+    groupId: null,
     createdAt: asRequiredIsoString(payload.createdAt, 'taskList.createdAt'),
     updatedAt: asRequiredIsoString(entity.updatedAt, 'taskList.updatedAt'),
   };

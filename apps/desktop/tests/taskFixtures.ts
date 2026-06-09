@@ -1,10 +1,13 @@
 import { vi } from "vitest";
 import type { TaskRepository } from "../src/data/taskRepository";
 import type {
+  CreateTaskListGroupInput,
   CreateTaskInput,
   Task,
+  TaskListGroup,
   TaskList,
   TodayTaskGroups,
+  UpdateTaskListGroupInput,
   UpdateTaskInput,
 } from "../src/domain/tasks";
 
@@ -13,6 +16,7 @@ export interface FakeTaskRepositoryOverrides {
   inbox?: Task[];
   agenda?: Task[];
   lists?: TaskList[];
+  listGroups?: TaskListGroup[];
   children?: Record<string, Task[]>;
   listTasks?: Record<string, Task[]>;
   dueReminders?: Task[];
@@ -79,11 +83,25 @@ export function fakeTaskRepository(
       Promise.resolve(taskListFixture({ id: "list-new", name: input.name })),
     ),
     updateList: vi.fn().mockImplementation((id, patch) =>
-      Promise.resolve(taskListFixture({ id, name: patch.name ?? "清单", color: patch.color ?? null })),
+      Promise.resolve(taskListFixture({
+        id,
+        name: patch.name ?? "清单",
+        color: patch.color ?? null,
+        order: patch.order ?? 0,
+        groupId: "groupId" in patch ? patch.groupId ?? null : null,
+      })),
     ),
     archiveList: vi.fn().mockImplementation((id) =>
       Promise.resolve(taskListFixture({ id, archived: true })),
     ),
+    listListGroups: vi.fn().mockResolvedValue(overrides.listGroups ?? []),
+    createListGroup: vi.fn().mockImplementation((input: CreateTaskListGroupInput) =>
+      Promise.resolve(taskListGroupFixture({ id: "group-new", name: input.name })),
+    ),
+    updateListGroup: vi.fn().mockImplementation((id: string, patch: UpdateTaskListGroupInput) =>
+      Promise.resolve(taskListGroupFixture({ id, name: patch.name ?? "分类", order: patch.order ?? 0 })),
+    ),
+    deleteListGroup: vi.fn().mockResolvedValue(undefined),
     listPendingChanges: vi.fn().mockResolvedValue([]),
     markChangeSynced: vi.fn().mockResolvedValue(undefined),
     getSyncState: vi.fn().mockResolvedValue(syncState),
@@ -143,6 +161,18 @@ export function taskListFixture(overrides: Partial<TaskList> = {}): TaskList {
     name: "收件箱",
     color: null,
     archived: false,
+    order: 0,
+    groupId: null,
+    createdAt: "2026-05-16T00:00:00.000Z",
+    updatedAt: "2026-05-16T00:00:00.000Z",
+    ...overrides,
+  };
+}
+
+export function taskListGroupFixture(overrides: Partial<TaskListGroup> = {}): TaskListGroup {
+  return {
+    id: "group",
+    name: "分类",
     order: 0,
     createdAt: "2026-05-16T00:00:00.000Z",
     updatedAt: "2026-05-16T00:00:00.000Z",
