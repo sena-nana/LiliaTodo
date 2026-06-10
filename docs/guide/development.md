@@ -3,7 +3,7 @@
 ## 项目结构
 
 ```text
-LiliaTodo/
+MomoTodo/
 ├── apps/
 │   └── desktop/         # Tauri 2 + Vue 3 桌面端
 │       ├── src/         # 前端源码
