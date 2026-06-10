@@ -17,6 +17,7 @@ const BG_LIGHT: Color = Color(0xFF, 0xFF, 0xFF, 0xFF);
 const BG_DARK: Color = Color(0x18, 0x18, 0x18, 0xFF);
 
 mod window_state;
+mod agent_runtime_state;
 
 #[derive(Debug, PartialEq, Eq)]
 enum WidgetTrayCommand {
@@ -203,6 +204,7 @@ pub fn run() {
             }
         })
         .setup(|app| {
+            agent_runtime_state::init(app.handle());
             build_tray(app.handle())?;
             if let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) {
                 if let Some(state) = window_state::load_main_window_state(app.handle()) {
@@ -220,7 +222,11 @@ pub fn run() {
             }
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![greet])
+        .invoke_handler(tauri::generate_handler![
+            greet,
+            agent_runtime_state::agent_runtime_get_status,
+            agent_runtime_state::agent_runtime_list_events
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

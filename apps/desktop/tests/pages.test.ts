@@ -18,6 +18,7 @@ import type {
 import Today from "../src/pages/Today.vue";
 import Inbox from "../src/pages/Inbox.vue";
 import Calendar from "../src/pages/Calendar.vue";
+import AgentInbox from "../src/pages/AgentInbox.vue";
 import SyncSettings from "../src/pages/settings/SyncSettings.vue";
 import Widget from "../src/pages/Widget.vue";
 import App from "../src/App.vue";
@@ -503,6 +504,16 @@ describe("桌面端 MVP 页面", () => {
     expect(repository.listAgenda).toHaveBeenCalledTimes(1);
   });
 
+  it("Agent 收件箱页面显示未配置 backend 时的禁用状态", async () => {
+    renderWithRepository(AgentInbox, fakeRepository());
+
+    expect(await screen.findByText("Agent Inbox")).toBeInTheDocument();
+    expect(screen.getByText("尚未配置 backend，Agent 已禁用。", { selector: "p" })).toBeInTheDocument();
+    expect(screen.getByText("已禁用")).toBeInTheDocument();
+    expect(screen.getByText("未配置")).toBeInTheDocument();
+    expect(screen.getByText("runtime.disabled")).toBeInTheDocument();
+  });
+
   it("使用重试恢复日历加载错误", async () => {
     const repository = fakeRepository();
     vi.mocked(repository.listAgenda)
@@ -856,7 +867,8 @@ describe("桌面端 MVP 页面", () => {
     const mainNav = await screen.findByRole("navigation", { name: "主导航" });
     expect(within(mainNav).queryByText("任务")).not.toBeInTheDocument();
     expect(within(mainNav).getByRole("link", { name: /今日/ })).toBeInTheDocument();
-    expect(within(mainNav).getByRole("link", { name: /收件箱/ })).toBeInTheDocument();
+    expect(within(mainNav).getByRole("link", { name: /^收件箱$/ })).toBeInTheDocument();
+    expect(within(mainNav).getByRole("link", { name: /Agent 收件箱/ })).toBeInTheDocument();
     expect(within(mainNav).getByRole("link", { name: /日历/ })).toBeInTheDocument();
     expect(within(mainNav).getByRole("link", { name: /所有/ })).toBeInTheDocument();
     expect(within(mainNav).getByRole("link", { name: /四象限/ })).toBeInTheDocument();
