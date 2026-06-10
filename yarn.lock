@@ -1325,7 +1325,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@tauri-apps/api@npm:^2, @tauri-apps/api@npm:^2.10.1, @tauri-apps/api@npm:^2.11.0":
+"@tauri-apps/api@npm:^2.10.1, @tauri-apps/api@npm:^2.11.0":
   version: 2.11.0
   resolution: "@tauri-apps/api@npm:2.11.0"
   checksum: 10c0/70c9f692d14ef7a5f69aa56d474e993f2c25f393e30a26099cca198040ccd33724e4978cefd455c73ecb169b36ca9b7ee010db88b05b0a8bd4a85801caa317d6
@@ -1453,7 +1453,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@tauri-apps/plugin-http@npm:^2":
+"@tauri-apps/plugin-http@npm:^2.5.9":
   version: 2.5.9
   resolution: "@tauri-apps/plugin-http@npm:2.5.9"
   dependencies:
@@ -1462,7 +1462,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@tauri-apps/plugin-opener@npm:^2":
+"@tauri-apps/plugin-opener@npm:^2.5.4":
   version: 2.5.4
   resolution: "@tauri-apps/plugin-opener@npm:2.5.4"
   dependencies:
@@ -1480,7 +1480,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@tauri-apps/plugin-store@npm:^2":
+"@tauri-apps/plugin-store@npm:^2.4.3":
   version: 2.4.3
   resolution: "@tauri-apps/plugin-store@npm:2.4.3"
   dependencies:
@@ -2612,12 +2612,12 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "desktop@workspace:apps/desktop"
   dependencies:
-    "@tauri-apps/api": "npm:^2"
+    "@tauri-apps/api": "npm:^2.11.0"
     "@tauri-apps/cli": "npm:^2.11.2"
-    "@tauri-apps/plugin-http": "npm:^2"
-    "@tauri-apps/plugin-opener": "npm:^2"
+    "@tauri-apps/plugin-http": "npm:^2.5.9"
+    "@tauri-apps/plugin-opener": "npm:^2.5.4"
     "@tauri-apps/plugin-sql": "npm:^2.4.0"
-    "@tauri-apps/plugin-store": "npm:^2"
+    "@tauri-apps/plugin-store": "npm:^2.4.3"
     "@testing-library/dom": "npm:^10.4.1"
     "@testing-library/jest-dom": "npm:^6.9.1"
     "@testing-library/vue": "npm:^8.1.0"
