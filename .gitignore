@@ -81,6 +81,8 @@ build/
 out/
 **/dist/
 **/build/
+docs/.vitepress/dist/
+docs/.vitepress/cache/
 *.local
 .eslintcache
 .stylelintcache
