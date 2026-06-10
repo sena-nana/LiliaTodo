@@ -143,7 +143,7 @@ describe("桌面端 MVP 页面", () => {
     );
   });
 
-  it("清单页面仍按分类显示当前清单任务", async () => {
+  it("清单页面按分类分组显示数量并支持折叠", async () => {
     const repository = fakeRepository({
       lists: [taskListFixture(), taskListFixture({ id: "project", name: "项目", order: 1 })],
       categories: {
@@ -160,10 +160,53 @@ describe("桌面端 MVP 页面", () => {
     await renderAppAt("/lists/project", repository);
 
     expect(await screen.findByText("工作任务")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { level: 1, name: "项目" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { level: 2, name: "工作" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { level: 2, name: "未分类" })).toBeInTheDocument();
+    const workSection = screen.getByRole("button", { name: /工作\s*1/ });
+    expect(screen.getByRole("button", { name: /未分类\s*1/ })).toBeInTheDocument();
     expect(screen.getByText("未分类任务")).toBeInTheDocument();
+
+    await fireEvent.click(workSection);
+
+    expect(screen.queryByText("工作任务")).toBeNull();
+    expect(screen.getByText("未分类任务")).toBeInTheDocument();
+  });
+
+  it("清单页面按选中分组新增任务", async () => {
+    const repository = fakeRepository({
+      lists: [taskListFixture(), taskListFixture({ id: "project", name: "项目", order: 1 })],
+      categories: {
+        project: [taskCategoryFixture({ id: "category-1", listId: "project", name: "工作" })],
+      },
+    });
+
+    await renderAppAt("/lists/project", repository);
+
+    await fireEvent.click(await screen.findByRole("button", { name: /工作\s*0/ }));
+    await fireEvent.update(screen.getByLabelText("添加清单任务"), "分组任务");
+    await fireEvent.click(screen.getByRole("button", { name: "添加任务" }));
+
+    await waitFor(() =>
+      expect(repository.createTask).toHaveBeenCalledWith({
+        title: "分组任务",
+        listId: "project",
+        categoryId: "category-1",
+      }),
+    );
+  });
+
+  it("清单页面完成按钮不会打开任务详情", async () => {
+    const repository = fakeRepository({
+      lists: [taskListFixture(), taskListFixture({ id: "project", name: "项目", order: 1 })],
+      listTasks: {
+        project: [task({ id: "task-1", title: "清单任务", listId: "project" })],
+      },
+    });
+
+    await renderAppAt("/lists/project", repository);
+
+    await fireEvent.click(await screen.findByRole("button", { name: "完成 清单任务" }));
+
+    await waitFor(() => expect(repository.setStatus).toHaveBeenCalledWith("task-1", "completed"));
+    expect(screen.queryByRole(drawerRole, { name: "任务详情" })).toBeNull();
   });
 
   it("全局四象限视图按重要和紧急分组", async () => {
@@ -849,28 +892,18 @@ describe("桌面端 MVP 页面", () => {
     }
   });
 
-  it("清单页面支持新增清单内分类", async () => {
+  it("清单页面不常驻显示分类管理入口", async () => {
     const project = taskListFixture({ id: "list-1", name: "项目", order: 1 });
-    const category = taskCategoryFixture({ id: "category-1", listId: "list-1", name: "工作" });
     const repository = fakeRepository({
       lists: [taskListFixture(), project],
-      categories: { "list-1": [] },
+      categories: { "list-1": [taskCategoryFixture({ id: "category-1", listId: "list-1", name: "工作" })] },
     });
-    vi.mocked(repository.listCategoriesByList)
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([category]);
-    vi.mocked(repository.createCategory).mockResolvedValue(category);
 
     await renderAppAt("/lists/list-1", repository);
 
-    await fireEvent.click(await screen.findByRole("button", { name: "新增分类" }));
-    await fireEvent.update(screen.getByLabelText("分类名称"), "工作");
-    await fireEvent.click(screen.getByRole("button", { name: "保存分类" }));
-
-    await waitFor(() =>
-      expect(repository.createCategory).toHaveBeenCalledWith({ listId: "list-1", name: "工作" }),
-    );
-    expect(await screen.findByRole("button", { name: "工作" })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /工作\s*0/ })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "新增分类" })).toBeNull();
+    expect(screen.queryByLabelText("分类名称")).toBeNull();
   });
 
   it("侧边栏支持重命名清单并广播清单刷新事件", async () => {
@@ -918,7 +951,7 @@ describe("桌面端 MVP 页面", () => {
     expect(repository.updateList).toHaveBeenCalledWith("list-1", { order: 1 });
   });
 
-  it("清单页面支持分类上下移动和删除分类", async () => {
+  it("清单页面显示空分类分组并可折叠", async () => {
     const first = taskCategoryFixture({ id: "category-1", listId: "list-1", name: "工作", order: 0 });
     const second = taskCategoryFixture({ id: "category-2", listId: "list-1", name: "生活", order: 1 });
     const repository = fakeRepository({
@@ -928,14 +961,15 @@ describe("桌面端 MVP 页面", () => {
 
     await renderAppAt("/lists/list-1", repository);
 
-    await fireEvent.click(await screen.findByRole("button", { name: "下移分类 工作" }));
+    const workSection = await screen.findByRole("button", { name: /工作\s*0/ });
 
-    await waitFor(() => expect(repository.updateCategory).toHaveBeenCalledWith("category-2", { order: 0 }));
-    expect(repository.updateCategory).toHaveBeenCalledWith("category-1", { order: 1 });
+    expect(screen.getByRole("button", { name: /生活\s*0/ })).toBeInTheDocument();
+    expect(screen.getAllByText("暂无任务。").length).toBeGreaterThan(0);
 
-    await fireEvent.click(screen.getByRole("button", { name: "删除分类 工作" }));
+    await fireEvent.click(workSection);
 
-    await waitFor(() => expect(repository.deleteCategory).toHaveBeenCalledWith("category-1"));
+    expect(repository.updateCategory).not.toHaveBeenCalled();
+    expect(repository.deleteCategory).not.toHaveBeenCalled();
   });
 
   it("侧边栏支持归档清单并广播清单刷新事件", async () => {
