@@ -1,6 +1,6 @@
-# MomoTodo
+# LiliaTodo
 
-MomoTodo 是基于 Tauri 2、Vue 3 和 TypeScript 的桌面端任务工具。
+LiliaTodo 是基于 Tauri 2、Vue 3 和 TypeScript 的桌面端任务工具。
 
 ## 文档入口
 
