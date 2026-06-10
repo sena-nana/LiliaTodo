@@ -1,4 +1,5 @@
 import {
+  Bot,
   CalendarDays,
   Clock,
   Info,
@@ -49,6 +50,7 @@ export interface SidebarFooterStatus {
 export const SIDEBAR_NAV: SidebarNavItem[] = [
   { to: "/today", label: "今日", icon: Sun },
   { to: "/inbox", label: "收件箱", icon: Inbox },
+  { to: "/agent-inbox", label: "Agent 收件箱", icon: Bot },
   { to: "/calendar", label: "日历", icon: CalendarDays },
   { to: "/tasks/all", label: "所有", icon: List },
   { to: "/tasks/quadrant", label: "四象限", icon: LayoutGrid },
