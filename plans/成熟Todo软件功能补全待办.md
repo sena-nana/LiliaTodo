@@ -5,7 +5,7 @@
 ## 关键决策
 
 - Agent 目标：做主动执行闭环，优先补 Agent 特色，不只做聊天式建议。
-- 运行核心：通过 Git submodule 引入 NanoBot，实际依赖范围限定为 Rust crates，并锁定到明确 commit。
+- 运行核心：通过 Git submodule 引入远程 MutsukiCore 仓库，实际依赖范围限定为 Rust crates，并锁定到明确 commit。
 - 嵌入方式：Tauri Rust 嵌入 `mutsuki-runtime-contracts` / `mutsuki-runtime-core` / `mutsuki-runtime-host`；前端通过 Tauri command 和事件订阅消费 Agent 状态。
 - 模型后端：复用 Lilia 风格 Node runner + Codex app-server 适配子集，作为 Mutsuki 的 `StrategyBackend` / capability backend。
 - 职责边界：`mutsuki-runtime-core` 是 Agent lifecycle、routing、resource、event 的运行核心；Codex app-server 是策略 / 模型后端，二者不能混为一层。
@@ -30,11 +30,12 @@
 
 ## P0 Agent 闭环主线
 
-- [ ] P0-01 接入 NanoBot Rust crates 子仓库
-  - 目标：让 Momo 可以稳定复用 NanoBot 的 Rust Agent runtime kernel。
-  - 当前状态：父目录存在 `NanoBot`，其中 `crates/mutsuki-runtime-core`、`crates/mutsuki-runtime-contracts`、`crates/mutsuki-runtime-host` 已提供运行核心、协议和 host helper；Momo 当前未接入。
-  - 实现要点：在 Momo 中以 Git submodule 引入 NanoBot，依赖面只使用 Rust crates；`apps/desktop/src-tauri/Cargo.toml` 使用锁定 commit 对应的本地子仓库 path dependency；文档记录升级流程。
+- [x] P0-01 接入 MutsukiCore Rust crates 子仓库
+  - 目标：让 Momo 可以稳定复用 MutsukiCore 的 Rust Agent runtime kernel。
+  - 当前状态：Momo 已通过 `.gitmodules` 引入远程仓库 `https://github.com/sena-nana/MutsukiCore.git`，子模块路径为 `third_party/MutsukiCore`，当前锁定到远程可获取的 commit `bab974dab8f3f36f6c4180d8a8c078fa77e6c566`。
+  - 实现要点：在 Momo 中以 Git submodule 引入 MutsukiCore，依赖面只使用 Rust crates；`apps/desktop/src-tauri/Cargo.toml` 使用锁定 commit 对应的子模块 path dependency；不要依赖父目录或开发机上的本地 `MutsukiCore` checkout。
   - 验收标准：新环境 clone 后可初始化 submodule；`cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml` 能解析 runtime crates；未把 Python reference 或业务语义引入 Tauri 主 crate。
+  - 升级流程：执行 `git -C third_party/MutsukiCore fetch origin`，再 `git -C third_party/MutsukiCore checkout <remote-commit>`，回到 Momo 提交 `third_party/MutsukiCore` 的 gitlink 变更；不使用 `C:\Files\workspace\MutsukiCore` 之类本地路径作为集成来源。
 
 - [ ] P0-02 建立 Tauri Agent runtime state
   - 目标：在 Tauri Rust 层持有 Mutsuki `AgentRuntime`、Agent spec、运行状态和事件缓冲。
@@ -114,7 +115,7 @@
 - [ ] 暂不做远程账号体系和服务端推送。
 - [ ] 暂不读取任意外部文件、邮件、网页或第三方日历作为 Agent 默认上下文。
 - [ ] 暂不允许 Agent 无确认直接删除、批量完成、批量改期或做其他破坏性写入。
-- [ ] 暂不把 NanoBot Python reference 层作为 Momo runtime 事实源。
+- [ ] 暂不把旧 NanoBot Python reference 层作为 Momo runtime 事实源。
 - [ ] 暂不恢复旧后端内存 router 或把业务调度搬到 Rust core。
 
 ## 首批 Agent 工具范围
