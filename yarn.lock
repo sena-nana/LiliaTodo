@@ -3565,6 +3565,14 @@ __metadata:
   languageName: node
   linkType: hard
 
+"liliatodo-workspace@workspace:.":
+  version: 0.0.0-use.local
+  resolution: "liliatodo-workspace@workspace:."
+  dependencies:
+    vitepress: "npm:^1.6.4"
+  languageName: unknown
+  linkType: soft
+
 "local-pkg@npm:^1.1.2":
   version: 1.1.2
   resolution: "local-pkg@npm:1.1.2"
@@ -3763,14 +3771,6 @@ __metadata:
   checksum: 10c0/aa826683a6daddf2aef65f9c8142e362731cf8e415a5591faf92fd51040a76697e45ab6dbb7a3b38be74e0f8c464825a7eabe827750455c7472421953f5da733
   languageName: node
   linkType: hard
-
-"momotodo-workspace@workspace:.":
-  version: 0.0.0-use.local
-  resolution: "momotodo-workspace@workspace:."
-  dependencies:
-    vitepress: "npm:^1.6.4"
-  languageName: unknown
-  linkType: soft
 
 "muggle-string@npm:^0.4.1":
   version: 0.4.1
