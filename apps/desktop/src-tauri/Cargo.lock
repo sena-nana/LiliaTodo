@@ -2314,6 +2314,9 @@ dependencies = [
 name = "liliatodo-desktop"
 version = "0.1.0"
 dependencies = [
+ "mutsuki-runtime-contracts",
+ "mutsuki-runtime-core",
+ "mutsuki-runtime-host",
  "serde",
  "serde_json",
  "tauri",
@@ -2455,6 +2458,33 @@ dependencies = [
  "serde",
  "thiserror 2.0.18",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "mutsuki-runtime-contracts"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "mutsuki-runtime-core"
+version = "0.1.0"
+dependencies = [
+ "mutsuki-runtime-contracts",
+ "serde_json",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "mutsuki-runtime-host"
+version = "0.1.0"
+dependencies = [
+ "mutsuki-runtime-contracts",
+ "mutsuki-runtime-core",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
