@@ -24,7 +24,7 @@ export async function executeAgentAction(
   switch (action.type) {
     case "task.create": {
       const task = await repository.createTask(action.input);
-      return { before: task, after: task, reversible: true };
+      return { before: null, after: task, reversible: true };
     }
     case "task.update": {
       const before = await repository.findTaskById(action.taskId);
@@ -84,13 +84,17 @@ export async function undoAgentAction(
     throw new Error("该操作不可撤销");
   }
   if (undoAction.type === "task.delete") {
-    const created = before as Task | null;
+    const created = after as Task | null;
     if (!created?.id) throw new Error("缺少可撤销任务");
     await repository.deleteTask(created.id);
     return;
   }
   if (undoAction.type === "task.complete") {
     await repository.setStatus(undoAction.taskId, "completed");
+    return;
+  }
+  if (undoAction.type === "task.restore") {
+    await repository.setStatus(undoAction.taskId, "active");
     return;
   }
   if (undoAction.type === "task.update") {

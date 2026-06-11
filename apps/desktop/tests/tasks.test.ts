@@ -1033,6 +1033,73 @@ describe("TaskRepository 仓储", () => {
       "audit-1",
     ]);
   });
+
+  it("撤销 Agent 创建任务会删除审计 after 中的新任务", async () => {
+    const db = new RecordingDatabase({
+      taskRows: [
+        taskRow({ id: "task-created", title: "新增任务" }),
+      ],
+      agentAuditRecords: [
+        agentAuditRecordRow({
+          action_type: "task.create",
+          action_payload: JSON.stringify({ type: "task.create", input: { title: "新增任务" } }),
+          before_payload: "null",
+          after_payload: JSON.stringify(mapTaskRow(taskRow({ id: "task-created", title: "新增任务" }))),
+          summary: "创建任务「新增任务」",
+        }),
+      ],
+    });
+    const repository = createTaskRepository(() => Promise.resolve(db), {
+      now: () => new Date("2026-05-16T12:10:00.000Z"),
+    });
+
+    await repository.undoAgentAuditBatch("batch-1");
+
+    expect(db.paramsForLastSql("UPDATE tasks SET deleted_at")).toEqual([
+      "2026-05-16T12:10:00.000Z",
+      "2026-05-16T12:10:00.000Z",
+      "task-created",
+    ]);
+  });
+
+  it("撤销 Agent 完成任务会恢复 active 状态", async () => {
+    const before = mapTaskRow(taskRow({ id: "task-1", status: "active", completed_at: null }));
+    const after = mapTaskRow(taskRow({
+      id: "task-1",
+      status: "completed",
+      completed_at: "2026-05-16T12:00:00.000Z",
+    }));
+    const db = new RecordingDatabase({
+      taskRows: [
+        taskRow({
+          id: "task-1",
+          status: "completed",
+          completed_at: "2026-05-16T12:00:00.000Z",
+        }),
+      ],
+      agentAuditRecords: [
+        agentAuditRecordRow({
+          action_type: "task.complete",
+          action_payload: JSON.stringify({ type: "task.complete", taskId: "task-1" }),
+          before_payload: JSON.stringify(before),
+          after_payload: JSON.stringify(after),
+          summary: "完成任务 task-1",
+        }),
+      ],
+    });
+    const repository = createTaskRepository(() => Promise.resolve(db), {
+      now: () => new Date("2026-05-16T12:10:00.000Z"),
+    });
+
+    await repository.undoAgentAuditBatch("batch-1");
+
+    expect(db.paramsForLastSql("UPDATE tasks SET")).toEqual([
+      "active",
+      null,
+      "2026-05-16T12:10:00.000Z",
+      "task-1",
+    ]);
+  });
 });
 
 function task(overrides: Partial<ReturnType<typeof baseTask>>) {
