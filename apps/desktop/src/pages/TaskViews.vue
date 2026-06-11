@@ -5,6 +5,7 @@ import { AsyncTaskDetailDrawer } from "../components/AsyncTaskDetailDrawer";
 import TaskViewRow from "../components/TaskViewRow.vue";
 import PageStateBlock from "../components/PageStateBlock.vue";
 import TaskBulkToolbar from "../components/TaskBulkToolbar.vue";
+import TaskSelectionToolbar from "../components/TaskSelectionToolbar.vue";
 import TaskTableRow from "../components/TaskTableRow.vue";
 import { useBulkSelection } from "../composables/useBulkSelection";
 import { useGlobalShortcuts } from "../composables/useGlobalShortcuts";
@@ -239,12 +240,13 @@ function taskTimelineTime(task: Task) {
 
 <template>
   <section class="page">
-    <section v-if="!loading && !error && tasks.length > 0" class="task-toolbar">
-      <div class="task-toolbar__left">
-        <span>{{ mode === "deleted" ? "最近删除" : mode === "completed" ? "已完成" : mode === "archived" ? "已归档" : "任务" }} {{ tasks.length }} 条</span>
-        <span v-if="selection.selectedCount.value > 0">已选 {{ selection.selectedCount.value }} 条</span>
-      </div>
-      <div class="task-toolbar__right">
+    <TaskSelectionToolbar
+      v-if="!loading && !error && tasks.length > 0"
+      :label="mode === 'deleted' ? '最近删除' : mode === 'completed' ? '已完成' : mode === 'archived' ? '已归档' : '任务'"
+      :total-count="tasks.length"
+      :selected-count="selection.selectedCount.value"
+    >
+      <template #actions>
         <template v-if="mode === 'deleted'">
           <button type="button" :disabled="selection.selectedCount.value === 0" @click="bulkRestore">批量恢复</button>
           <button type="button" class="ghost danger" :disabled="selection.selectedCount.value === 0" @click="bulkPurge">彻底删除</button>
@@ -253,8 +255,8 @@ function taskTimelineTime(task: Task) {
           <button type="button" :disabled="selection.selectedCount.value === 0 || mode !== 'all'" @click="bulkComplete">批量完成</button>
           <button type="button" :disabled="selection.selectedCount.value === 0" @click="bulkDelete">批量删除</button>
         </template>
-      </div>
-    </section>
+      </template>
+    </TaskSelectionToolbar>
     <TaskBulkToolbar
       v-if="selection.selectedCount.value > 0 && mode !== 'deleted'"
       :selected-count="selection.selectedCount.value"

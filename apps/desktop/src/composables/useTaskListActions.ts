@@ -1,6 +1,6 @@
 import { ref, type Ref } from "vue";
 import type { TaskRepository } from "../data/taskRepository";
-import type { Task } from "../domain/tasks";
+import type { CreateTaskInput, Task } from "../domain/tasks";
 import { moveItemById } from "../domain/order";
 
 interface UseTaskListActionsOptions {
@@ -9,6 +9,8 @@ interface UseTaskListActionsOptions {
   reload: () => Promise<void>;
   listId: () => string;
   categoryId?: () => string | null;
+  buildCreateInput?: (title: string) => CreateTaskInput;
+  reset?: () => void;
   setError: (value: string | null) => void;
 }
 
@@ -18,6 +20,8 @@ export function useTaskListActions({
   reload,
   listId,
   categoryId,
+  buildCreateInput,
+  reset,
   setError,
 }: UseTaskListActionsOptions) {
   const newTitle = ref("");
@@ -28,19 +32,24 @@ export function useTaskListActions({
     quickAddSaving.value = true;
     setError(null);
     try {
-      const selectedCategoryId = categoryId?.() ?? null;
-      await repository.createTask({
-        title: newTitle.value,
-        listId: listId(),
-        ...(selectedCategoryId ? { categoryId: selectedCategoryId } : {}),
-      });
+      await repository.createTask(buildCreateInput ? buildCreateInput(newTitle.value) : defaultCreateInput());
       newTitle.value = "";
+      reset?.();
       await reload();
     } catch (e) {
       setError(String(e));
     } finally {
       quickAddSaving.value = false;
     }
+  }
+
+  function defaultCreateInput(): CreateTaskInput {
+    const selectedCategoryId = categoryId?.() ?? null;
+    return {
+      title: newTitle.value,
+      listId: listId(),
+      ...(selectedCategoryId ? { categoryId: selectedCategoryId } : {}),
+    };
   }
 
   async function moveTask(task: Task, direction: -1 | 1) {

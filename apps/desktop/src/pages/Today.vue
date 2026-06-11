@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from "vue";
 import { Check, Plus } from "lucide-vue-next";
 import { useTaskRepository } from "../data/TaskRepositoryContext";
 import { useTaskDetailDrawer } from "../composables/useTaskDetailDrawer";
+import { useTaskListActions } from "../composables/useTaskListActions";
 import { useGlobalShortcuts } from "../composables/useGlobalShortcuts";
 import type { TodayTaskGroups } from "../domain/tasks";
 import { taskHasDueReminder } from "../domain/tasks";
@@ -22,13 +23,11 @@ const groups = ref<TodayTaskGroups>({
   dueToday: [],
   completedToday: [],
 });
-const title = ref("");
 const quickAddInput = ref<HTMLInputElement | null>(null);
 const destination = ref<"today" | "inbox">("today");
 const dueAtInput = ref("");
 const estimateInput = ref("");
 const loading = ref(true);
-const quickAddSaving = ref(false);
 const error = ref<string | null>(null);
 const allVisibleTasks = computed(() => [
   ...groups.value.overdue,
@@ -52,6 +51,27 @@ const {
   repository,
   reload: load,
   getParentCandidates: () => allVisibleTasks.value,
+});
+const { newTitle: title, quickAddSaving, createTask: onQuickAdd } = useTaskListActions({
+  repository,
+  tasks: allVisibleTasks,
+  reload: load,
+  listId: () => "inbox",
+  buildCreateInput: (taskTitle) => ({
+    title: taskTitle,
+    dueAt:
+      destination.value === "today"
+        ? dueAtInputToIso(dueAtInput.value) ?? defaultTodayDueAt()
+        : null,
+    estimateMin: estimateInputToNumber(estimateInput.value),
+  }),
+  reset: () => {
+    dueAtInput.value = "";
+    estimateInput.value = "";
+  },
+  setError: (value) => {
+    error.value = value;
+  },
 });
 
 onMounted(() => {
@@ -83,30 +103,6 @@ async function load() {
     error.value = String(e);
   } finally {
     loading.value = false;
-  }
-}
-
-async function onQuickAdd() {
-  if (!title.value.trim()) return;
-  quickAddSaving.value = true;
-  error.value = null;
-  try {
-    await repository.createTask({
-      title: title.value,
-      dueAt:
-        destination.value === "today"
-          ? dueAtInputToIso(dueAtInput.value) ?? defaultTodayDueAt()
-          : null,
-      estimateMin: estimateInputToNumber(estimateInput.value),
-    });
-    title.value = "";
-    dueAtInput.value = "";
-    estimateInput.value = "";
-    await load();
-  } catch (e) {
-    error.value = String(e);
-  } finally {
-    quickAddSaving.value = false;
   }
 }
 

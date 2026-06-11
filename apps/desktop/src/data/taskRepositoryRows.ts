@@ -5,7 +5,7 @@ import type {
   SyncRunRow,
   SyncState,
   SyncStateRow,
-} from "./taskRepository";
+} from "./taskRepositoryCore";
 
 export function mapLocalChangeRow(row: LocalChangeRow): LocalChange {
   return {

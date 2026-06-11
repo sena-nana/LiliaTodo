@@ -7,6 +7,7 @@ import type { AgentRunnerTriggerResult, AgentRuntimeStatusSnapshot } from "../ag
 import { getAgentRuntimeStatus, isAgentRuntimeRunning, triggerAgentRuntimeScan } from "../agentRuntime";
 import type { TaskRepository } from "../data/taskRepository";
 import type { Task, UpdateTaskInput } from "../domain/tasks";
+import { enqueueAgentRunnerSuggestions } from "./suggestions";
 
 export interface AgentReminderDueEvent {
   task: Task;
@@ -176,14 +177,12 @@ export class AgentAutoTriggerController {
       const snapshot = await this.buildSnapshot(this.repository);
       const result = await this.triggerScan(snapshot);
       if (result.status !== "ready" || result.suggestions.length === 0) return;
-      await Promise.all(result.suggestions.map((suggestion) =>
-        this.repository.createAgentPendingActionFromTool(suggestion.action, {
+      await enqueueAgentRunnerSuggestions(this.repository, result.suggestions, (suggestion) => ({
           ...triggerEnvelopeToSource(envelope),
           taskIds: suggestion.task_ids?.length ? suggestion.task_ids : envelope.taskIds,
           codexThreadId: suggestion.codex_thread_id ?? null,
           codexTurnId: suggestion.codex_turn_id ?? null,
-        }),
-      ));
+      }));
     } catch (error) {
       this.lastError = readableError(error);
     }

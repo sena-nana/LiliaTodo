@@ -1,57 +1,33 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted } from "vue";
 import { Loader2, Play, RefreshCw, Square } from "lucide-vue-next";
 import { useAgentSettings } from "../../agent/settings";
 import { useAgentAutoTriggerController } from "../../agent/autoTriggers";
-import {
-  formatAgentRuntimeLifecycle,
-  isAgentRuntimeRunning,
-  loadAgentRuntimeSnapshot,
-  startAgentRuntimeAndLoadSnapshot,
-  stopAgentRuntimeAndLoadSnapshot,
-  type AgentRuntimeSnapshot,
-  type AgentRuntimeStatusSnapshot,
-  type RuntimeEventShape,
-  type ScalarValue,
-} from "../../agentRuntime";
+import AgentRuntimeEventList from "../../components/AgentRuntimeEventList.vue";
+import { formatAgentRuntimeLifecycle, useAgentRuntimeSnapshot } from "../../composables/useAgentRuntimeSnapshot";
 import { formatDisplayError } from "../../utils/errors";
 
 const settings = useAgentSettings();
 const agentAutoTrigger = useAgentAutoTriggerController();
-const status = ref<AgentRuntimeStatusSnapshot | null>(null);
-const events = ref<RuntimeEventShape[]>([]);
-const loading = ref(true);
-const busyAction = ref<"start" | "stop" | "refresh" | null>(null);
-const error = ref<string | null>(null);
+const runtime = useAgentRuntimeSnapshot();
+const status = runtime.status;
+const events = runtime.events;
+const loading = runtime.loading;
+const busyAction = runtime.busyAction;
+const error = runtime.error;
 
-const runtimeRunning = computed(() => isAgentRuntimeRunning(status.value));
+const runtimeRunning = runtime.runtimeRunning;
 const automaticTriggerState = computed(() => {
   if (!settings.value.automaticTriggersEnabled) return "已关闭";
   return runtimeRunning.value ? "自动触发运行中" : "等待 runtime 启动";
 });
 
 onMounted(() => {
-  void loadRuntime();
+  void runtime.refresh();
 });
 
-async function loadRuntime(action: "refresh" | null = null) {
-  busyAction.value = action;
-  loading.value = true;
-  error.value = null;
-  try {
-    const snapshot = await loadAgentRuntimeSnapshot();
-    status.value = snapshot.status;
-    events.value = snapshot.events;
-  } catch (e) {
-    error.value = String(e);
-  } finally {
-    loading.value = false;
-    busyAction.value = null;
-  }
-}
-
 async function startRuntime() {
-  await runRuntimeCommand("start", startAgentRuntimeAndLoadSnapshot);
+  await runtime.start();
   if (runtimeRunning.value) {
     void agentAutoTrigger.runStartupChecks().catch((e) => {
       error.value = String(e);
@@ -60,26 +36,7 @@ async function startRuntime() {
 }
 
 async function stopRuntime() {
-  await runRuntimeCommand("stop", stopAgentRuntimeAndLoadSnapshot);
-}
-
-async function runRuntimeCommand(action: "start" | "stop", command: () => Promise<AgentRuntimeSnapshot>) {
-  busyAction.value = action;
-  error.value = null;
-  try {
-    const snapshot = await command();
-    status.value = snapshot.status;
-    events.value = snapshot.events;
-  } catch (e) {
-    error.value = String(e);
-  } finally {
-    busyAction.value = null;
-    loading.value = false;
-  }
-}
-
-function formatScalar(value: ScalarValue) {
-  return typeof value === "boolean" ? (value ? "true" : "false") : String(value);
+  await runtime.stop();
 }
 </script>
 
@@ -102,7 +59,7 @@ function formatScalar(value: ScalarValue) {
             <Square v-else :size="14" aria-hidden="true" />
             停止 runtime
           </button>
-          <button type="button" :disabled="busyAction !== null" @click="loadRuntime('refresh')">
+          <button type="button" :disabled="busyAction !== null" @click="runtime.refresh('refresh')">
             <Loader2 v-if="busyAction === 'refresh'" class="spin" :size="14" aria-hidden="true" />
             <RefreshCw v-else :size="14" aria-hidden="true" />
             刷新
@@ -162,14 +119,7 @@ function formatScalar(value: ScalarValue) {
           <strong>最近 runtime 事件</strong>
           <span>{{ events.length }} 条</span>
         </div>
-        <ol v-if="events.length > 0" class="agent-settings__event-list">
-          <li v-for="event in events.slice(-6)" :key="event.sequence">
-            <span>#{{ event.sequence }} {{ event.name }}</span>
-            <code v-for="(value, key) in event.attributes" :key="key">
-              {{ key }}={{ formatScalar(value) }}
-            </code>
-          </li>
-        </ol>
+        <AgentRuntimeEventList v-if="events.length > 0" :events="events" :limit="6" ordered class="agent-settings__event-list" />
         <p v-else class="agent-settings__empty">当前没有 runtime 事件。</p>
       </div>
     </div>
@@ -236,24 +186,7 @@ function formatScalar(value: ScalarValue) {
 }
 
 .agent-settings__event-list {
-  list-style: none;
-  padding: 0;
-  margin: 6px 0 0;
-}
-
-.agent-settings__event-list li {
-  display: flex;
-  min-height: 30px;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
-  border-bottom: 1px solid var(--border-soft);
-  color: var(--text-muted);
-  font-size: 12px;
-}
-
-.agent-settings__event-list li:last-child {
-  border-bottom: 0;
+  margin-top: 6px;
 }
 
 .agent-settings__empty {

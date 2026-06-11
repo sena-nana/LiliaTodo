@@ -17,6 +17,7 @@ import { formatDisplayError } from "../utils/errors";
 import { AsyncTaskDetailDrawer } from "../components/AsyncTaskDetailDrawer";
 import PageStateBlock from "../components/PageStateBlock.vue";
 import TaskBulkToolbar from "../components/TaskBulkToolbar.vue";
+import TaskSelectionToolbar from "../components/TaskSelectionToolbar.vue";
 
 const route = useRoute();
 const repository = useTaskRepository();
@@ -307,21 +308,25 @@ function checklistProgress(task: Task) {
       </div>
     </form>
 
-    <section class="list-toolbar">
-      <div class="list-toolbar__left">
+    <TaskSelectionToolbar
+      label="清单"
+      :total-count="tasks.length"
+      :selected-count="selection.selectedCount.value"
+      class="list-toolbar"
+    >
+      <template #label>
         <strong>{{ listName }}</strong>
         <span>{{ tasks.length }} 条任务</span>
-        <span v-if="selection.selectedCount.value > 0">已选 {{ selection.selectedCount.value }} 条</span>
-      </div>
-      <div class="list-toolbar__right">
+      </template>
+      <template #actions>
         <button type="button" @click="creatingCategory = true">
           <Plus :size="16" aria-hidden="true" />
           新增分类
         </button>
         <button type="button" :disabled="selection.selectedCount.value === 0" @click="bulkComplete">批量完成</button>
         <button type="button" :disabled="selection.selectedCount.value === 0" @click="bulkDelete">批量删除</button>
-      </div>
-    </section>
+      </template>
+    </TaskSelectionToolbar>
     <TaskBulkToolbar
       v-if="selection.selectedCount.value > 0"
       :selected-count="selection.selectedCount.value"
