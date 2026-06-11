@@ -10,7 +10,7 @@
 - 模型后端：复用 Lilia 风格 Node runner + Codex app-server 适配子集，作为 Mutsuki 的 `StrategyBackend` / capability backend。
 - 职责边界：`mutsuki-runtime-core` 是 Agent lifecycle、routing、resource、event 的运行核心；Codex app-server 是策略 / 模型后端，二者不能混为一层。
 - UI 入口：新增 Agent 收件箱，用于查看运行状态、建议操作、待确认队列、执行历史、审计记录和撤销入口。
-- 自动触发：第一版只覆盖低频关键事件，包括任务创建 / 更新、逾期、提醒到期、每日首次启动。
+- 自动触发：第一版目标只覆盖低频关键事件，包括任务创建 / 更新、逾期、提醒到期、每日首次启动；当前仍未接入真实自动触发链路。
 - 上下文范围：第一版只读取本地任务库、清单、分类、时间、提醒、标签、估时和完成状态。
 - 写入权限：关键写入必须先进 Agent 收件箱，用户逐条或批量确认后才落库；执行后必须有审计记录和按批次撤销能力。
 
@@ -26,7 +26,7 @@
 - [x] 日历页已有未来 7 天只读日程视图，但还不是成熟日历。
 - [x] 全局任务视图已有所有、四象限和时间线三种只读 / 操作入口。
 - [x] WebDAV 同步主路径已具备手动触发、凭据保存、push / pull、冲突基线和运行结果展示。
-- [x] 当前仓库尚未实现 Agent runtime、Agent 收件箱、Codex runner 桥、确认队列、审计撤销、真实系统通知、重复任务和全局搜索筛选。
+- [x] 当前仓库已具备 Agent runtime 状态、Agent 收件箱、Codex runner 桥、确认队列、审计撤销、真实系统通知、重复任务和全局搜索筛选；Agent 自动触发链路仍未完成。
 
 ## P0 Agent 闭环主线
 
@@ -45,7 +45,7 @@
 
 - [x] P0-03 复用 Lilia 风格 Codex app-server runner 桥
   - 目标：让 Mutsuki strategy backend 可以调用 Codex app-server 生成 Todo 操作建议。
-  - 当前状态：已保留 Codex app-server 作为策略 / 模型后端的边界，并在未配置 backend 时返回中文 disabled 诊断；真实 Codex runner 进程拉起和 JSONL 事件消费仍作为后续后端适配深化项。
+  - 当前状态：Tauri command 会拉起 `codex app-server --stdio`，发送本地任务上下文快照，读取 JSONL 协议事件，并把合法 Todo 建议规范化为结构化 action；缺少 Codex CLI、JSONL 非法或建议 JSON 非法时返回中文 disabled 诊断。
   - 实现要点：移植最小 Node runner / Codex app-server 适配子集；Tauri Rust 负责拉起 runner、写入任务上下文、读取 JSONL 事件；runner 输出结构化建议，不直接写任务库。
   - 验收标准：缺少 Codex CLI 或版本不满足时给出中文诊断；一次 Agent 触发能返回结构化建议事件；Codex app-server 被明确标记为策略 / 模型后端，而不是 runtime 核心。
 
@@ -73,9 +73,9 @@
   - 实现要点：为 Agent 执行新增审计模型，记录 action、before / after、来源 envelope、Codex thread / turn、执行结果、错误、batchId 和 createdAt；撤销按 batch 逆向生成安全 patch。
   - 验收标准：每次确认执行都会产生审计记录；用户可在 Agent 收件箱按批次撤销可逆操作；不可逆操作必须在执行前提示并在审计中标记不可撤销。
 
-- [x] P0-08 接入低频关键事件触发
+- [ ] P0-08 接入低频关键事件触发
   - 目标：让 Agent 能主动检查任务状态，但不制造噪音。
-  - 当前状态：已新增低频触发缓冲层，支持任务创建 / 更新、逾期、提醒到期、每日启动和手动扫描事件，并提供自动触发设置开关。
+  - 当前状态：已新增低频触发缓冲层和自动触发设置开关，手动扫描可生成 runtime scan 并进入确认队列；任务创建 / 更新、逾期、提醒到期和每日启动事件尚未接入真实自动扫描链路。
   - 实现要点：在任务创建 / 更新后节流触发；应用每日首次启动触发一次全局检查；逾期和提醒到期触发建议，不直接改期；触发事件进入 runtime envelope。
   - 验收标准：同一任务短时间多次变更会合并触发；用户可在设置中关闭自动触发；自动触发只生成建议，不跳过确认队列。
 

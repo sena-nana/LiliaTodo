@@ -220,11 +220,17 @@ export function buildUndoAction(
       const created = after as Task | null;
       return created?.id ? { type: "task.delete", taskId: created.id } : null;
     }
+    case "task.complete":
+    case "task.restore": {
+      const task = before as Task | null;
+      if (!task) return null;
+      return task.status === "completed"
+        ? { type: "task.complete", taskId: task.id }
+        : { type: "task.restore", taskId: task.id };
+    }
     case "task.update":
     case "task.move":
-    case "task.reparent":
-    case "task.restore":
-    case "task.complete": {
+    case "task.reparent": {
       const task = before as Task | null;
       if (!task) return null;
       return task.status === "completed"
