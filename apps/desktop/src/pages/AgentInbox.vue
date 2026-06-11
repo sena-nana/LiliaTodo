@@ -2,10 +2,12 @@
 import { computed, onMounted, ref } from "vue";
 import { Bot, Check, RefreshCw, RotateCcw, X } from "lucide-vue-next";
 import { TODO_AGENT_TOOL_DEFINITIONS, type AgentAuditRecord, type AgentInboxSnapshot, type AgentPendingAction } from "../agent/actions";
+import { buildAgentTaskContextSnapshot } from "../agent/context";
 import { useTaskRepository } from "../data/TaskRepositoryContext";
 import PageStateBlock from "../components/PageStateBlock.vue";
 import { formatDisplayError } from "../utils/errors";
 import {
+  formatAgentRuntimeLifecycle,
   getAgentRuntimeStatus,
   listAgentRuntimeEvents,
   triggerAgentRuntimeScan,
@@ -85,7 +87,23 @@ async function triggerScan() {
   busyId.value = "trigger-scan";
   error.value = null;
   try {
-    runnerResult.value = await triggerAgentRuntimeScan();
+    const snapshot = await buildAgentTaskContextSnapshot(repository);
+    const result = await triggerAgentRuntimeScan(snapshot);
+    runnerResult.value = result;
+    if (result.status === "ready") {
+      const envelopeId = `manual-scan-${snapshot.generatedAt}`;
+      await Promise.all(result.suggestions.map((suggestion) =>
+        repository.createAgentPendingActionFromTool(suggestion.action, {
+          trigger: "manual_scan",
+          envelopeId,
+          summary: "手动扫描",
+          taskIds: suggestion.task_ids ?? [],
+          codexThreadId: suggestion.codex_thread_id ?? null,
+          codexTurnId: suggestion.codex_turn_id ?? null,
+        }),
+      ));
+      await load();
+    }
     events.value = (await listAgentRuntimeEvents()).events;
   } catch (e) {
     error.value = String(e);
@@ -104,17 +122,6 @@ async function runAction(id: string, execute: () => Promise<unknown>) {
     error.value = String(e);
   } finally {
     busyId.value = null;
-  }
-}
-
-function lifecycleLabel(value: AgentRuntimeStatusSnapshot["lifecycle"] | null | undefined) {
-  switch (value) {
-    case "bootstrapping":
-      return "初始化中";
-    case "disabled":
-      return "已禁用";
-    default:
-      return "未知";
   }
 }
 
@@ -160,7 +167,7 @@ function formatScalar(value: ScalarValue) {
         <div class="agent-toolbar__status">
           <Bot :size="18" aria-hidden="true" />
           <strong>Agent 收件箱</strong>
-          <span>{{ lifecycleLabel(status?.lifecycle) }}</span>
+          <span>{{ formatAgentRuntimeLifecycle(status?.lifecycle) }}</span>
           <span>{{ status?.backend_configured ? "backend 已配置" : "backend 未配置" }}</span>
           <span>{{ status?.buffered_event_count ?? 0 }} 条 runtime 事件</span>
         </div>
