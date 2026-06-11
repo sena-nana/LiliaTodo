@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/vue";
 import { createMemoryHistory } from "vue-router";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Component } from "vue";
 import { TaskRepositoryKey } from "../src/data/TaskRepositoryContext";
 import {
@@ -19,6 +19,7 @@ import Today from "../src/pages/Today.vue";
 import Inbox from "../src/pages/Inbox.vue";
 import Calendar from "../src/pages/Calendar.vue";
 import AgentInbox from "../src/pages/AgentInbox.vue";
+import AgentSettings from "../src/pages/settings/AgentSettings.vue";
 import SyncSettings from "../src/pages/settings/SyncSettings.vue";
 import Widget from "../src/pages/Widget.vue";
 import App from "../src/App.vue";
@@ -33,6 +34,12 @@ import {
   taskFixture as task,
 } from "./taskFixtures";
 
+const invokeMock = vi.hoisted(() => vi.fn());
+
+vi.mock("@tauri-apps/api/core", () => ({
+  invoke: invokeMock,
+}));
+
 vi.mock("@tauri-apps/api/window", () => ({
   getCurrentWindow: vi.fn(() => ({
     isMaximized: vi.fn().mockResolvedValue(false),
@@ -42,6 +49,11 @@ vi.mock("@tauri-apps/api/window", () => ({
     close: vi.fn().mockResolvedValue(undefined),
   })),
 }));
+
+afterEach(() => {
+  invokeMock.mockReset();
+  delete (window as Window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__;
+});
 
 describe("桌面端 MVP 页面", () => {
   it("显示今日分组并快速添加今日任务", async () => {
@@ -606,7 +618,182 @@ describe("桌面端 MVP 页面", () => {
     expect(screen.getByText("#2 runtime.disabled")).toBeInTheDocument();
 
     await fireEvent.click(screen.getByRole("button", { name: "触发扫描" }));
-    expect(await screen.findByText(/缺少 Codex CLI 或无法启动/)).toBeInTheDocument();
+    expect(await screen.findByText(/当前浏览器预览不运行 Tauri runner/)).toBeInTheDocument();
+  });
+
+  it("Agent 设置页可启停 runtime 并回显自动触发有效状态", async () => {
+    (window as Window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ = {};
+    localStorage.removeItem("liliatodo.agentSettings");
+    const disabledReason = "尚未配置 backend，Agent 已禁用。";
+    let status = {
+      lifecycle: "disabled",
+      agent_id: "momo-agent",
+      agent_phase: "stop",
+      backend_configured: false,
+      disabled_reason: disabledReason,
+      buffered_event_count: 1,
+    };
+    let events = [{
+      sequence: 1,
+      kind: "lifecycle",
+      name: "runtime.disabled",
+      agent_id: "momo-agent",
+      attributes: { reason: disabledReason },
+      error: null,
+    }];
+
+    invokeMock.mockImplementation((command: string) => {
+      if (command === "agent_runtime_get_status") {
+        return Promise.resolve(status);
+      }
+      if (command === "agent_runtime_list_events") {
+        return Promise.resolve({ events });
+      }
+      if (command === "agent_runtime_start") {
+        status = {
+          lifecycle: "running",
+          agent_id: "momo-agent",
+          agent_phase: "awake",
+          backend_configured: false,
+          disabled_reason: null,
+          buffered_event_count: 2,
+        };
+        events = [...events, {
+          sequence: 2,
+          kind: "lifecycle",
+          name: "runtime.start",
+          agent_id: "momo-agent",
+          attributes: {},
+          error: null,
+        }];
+        return Promise.resolve(status);
+      }
+      if (command === "agent_runtime_stop") {
+        status = {
+          lifecycle: "disabled",
+          agent_id: "momo-agent",
+          agent_phase: "stop",
+          backend_configured: false,
+          disabled_reason: disabledReason,
+          buffered_event_count: 3,
+        };
+        events = [...events, {
+          sequence: 3,
+          kind: "lifecycle",
+          name: "runtime.stop",
+          agent_id: "momo-agent",
+          attributes: {},
+          error: null,
+        }];
+        return Promise.resolve(status);
+      }
+      return Promise.reject(new Error(`未预期的 Tauri 命令：${command}`));
+    });
+
+    renderWithRepository(AgentSettings, fakeRepository());
+
+    expect(await screen.findByText("Runtime 控制")).toBeInTheDocument();
+    expect(await screen.findByText(disabledReason)).toBeInTheDocument();
+    expect(screen.getByText("已禁用")).toBeInTheDocument();
+    expect(screen.getByText("等待 runtime 启动")).toBeInTheDocument();
+    expect(screen.getByText("#1 runtime.disabled")).toBeInTheDocument();
+
+    await fireEvent.click(screen.getByRole("button", { name: "启动 runtime" }));
+
+    await waitFor(() => expect(invokeMock).toHaveBeenCalledWith("agent_runtime_start"));
+    await waitFor(() => expect(screen.getByText("运行中")).toBeInTheDocument());
+    expect(screen.getByText("自动触发运行中")).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText("#2 runtime.start")).toBeInTheDocument());
+
+    await fireEvent.click(screen.getByRole("button", { name: "停止 runtime" }));
+
+    await waitFor(() => expect(invokeMock).toHaveBeenCalledWith("agent_runtime_stop"));
+    await waitFor(() => expect(screen.getByText("已禁用")).toBeInTheDocument());
+    expect(screen.getByText("等待 runtime 启动")).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText("#3 runtime.stop")).toBeInTheDocument());
+
+    await fireEvent.click(screen.getByRole("checkbox"));
+
+    expect(screen.getByText("已关闭")).toBeInTheDocument();
+    await waitFor(() =>
+      expect(localStorage.getItem("liliatodo.agentSettings")).toContain('"automaticTriggersEnabled":false'),
+    );
+  });
+
+  it("Agent 收件箱触发扫描后写入待确认操作", async () => {
+    (window as Window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ = {};
+    const repository = fakeRepository({
+      activeTasks: [task({ id: "task-1", title: "整理报告" })],
+      lists: [taskListFixture({ id: "inbox", name: "收件箱" })],
+      categories: {
+        inbox: [taskCategoryFixture({ id: "work", listId: "inbox", name: "工作" })],
+      },
+      agentInbox: { pendingActions: [], audits: [] },
+    });
+    const action = { type: "task.update" as const, taskId: "task-1", patch: { priority: 2 } };
+    invokeMock.mockImplementation((command: string, args?: unknown) => {
+      if (command === "agent_runtime_get_status") {
+        return Promise.resolve({
+          lifecycle: "disabled",
+          agent_id: "momo-agent",
+          agent_phase: "stop",
+          backend_configured: false,
+          disabled_reason: null,
+          buffered_event_count: 0,
+        });
+      }
+      if (command === "agent_runtime_list_events") {
+        return Promise.resolve({ events: [] });
+      }
+      if (command === "agent_runtime_trigger_scan") {
+        return Promise.resolve({
+          status: "ready",
+          diagnostic: "Codex 扫描完成，生成 1 条待确认建议。",
+          suggestions: [{
+            action_type: "task.update",
+            summary: "提高任务优先级",
+            risk: "medium",
+            action,
+            task_ids: ["task-1"],
+            codex_thread_id: "thread-1",
+            codex_turn_id: "turn-1",
+          }],
+          args,
+        });
+      }
+      return Promise.reject(new Error(`未预期的 Tauri 命令：${command}`));
+    });
+
+    renderWithRepository(AgentInbox, repository);
+
+    await screen.findByText("Agent 收件箱");
+    await fireEvent.click(screen.getByRole("button", { name: "触发扫描" }));
+
+    await waitFor(() => {
+      expect(repository.createAgentPendingActionFromTool).toHaveBeenCalledWith(action, expect.objectContaining({
+        trigger: "manual_scan",
+        envelopeId: expect.stringMatching(/^manual-scan-/),
+        summary: "手动扫描",
+        taskIds: ["task-1"],
+        codexThreadId: "thread-1",
+        codexTurnId: "turn-1",
+      }));
+    });
+    const triggerCall = invokeMock.mock.calls.find(([command]) => command === "agent_runtime_trigger_scan");
+    expect(triggerCall?.[1]).toEqual({
+      snapshot: expect.objectContaining({
+        tasks: [expect.objectContaining({ id: "task-1", title: "整理报告" })],
+        lists: [expect.objectContaining({ id: "inbox", name: "收件箱" })],
+        categories: [expect.objectContaining({ id: "work", name: "工作" })],
+      }),
+    });
+    expect(repository.listActiveTasks).toHaveBeenCalled();
+    expect(repository.listLists).toHaveBeenCalled();
+    expect(repository.listCategoriesByList).toHaveBeenCalledWith("inbox");
+    expect(repository.getAgentInboxSnapshot).toHaveBeenCalledTimes(2);
+    await waitFor(() =>
+      expect(screen.getByText("Codex 扫描完成，生成 1 条待确认建议。")).toBeInTheDocument(),
+    );
   });
 
   it("Agent 收件箱支持确认、拒绝和撤销操作", async () => {

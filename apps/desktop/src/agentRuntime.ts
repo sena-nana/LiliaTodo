@@ -1,6 +1,8 @@
 import { invoke } from "@tauri-apps/api/core";
+import type { AgentToolInput } from "./agent/actions";
+import type { AgentTaskContextSnapshot } from "./agent/context";
 
-export type AgentRuntimeLifecycle = "bootstrapping" | "disabled";
+export type AgentRuntimeLifecycle = "bootstrapping" | "disabled" | "running";
 export type AgentPhase = "spawn" | "awake" | "sleep" | "stop";
 export type RuntimeEventKind =
   | "lifecycle"
@@ -44,10 +46,19 @@ export interface AgentRuntimeEventsSnapshot {
   events: RuntimeEventShape[];
 }
 
+export interface AgentRuntimeSnapshot {
+  status: AgentRuntimeStatusSnapshot;
+  events: RuntimeEventShape[];
+}
+
 export interface AgentRunnerSuggestion {
   action_type: string;
   summary: string;
   risk: string;
+  action: AgentToolInput;
+  task_ids: string[];
+  codex_thread_id?: string | null;
+  codex_turn_id?: string | null;
 }
 
 export interface AgentRunnerTriggerResult {
@@ -106,7 +117,28 @@ export async function listAgentRuntimeEvents(): Promise<AgentRuntimeEventsSnapsh
   return invoke<AgentRuntimeEventsSnapshot>("agent_runtime_list_events");
 }
 
-export async function triggerAgentRuntimeScan(): Promise<AgentRunnerTriggerResult> {
+export async function loadAgentRuntimeSnapshot(): Promise<AgentRuntimeSnapshot> {
+  const [status, eventSnapshot] = await Promise.all([
+    getAgentRuntimeStatus(),
+    listAgentRuntimeEvents(),
+  ]);
+  return {
+    status,
+    events: eventSnapshot.events,
+  };
+}
+
+export async function startAgentRuntime(): Promise<AgentRuntimeStatusSnapshot> {
+  if (!runningInTauri()) return browserFallbackStatus;
+  return invoke<AgentRuntimeStatusSnapshot>("agent_runtime_start");
+}
+
+export async function stopAgentRuntime(): Promise<AgentRuntimeStatusSnapshot> {
+  if (!runningInTauri()) return browserFallbackStatus;
+  return invoke<AgentRuntimeStatusSnapshot>("agent_runtime_stop");
+}
+
+export async function triggerAgentRuntimeScan(snapshot: AgentTaskContextSnapshot): Promise<AgentRunnerTriggerResult> {
   if (!runningInTauri()) {
     return {
       status: "disabled",
@@ -114,5 +146,18 @@ export async function triggerAgentRuntimeScan(): Promise<AgentRunnerTriggerResul
       suggestions: [],
     };
   }
-  return invoke<AgentRunnerTriggerResult>("agent_runtime_trigger_scan");
+  return invoke<AgentRunnerTriggerResult>("agent_runtime_trigger_scan", { snapshot });
+}
+
+export function formatAgentRuntimeLifecycle(value: AgentRuntimeLifecycle | null | undefined) {
+  switch (value) {
+    case "bootstrapping":
+      return "初始化中";
+    case "disabled":
+      return "已禁用";
+    case "running":
+      return "运行中";
+    default:
+      return "未知";
+  }
 }
