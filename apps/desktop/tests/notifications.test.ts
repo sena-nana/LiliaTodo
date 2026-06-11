@@ -56,7 +56,8 @@ describe("系统通知提醒", () => {
       ],
     });
 
-    const count = await notifyDueReminders(repository);
+    const onReminderDue = vi.fn();
+    const count = await notifyDueReminders(repository, { onReminderDue });
 
     expect(count).toBe(1);
     expect(mocks.registerActionTypes).toHaveBeenCalledWith([
@@ -78,6 +79,11 @@ describe("系统通知提醒", () => {
     expect(repository.updateTask).toHaveBeenCalledWith("task-1", {
       lastReminderNotifiedAt: expect.any(String),
     });
+    expect(onReminderDue).toHaveBeenCalledWith(expect.objectContaining({
+      task: expect.objectContaining({ id: "task-1", title: "提醒任务" }),
+      reminderId: "reminder-1",
+      notifiedAt: expect.any(String),
+    }));
 
     mocks.actionHandler?.({
       title: "提醒：提醒任务",
@@ -92,5 +98,35 @@ describe("系统通知提醒", () => {
         expect.any(String),
       ),
     );
+  });
+
+  it("已通知过的到期提醒不会重复触发 Agent 回调", async () => {
+    const repository = fakeTaskRepository({
+      dueReminders: [
+        taskFixture({
+          id: "task-1",
+          title: "已提醒任务",
+          lastReminderNotifiedAt: "2026-05-16T08:01:00.000Z",
+          reminders: [
+            {
+              id: "reminder-1",
+              triggerAt: "2026-05-16T08:00:00.000Z",
+              status: "pending",
+              message: null,
+            },
+          ],
+        }),
+      ],
+    });
+    const onReminderDue = vi.fn();
+
+    const count = await notifyDueReminders(repository, { onReminderDue });
+
+    expect(count).toBe(1);
+    expect(mocks.sendNotification).not.toHaveBeenCalled();
+    expect(onReminderDue).not.toHaveBeenCalled();
+    expect(repository.updateTask).not.toHaveBeenCalledWith("task-1", {
+      lastReminderNotifiedAt: expect.any(String),
+    });
   });
 });
