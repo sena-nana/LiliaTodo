@@ -300,6 +300,67 @@ describe("Agent 自动触发", () => {
     expect(triggerScan).not.toHaveBeenCalled();
     expect(repository.createAgentPendingActionFromTool).not.toHaveBeenCalled();
   });
+
+  it("观察型仓库的所有写入方法都触发自动扫描", async () => {
+    const settings = ref<AgentSettings>({ automaticTriggersEnabled: true });
+    const repository = fakeTaskRepository({
+      activeTasks: [taskFixture({ id: "task-1", title: "待更新" })],
+    });
+    const triggerScan = vi.fn().mockResolvedValue({
+      status: "ready",
+      diagnostic: "扫描完成。",
+      suggestions: [],
+    });
+    const controller = new AgentAutoTriggerController(repository, {
+      settings,
+      throttleMs: 0,
+      triggerScan,
+      getRuntimeStatus: runningRuntimeStatus,
+    });
+    const observed = createAgentObservedTaskRepository(repository, controller);
+
+    // updateTask（非 bookkeeping 字段）
+    await observed.updateTask("task-1", { title: "新标题", priority: 2 });
+    await vi.waitFor(() => expect(triggerScan).toHaveBeenCalledTimes(1));
+    expect(controller.diagnostics.value.lastRun?.trigger).toBe("task.updated");
+    triggerScan.mockClear();
+
+    // setStatus
+    await observed.setStatus("task-1", "completed");
+    await vi.waitFor(() => expect(triggerScan).toHaveBeenCalledTimes(1));
+    expect(controller.diagnostics.value.lastRun?.trigger).toBe("task.updated");
+    triggerScan.mockClear();
+
+    // deleteTask
+    await observed.deleteTask("task-2");
+    await vi.waitFor(() => expect(triggerScan).toHaveBeenCalledTimes(1));
+    expect(controller.diagnostics.value.lastRun?.trigger).toBe("task.updated");
+    triggerScan.mockClear();
+
+    // restoreTask
+    await observed.restoreTask("task-3");
+    await vi.waitFor(() => expect(triggerScan).toHaveBeenCalledTimes(1));
+    expect(controller.diagnostics.value.lastRun?.trigger).toBe("task.updated");
+    triggerScan.mockClear();
+
+    // batchUpdateTasks 按每个成功任务扫描一次
+    await observed.batchUpdateTasks({ taskIds: ["task-4", "task-5"], patch: { priority: 1 } });
+    await vi.waitFor(() => expect(triggerScan).toHaveBeenCalledTimes(2));
+    expect(controller.diagnostics.value.lastRun?.trigger).toBe("task.updated");
+    triggerScan.mockClear();
+
+    // reorderTasks 按每个已排序任务扫描一次
+    await observed.reorderTasks({ taskIds: ["task-6", "task-7"], listId: "inbox" });
+    await vi.waitFor(() => expect(triggerScan).toHaveBeenCalledTimes(2));
+    expect(controller.diagnostics.value.lastRun?.trigger).toBe("task.updated");
+    triggerScan.mockClear();
+
+    // snoozeReminder
+    await observed.snoozeReminder("task-8", "reminder-1", "2026-05-16T13:00:00.000Z");
+    await vi.waitFor(() => expect(triggerScan).toHaveBeenCalledTimes(1));
+    expect(controller.diagnostics.value.lastRun?.trigger).toBe("task.updated");
+  });
+
 });
 
 function snapshotFixture(): AgentTaskContextSnapshot {
