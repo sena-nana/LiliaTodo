@@ -11,7 +11,9 @@ use mutsuki_runtime_contracts::ScalarValue;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
-use crate::agent_runtime_state::{record_backend_event, AgentRuntimeState};
+use crate::agent_runtime_state::{
+    current_disabled_reason, record_backend_event, runtime_is_running, AgentRuntimeState,
+};
 
 const RUNNER_TIMEOUT: Duration = Duration::from_secs(60);
 const ALLOWED_ACTION_TYPES: &[&str] = &[
@@ -49,6 +51,11 @@ pub struct AgentRunnerTriggerResult {
     pub status: AgentRunnerStatus,
     pub diagnostic: String,
     pub suggestions: Vec<AgentRunnerSuggestion>,
+}
+
+struct TriggerScanResult {
+    result: AgentRunnerTriggerResult,
+    skipped_count: Option<usize>,
 }
 
 #[derive(Debug)]
@@ -95,8 +102,43 @@ pub fn agent_runtime_trigger_scan(
     state: tauri::State<'_, AgentRuntimeState>,
     snapshot: Value,
 ) -> AgentRunnerTriggerResult {
-    let result = trigger_scan_with_command(Command::new("codex"), snapshot);
+    if !runtime_is_running(&state) {
+        let diagnostic = current_disabled_reason(&state)
+            .unwrap_or_else(|| "Agent runtime 未运行，请先启动 runtime。".into());
+        let result = AgentRunnerTriggerResult {
+            status: AgentRunnerStatus::Disabled,
+            diagnostic,
+            suggestions: Vec::new(),
+        };
+        record_scan_event(&state, "codex.runner.scan.failed", &result, 0);
+        return result;
+    }
+
+    let mut requested_attributes = BTreeMap::new();
+    requested_attributes.insert("source".into(), ScalarValue::String("runtime".into()));
+    record_backend_event(&state, "codex.runner.scan.requested", requested_attributes);
+    let scan = trigger_scan_with_command(Command::new("codex"), snapshot);
+    let event_name = match scan.result.status {
+        AgentRunnerStatus::Ready => "codex.runner.scan.completed",
+        AgentRunnerStatus::Disabled => "codex.runner.scan.failed",
+    };
+    record_scan_event(
+        &state,
+        event_name,
+        &scan.result,
+        scan.skipped_count.unwrap_or(0),
+    );
+    scan.result
+}
+
+fn record_scan_event(
+    state: &tauri::State<'_, AgentRuntimeState>,
+    name: impl Into<String>,
+    result: &AgentRunnerTriggerResult,
+    skipped_count: usize,
+) {
     let mut attributes = BTreeMap::new();
+    attributes.insert("source".into(), ScalarValue::String("runtime".into()));
     attributes.insert(
         "status".into(),
         ScalarValue::String(match result.status {
@@ -112,11 +154,14 @@ pub fn agent_runtime_trigger_scan(
         "diagnostic".into(),
         ScalarValue::String(result.diagnostic.clone()),
     );
-    record_backend_event(&state, "codex.runner.scan", attributes);
-    result
+    attributes.insert(
+        "skipped_count".into(),
+        ScalarValue::Int(skipped_count as i64),
+    );
+    record_backend_event(state, name, attributes);
 }
 
-fn trigger_scan_with_command(mut codex_command: Command, snapshot: Value) -> AgentRunnerTriggerResult {
+fn trigger_scan_with_command(mut codex_command: Command, snapshot: Value) -> TriggerScanResult {
     match run_codex_app_server(&mut codex_command, snapshot) {
         Ok((suggestions, skipped_count)) => {
             let diagnostic = if suggestions.is_empty() {
@@ -133,16 +178,22 @@ fn trigger_scan_with_command(mut codex_command: Command, snapshot: Value) -> Age
             } else {
                 format!("Codex 扫描完成，生成 {} 条待确认建议。", suggestions.len())
             };
-            AgentRunnerTriggerResult {
-                status: AgentRunnerStatus::Ready,
-                diagnostic,
-                suggestions,
+            TriggerScanResult {
+                result: AgentRunnerTriggerResult {
+                    status: AgentRunnerStatus::Ready,
+                    diagnostic,
+                    suggestions,
+                },
+                skipped_count: Some(skipped_count),
             }
         }
-        Err(error) => AgentRunnerTriggerResult {
-            status: AgentRunnerStatus::Disabled,
-            diagnostic: error.to_diagnostic(),
-            suggestions: Vec::new(),
+        Err(error) => TriggerScanResult {
+            result: AgentRunnerTriggerResult {
+                status: AgentRunnerStatus::Disabled,
+                diagnostic: error.to_diagnostic(),
+                suggestions: Vec::new(),
+            },
+            skipped_count: None,
         },
     }
 }
@@ -225,7 +276,8 @@ fn run_protocol(
         }),
     )?;
     let thread_response = wait_response(receiver, "momo-thread", deadline, &mut context)?;
-    context.thread_id = value_path_string(&thread_response, &["thread", "id"]).or(context.thread_id);
+    context.thread_id =
+        value_path_string(&thread_response, &["thread", "id"]).or(context.thread_id);
     let thread_id = context
         .thread_id
         .clone()
@@ -251,7 +303,9 @@ fn run_protocol(
     wait_turn_completed(receiver, deadline, &mut context)?;
 
     if let Some(error) = context.turn_error {
-        return Err(RunnerError::AppServer(format!("Codex turn 执行失败：{error}")));
+        return Err(RunnerError::AppServer(format!(
+            "Codex turn 执行失败：{error}"
+        )));
     }
     let raw_text = context
         .agent_texts
@@ -285,7 +339,8 @@ fn write_json_line(child: &mut Child, value: &Value) -> Result<(), RunnerError> 
         .stdin
         .as_mut()
         .ok_or_else(|| RunnerError::Io("无法写入 Codex app-server stdin".into()))?;
-    serde_json::to_writer(&mut *stdin, value).map_err(|error| RunnerError::Io(error.to_string()))?;
+    serde_json::to_writer(&mut *stdin, value)
+        .map_err(|error| RunnerError::Io(error.to_string()))?;
     stdin
         .write_all(b"\n")
         .map_err(|error| RunnerError::Io(error.to_string()))?;
@@ -326,37 +381,45 @@ fn wait_turn_completed(
     }
 }
 
-fn next_json_message(receiver: &Receiver<StdoutEvent>, deadline: Instant) -> Result<Value, RunnerError> {
+fn next_json_message(
+    receiver: &Receiver<StdoutEvent>,
+    deadline: Instant,
+) -> Result<Value, RunnerError> {
     let now = Instant::now();
     if now >= deadline {
         return Err(RunnerError::Timeout);
     }
     let remaining = deadline.saturating_duration_since(now);
     match receiver.recv_timeout(remaining) {
-        Ok(StdoutEvent::Line { line_no, line }) => serde_json::from_str::<Value>(&line)
-            .map_err(|error| RunnerError::InvalidJsonl {
+        Ok(StdoutEvent::Line { line_no, line }) => {
+            serde_json::from_str::<Value>(&line).map_err(|error| RunnerError::InvalidJsonl {
                 line: line_no,
                 error: error.to_string(),
-            }),
+            })
+        }
         Ok(StdoutEvent::Io(error)) => Err(RunnerError::Io(error)),
         Ok(StdoutEvent::Eof) => Err(RunnerError::AppServer("Codex app-server 提前退出".into())),
         Err(mpsc::RecvTimeoutError::Timeout) => Err(RunnerError::Timeout),
-        Err(mpsc::RecvTimeoutError::Disconnected) => {
-            Err(RunnerError::AppServer("Codex app-server stdout 已关闭".into()))
-        }
+        Err(mpsc::RecvTimeoutError::Disconnected) => Err(RunnerError::AppServer(
+            "Codex app-server stdout 已关闭".into(),
+        )),
     }
 }
 
 fn collect_notification(value: &Value, context: &mut RunnerContext) {
     match value.get("method").and_then(Value::as_str) {
         Some("thread/started") => {
-            context.thread_id = value_path_string(value, &["params", "thread", "id"]).or(context.thread_id.take());
+            context.thread_id =
+                value_path_string(value, &["params", "thread", "id"]).or(context.thread_id.take());
         }
         Some("turn/started") => {
-            context.turn_id = value_path_string(value, &["params", "turn", "id"]).or(context.turn_id.take());
+            context.turn_id =
+                value_path_string(value, &["params", "turn", "id"]).or(context.turn_id.take());
         }
         Some("item/completed") => {
-            if let Some(text) = agent_message_text(value.get("params").and_then(|params| params.get("item"))) {
+            if let Some(text) =
+                agent_message_text(value.get("params").and_then(|params| params.get("item")))
+            {
                 context.agent_texts.push(text);
             }
         }
@@ -582,7 +645,9 @@ impl RunnerError {
             return self;
         }
         match self {
-            RunnerError::AppServer(message) => RunnerError::AppServer(format!("{message}；stderr：{trimmed}")),
+            RunnerError::AppServer(message) => {
+                RunnerError::AppServer(format!("{message}；stderr：{trimmed}"))
+            }
             RunnerError::Io(message) => RunnerError::Io(format!("{message}；stderr：{trimmed}")),
             other => other,
         }
@@ -597,27 +662,36 @@ mod tests {
     fn 缺少_codex_cli_时返回中文诊断() {
         let result = trigger_scan_with_command(Command::new("definitely-missing-codex"), json!({}));
 
-        assert!(matches!(result.status, AgentRunnerStatus::Disabled));
-        assert!(result.diagnostic.contains("缺少 Codex CLI"));
-        assert!(result.suggestions.is_empty());
+        assert!(matches!(result.result.status, AgentRunnerStatus::Disabled));
+        assert!(result.result.diagnostic.contains("缺少 Codex CLI"));
+        assert!(result.result.suggestions.is_empty());
     }
 
     #[test]
     fn fake_app_server_返回合法_jsonl_时生成结构化建议() {
         let command = fake_codex_command(
             "valid",
-            fake_protocol_script(r#"{"suggestions":[{"action":{"type":"task.update","taskId":"task-1","patch":{"priority":2}},"summary":"提高任务优先级","task_ids":["task-1"]}]}"#),
+            fake_protocol_script(
+                r#"{"suggestions":[{"action":{"type":"task.update","taskId":"task-1","patch":{"priority":2}},"summary":"提高任务优先级","task_ids":["task-1"]}]}"#,
+            ),
         );
 
         let result = trigger_scan_with_command(command, json!({ "tasks": [] }));
 
-        assert!(matches!(result.status, AgentRunnerStatus::Ready));
-        assert_eq!(result.suggestions.len(), 1);
-        assert_eq!(result.suggestions[0].action_type, "task.update");
-        assert_eq!(result.suggestions[0].risk, "medium");
-        assert_eq!(result.suggestions[0].task_ids, vec!["task-1"]);
-        assert_eq!(result.suggestions[0].codex_thread_id.as_deref(), Some("thread-1"));
-        assert_eq!(result.suggestions[0].codex_turn_id.as_deref(), Some("turn-1"));
+        assert!(matches!(result.result.status, AgentRunnerStatus::Ready));
+        assert_eq!(result.skipped_count, Some(0));
+        assert_eq!(result.result.suggestions.len(), 1);
+        assert_eq!(result.result.suggestions[0].action_type, "task.update");
+        assert_eq!(result.result.suggestions[0].risk, "medium");
+        assert_eq!(result.result.suggestions[0].task_ids, vec!["task-1"]);
+        assert_eq!(
+            result.result.suggestions[0].codex_thread_id.as_deref(),
+            Some("thread-1")
+        );
+        assert_eq!(
+            result.result.suggestions[0].codex_turn_id.as_deref(),
+            Some("turn-1")
+        );
     }
 
     #[test]
@@ -627,14 +701,18 @@ mod tests {
             r#"
 $null = [Console]::In.ReadLine()
 [Console]::Out.WriteLine("not json")
-"#.to_string(),
+"#
+            .to_string(),
         );
 
         let result = trigger_scan_with_command(command, json!({}));
 
-        assert!(matches!(result.status, AgentRunnerStatus::Disabled));
-        assert!(result.diagnostic.contains("Codex app-server 输出非法 JSONL：第 1 行"));
-        assert!(result.suggestions.is_empty());
+        assert!(matches!(result.result.status, AgentRunnerStatus::Disabled));
+        assert!(result
+            .result
+            .diagnostic
+            .contains("Codex app-server 输出非法 JSONL：第 1 行"));
+        assert!(result.result.suggestions.is_empty());
     }
 
     #[test]
@@ -646,16 +724,17 @@ $null = [Console]::In.ReadLine()
 
         let result = trigger_scan_with_command(command, json!({}));
 
-        assert!(matches!(result.status, AgentRunnerStatus::Disabled));
-        assert!(result.diagnostic.contains("Codex 建议输出不是合法 JSON"));
-        assert!(result.suggestions.is_empty());
+        assert!(matches!(result.result.status, AgentRunnerStatus::Disabled));
+        assert!(result
+            .result
+            .diagnostic
+            .contains("Codex 建议输出不是合法 JSON"));
+        assert!(result.result.suggestions.is_empty());
     }
 
     fn fake_codex_command(name: &str, script: String) -> Command {
-        let path = std::env::temp_dir().join(format!(
-            "momo-fake-codex-{}-{name}.ps1",
-            std::process::id()
-        ));
+        let path =
+            std::env::temp_dir().join(format!("momo-fake-codex-{}-{name}.ps1", std::process::id()));
         std::fs::write(&path, script).expect("写入 fake Codex app-server 脚本");
         let mut command = Command::new("powershell.exe");
         command

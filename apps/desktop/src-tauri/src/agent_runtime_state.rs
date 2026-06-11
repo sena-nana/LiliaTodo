@@ -1,5 +1,6 @@
 use std::{
     collections::BTreeMap,
+    process::Command,
     sync::{Mutex, MutexGuard},
 };
 
@@ -12,8 +13,9 @@ use tauri::{AppHandle, Manager};
 const EVENT_BUFFER_CAPACITY: usize = 64;
 const DEFAULT_AGENT_ID: &str = "local-agent";
 const DISABLED_REASON: &str = "尚未配置 backend，Agent 已禁用。";
+const BACKEND_READY_REASON: &str = "Codex backend 已就绪。";
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AgentRuntimeLifecycle {
     Bootstrapping,
@@ -98,12 +100,54 @@ impl AgentRuntimeStateStore {
         }
     }
 
-    fn push_lifecycle(&mut self, name: impl Into<String>, attributes: BTreeMap<String, ScalarValue>) {
+    fn push_lifecycle(
+        &mut self,
+        name: impl Into<String>,
+        attributes: BTreeMap<String, ScalarValue>,
+    ) {
         self.push_event(RuntimeEventKind::Lifecycle, name, attributes, None);
     }
 
     fn push_backend(&mut self, name: impl Into<String>, attributes: BTreeMap<String, ScalarValue>) {
         self.push_event(RuntimeEventKind::Backend, name, attributes, None);
+    }
+
+    fn start_runtime(&mut self, probe: BackendProbeResult) {
+        match probe {
+            BackendProbeResult::Ready => {
+                self.lifecycle = AgentRuntimeLifecycle::Running;
+                self.agent_phase = Some(AgentPhase::Awake);
+                self.backend_configured = true;
+                self.disabled_reason = None;
+                let mut attributes = BTreeMap::new();
+                attributes.insert("backend_configured".into(), ScalarValue::Bool(true));
+                attributes.insert(
+                    "diagnostic".into(),
+                    ScalarValue::String(BACKEND_READY_REASON.into()),
+                );
+                self.push_lifecycle("runtime.start", attributes);
+            }
+            BackendProbeResult::Unavailable(reason) => {
+                self.lifecycle = AgentRuntimeLifecycle::Disabled;
+                self.agent_phase = Some(AgentPhase::Stop);
+                self.backend_configured = false;
+                self.disabled_reason = Some(reason.clone());
+                let mut attributes = BTreeMap::new();
+                attributes.insert("backend_configured".into(), ScalarValue::Bool(false));
+                attributes.insert("reason".into(), ScalarValue::String(reason));
+                self.push_lifecycle("runtime.start.failed", attributes);
+            }
+        }
+    }
+
+    fn stop_runtime(&mut self) {
+        self.lifecycle = AgentRuntimeLifecycle::Disabled;
+        self.agent_phase = Some(AgentPhase::Stop);
+        self.backend_configured = false;
+        self.disabled_reason = Some(DISABLED_REASON.into());
+        let mut attributes = BTreeMap::new();
+        attributes.insert("backend_configured".into(), ScalarValue::Bool(false));
+        self.push_lifecycle("runtime.stop", attributes);
     }
 
     fn status_snapshot(&self) -> AgentRuntimeStatusSnapshot {
@@ -126,8 +170,16 @@ impl AgentRuntimeStateStore {
 
 pub type AgentRuntimeState = Mutex<AgentRuntimeStateStore>;
 
+#[derive(Debug, PartialEq, Eq)]
+pub enum BackendProbeResult {
+    Ready,
+    Unavailable(String),
+}
+
 fn lock_state<'a>(state: &'a AgentRuntimeState) -> MutexGuard<'a, AgentRuntimeStateStore> {
-    state.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+    state
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
 pub fn init(app: &AppHandle) {
@@ -142,23 +194,56 @@ pub fn record_backend_event(
     lock_state(state).push_backend(name, attributes);
 }
 
-#[tauri::command]
-pub fn agent_runtime_start(state: tauri::State<'_, AgentRuntimeState>) -> AgentRuntimeStatusSnapshot {
-    let mut store = lock_state(&state);
-    store.lifecycle = AgentRuntimeLifecycle::Running;
-    store.agent_phase = Some(AgentPhase::Awake);
-    store.disabled_reason = None;
-    store.push_lifecycle("runtime.start", BTreeMap::new());
+pub fn runtime_is_running(state: &tauri::State<'_, AgentRuntimeState>) -> bool {
+    let store = lock_state(state);
+    store.lifecycle == AgentRuntimeLifecycle::Running && store.backend_configured
+}
+
+pub fn current_disabled_reason(state: &tauri::State<'_, AgentRuntimeState>) -> Option<String> {
+    lock_state(state).disabled_reason.clone()
+}
+
+pub fn probe_codex_backend(mut command: Command) -> BackendProbeResult {
+    match command.arg("--version").output() {
+        Ok(output) if output.status.success() => BackendProbeResult::Ready,
+        Ok(output) => {
+            let stderr = String::from_utf8_lossy(&output.stderr).trim().to_owned();
+            let reason = if stderr.is_empty() {
+                "Codex backend 探测失败：codex --version 返回非 0 状态。".into()
+            } else {
+                format!("Codex backend 探测失败：{stderr}")
+            };
+            BackendProbeResult::Unavailable(reason)
+        }
+        Err(error) => {
+            BackendProbeResult::Unavailable(format!("缺少 Codex CLI 或无法启动：{error}"))
+        }
+    }
+}
+
+fn start_with_probe(
+    state: &tauri::State<'_, AgentRuntimeState>,
+    probe: BackendProbeResult,
+) -> AgentRuntimeStatusSnapshot {
+    let mut store = lock_state(state);
+    store.start_runtime(probe);
     store.status_snapshot()
 }
 
 #[tauri::command]
-pub fn agent_runtime_stop(state: tauri::State<'_, AgentRuntimeState>) -> AgentRuntimeStatusSnapshot {
+pub fn agent_runtime_start(
+    state: tauri::State<'_, AgentRuntimeState>,
+) -> AgentRuntimeStatusSnapshot {
+    let probe = probe_codex_backend(Command::new("codex"));
+    start_with_probe(&state, probe)
+}
+
+#[tauri::command]
+pub fn agent_runtime_stop(
+    state: tauri::State<'_, AgentRuntimeState>,
+) -> AgentRuntimeStatusSnapshot {
     let mut store = lock_state(&state);
-    store.lifecycle = AgentRuntimeLifecycle::Disabled;
-    store.agent_phase = Some(AgentPhase::Stop);
-    store.disabled_reason = Some(DISABLED_REASON.into());
-    store.push_lifecycle("runtime.stop", BTreeMap::new());
+    store.stop_runtime();
     store.status_snapshot()
 }
 
@@ -185,7 +270,10 @@ mod tests {
         let store = AgentRuntimeStateStore::default();
         let snapshot = store.status_snapshot();
 
-        assert!(matches!(snapshot.lifecycle, AgentRuntimeLifecycle::Disabled));
+        assert!(matches!(
+            snapshot.lifecycle,
+            AgentRuntimeLifecycle::Disabled
+        ));
         assert_eq!(snapshot.agent_id.as_deref(), Some(DEFAULT_AGENT_ID));
         assert_eq!(snapshot.agent_phase, Some(AgentPhase::Stop));
         assert_eq!(snapshot.disabled_reason.as_deref(), Some(DISABLED_REASON));
@@ -209,10 +297,82 @@ mod tests {
 
         let events = store.events_snapshot().events;
         assert_eq!(events.len(), EVENT_BUFFER_CAPACITY);
-        assert_eq!(events.first().map(|event| event.name.as_str()), Some("event-5"));
         assert_eq!(
-            events.last().and_then(|event| event.attributes.get("index")),
+            events.first().map(|event| event.name.as_str()),
+            Some("event-5")
+        );
+        assert_eq!(
+            events
+                .last()
+                .and_then(|event| event.attributes.get("index")),
             Some(&ScalarValue::Int((EVENT_BUFFER_CAPACITY + 4) as i64))
+        );
+    }
+
+    #[test]
+    fn backend_可用时启动_runtime_并清空禁用原因() {
+        let mut store = AgentRuntimeStateStore::default();
+        store.start_runtime(BackendProbeResult::Ready);
+        let snapshot = store.status_snapshot();
+
+        assert!(matches!(snapshot.lifecycle, AgentRuntimeLifecycle::Running));
+        assert_eq!(snapshot.agent_phase, Some(AgentPhase::Awake));
+        assert!(snapshot.backend_configured);
+        assert_eq!(snapshot.disabled_reason, None);
+        assert_eq!(
+            store
+                .events_snapshot()
+                .events
+                .last()
+                .map(|event| event.name.as_str()),
+            Some("runtime.start")
+        );
+    }
+
+    #[test]
+    fn backend_缺失时启动保持禁用并记录失败事件() {
+        let mut store = AgentRuntimeStateStore::default();
+        store.start_runtime(BackendProbeResult::Unavailable("缺少 Codex CLI".into()));
+        let snapshot = store.status_snapshot();
+
+        assert!(matches!(
+            snapshot.lifecycle,
+            AgentRuntimeLifecycle::Disabled
+        ));
+        assert_eq!(snapshot.agent_phase, Some(AgentPhase::Stop));
+        assert!(!snapshot.backend_configured);
+        assert_eq!(snapshot.disabled_reason.as_deref(), Some("缺少 Codex CLI"));
+        assert_eq!(
+            store
+                .events_snapshot()
+                .events
+                .last()
+                .map(|event| event.name.as_str()),
+            Some("runtime.start.failed")
+        );
+    }
+
+    #[test]
+    fn 停止_runtime_会同步清理_backend_运行状态() {
+        let mut store = AgentRuntimeStateStore::default();
+        store.start_runtime(BackendProbeResult::Ready);
+        store.stop_runtime();
+        let snapshot = store.status_snapshot();
+
+        assert!(matches!(
+            snapshot.lifecycle,
+            AgentRuntimeLifecycle::Disabled
+        ));
+        assert_eq!(snapshot.agent_phase, Some(AgentPhase::Stop));
+        assert!(!snapshot.backend_configured);
+        assert_eq!(snapshot.disabled_reason.as_deref(), Some(DISABLED_REASON));
+        assert_eq!(
+            store
+                .events_snapshot()
+                .events
+                .last()
+                .map(|event| event.name.as_str()),
+            Some("runtime.stop")
         );
     }
 }
