@@ -3,24 +3,20 @@ import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { Bot, Check, RefreshCw, RotateCcw, X } from "lucide-vue-next";
 import { TODO_AGENT_TOOL_DEFINITIONS, type AgentAuditRecord, type AgentInboxSnapshot, type AgentPendingAction } from "../agent/actions";
 import { buildAgentTaskContextSnapshot } from "../agent/context";
+import { enqueueAgentRunnerSuggestions } from "../agent/suggestions";
+import AgentRuntimeEventList from "../components/AgentRuntimeEventList.vue";
 import { useTaskRepository } from "../data/TaskRepositoryContext";
 import PageStateBlock from "../components/PageStateBlock.vue";
 import { formatDisplayError } from "../utils/errors";
 import {
   formatAgentRuntimeLifecycle,
-  getAgentRuntimeStatus,
-  isAgentRuntimeRunning,
-  listAgentRuntimeEvents,
   triggerAgentRuntimeScan,
-  type AgentRuntimeStatusSnapshot,
   type AgentRunnerTriggerResult,
-  type RuntimeEventShape,
-  type ScalarValue,
 } from "../agentRuntime";
+import { useAgentRuntimeSnapshot } from "../composables/useAgentRuntimeSnapshot";
 
 const repository = useTaskRepository();
-const status = ref<AgentRuntimeStatusSnapshot | null>(null);
-const events = ref<RuntimeEventShape[]>([]);
+const runtime = useAgentRuntimeSnapshot();
 const inbox = ref<AgentInboxSnapshot>({ pendingActions: [], audits: [] });
 const loading = ref(true);
 const busyId = ref<string | null>(null);
@@ -28,7 +24,9 @@ const error = ref<string | null>(null);
 const runnerResult = ref<AgentRunnerTriggerResult | null>(null);
 let refreshTimer: ReturnType<typeof setInterval> | null = null;
 
-const runtimeRunning = computed(() => isAgentRuntimeRunning(status.value));
+const status = runtime.status;
+const events = runtime.events;
+const runtimeRunning = runtime.runtimeRunning;
 const pendingActions = computed(() => inbox.value.pendingActions.filter((item) => item.status === "pending"));
 const decidedActions = computed(() => inbox.value.pendingActions.filter((item) => item.status !== "pending").slice(0, 12));
 const auditBatches = computed(() => {
@@ -81,13 +79,10 @@ async function load() {
 
 async function refreshRuntimeBacklog() {
   try {
-    const [nextStatus, nextEvents, nextInbox] = await Promise.all([
-      getAgentRuntimeStatus(),
-      listAgentRuntimeEvents(),
+    const [, nextInbox] = await Promise.all([
+      runtime.refresh(),
       repository.getAgentInboxSnapshot(),
     ]);
-    status.value = nextStatus;
-    events.value = nextEvents.events;
     inbox.value = nextInbox;
   } catch (e) {
     error.value = String(e);
@@ -123,16 +118,14 @@ async function triggerScan() {
     runnerResult.value = result;
     if (result.status === "ready") {
       const envelopeId = `manual-scan-${snapshot.generatedAt}`;
-      await Promise.all(result.suggestions.map((suggestion) =>
-        repository.createAgentPendingActionFromTool(suggestion.action, {
-          trigger: "manual_scan",
-          envelopeId,
-          summary: "手动扫描",
-          taskIds: suggestion.task_ids ?? [],
-          codexThreadId: suggestion.codex_thread_id ?? null,
-          codexTurnId: suggestion.codex_turn_id ?? null,
-        }),
-      ));
+      await enqueueAgentRunnerSuggestions(repository, result.suggestions, (suggestion) => ({
+        trigger: "manual_scan",
+        envelopeId,
+        summary: "手动扫描",
+        taskIds: suggestion.task_ids ?? [],
+        codexThreadId: suggestion.codex_thread_id ?? null,
+        codexTurnId: suggestion.codex_turn_id ?? null,
+      }));
     }
     await refreshRuntimeBacklog();
   } catch (e) {
@@ -182,9 +175,6 @@ function formatDate(value: string | null) {
   }).format(new Date(value));
 }
 
-function formatScalar(value: ScalarValue) {
-  return typeof value === "boolean" ? (value ? "true" : "false") : String(value);
-}
 </script>
 
 <template>
@@ -311,14 +301,7 @@ function formatScalar(value: ScalarValue) {
             <h2>Runtime 事件</h2>
             <span>{{ events.length }} 条</span>
           </div>
-          <ol v-if="events.length > 0" class="agent-event-list">
-            <li v-for="event in events.slice(-8)" :key="event.sequence">
-              <span>#{{ event.sequence }} {{ event.name }}</span>
-              <code v-for="(value, key) in event.attributes" :key="key">
-                {{ key }}={{ formatScalar(value) }}
-              </code>
-            </li>
-          </ol>
+          <AgentRuntimeEventList v-if="events.length > 0" :events="events" :limit="8" ordered class="agent-event-list" />
           <PageStateBlock v-else kind="empty" title="当前没有 runtime 事件。" />
         </div>
       </section>
@@ -489,8 +472,7 @@ function formatScalar(value: ScalarValue) {
 
 .agent-tool-list li,
 .agent-compact-list li,
-.agent-batch-list li,
-.agent-event-list li {
+.agent-batch-list li {
   display: flex;
   min-height: 34px;
   align-items: center;
@@ -502,8 +484,7 @@ function formatScalar(value: ScalarValue) {
 
 .agent-tool-list li:last-child,
 .agent-compact-list li:last-child,
-.agent-batch-list li:last-child,
-.agent-event-list li:last-child {
+.agent-batch-list li:last-child {
   border-bottom: 0;
 }
 
@@ -533,13 +514,6 @@ function formatScalar(value: ScalarValue) {
   text-overflow: ellipsis;
   white-space: nowrap;
   max-width: 100%;
-}
-
-.agent-event-list li {
-  justify-content: flex-start;
-  flex-wrap: wrap;
-  padding: 5px 0;
-  color: var(--text-muted);
 }
 
 @media (max-width: 920px) {

@@ -7,7 +7,7 @@ import {
   type UpdateTaskCategoryInput,
   type UpdateTaskListInput,
 } from "../domain/tasks";
-import type { SqlDatabase } from "./taskRepository";
+import type { SqlDatabase } from "./taskRepositoryCore";
 
 export const LILIATODO_DATABASE_PATH = "sqlite:liliatodo.db";
 export const SYNC_STATE_ID = "default";

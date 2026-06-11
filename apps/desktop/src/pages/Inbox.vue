@@ -4,6 +4,7 @@ import { Plus } from "lucide-vue-next";
 import { AsyncTaskDetailDrawer } from "../components/AsyncTaskDetailDrawer";
 import PageStateBlock from "../components/PageStateBlock.vue";
 import TaskBulkToolbar from "../components/TaskBulkToolbar.vue";
+import TaskSelectionToolbar from "../components/TaskSelectionToolbar.vue";
 import TaskTableRow from "../components/TaskTableRow.vue";
 import { useBulkSelection } from "../composables/useBulkSelection";
 import { useGlobalShortcuts } from "../composables/useGlobalShortcuts";
@@ -175,16 +176,17 @@ async function onTaskDrop(target: Task) {
         </button>
       </div>
     </form>
-    <section v-if="!loading && !error && tasks.length > 0" class="task-toolbar">
-      <div class="task-toolbar__left">
-        <span>收件箱 {{ tasks.length }} 条</span>
-        <span v-if="selection.selectedCount.value > 0">已选 {{ selection.selectedCount.value }} 条</span>
-      </div>
-      <div class="task-toolbar__right">
+    <TaskSelectionToolbar
+      v-if="!loading && !error && tasks.length > 0"
+      label="收件箱"
+      :total-count="tasks.length"
+      :selected-count="selection.selectedCount.value"
+    >
+      <template #actions>
         <button type="button" :disabled="selection.selectedCount.value === 0" @click="bulkComplete">批量完成</button>
         <button type="button" :disabled="selection.selectedCount.value === 0" @click="bulkDelete">批量删除</button>
-      </div>
-    </section>
+      </template>
+    </TaskSelectionToolbar>
     <TaskBulkToolbar
       v-if="selection.selectedCount.value > 0"
       :selected-count="selection.selectedCount.value"
@@ -233,28 +235,6 @@ async function onTaskDrop(target: Task) {
 </template>
 
 <style scoped>
-.task-toolbar {
-  min-height: 42px;
-  padding: 0 10px;
-  margin-bottom: 10px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--bg-elev);
-  color: var(--text-muted);
-  font-size: 12px;
-}
-
-.task-toolbar__left,
-.task-toolbar__right {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
 .task-table {
   list-style: none;
   padding: 0 12px;
