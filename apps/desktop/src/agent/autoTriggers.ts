@@ -1,4 +1,4 @@
-import { inject, type App, type InjectionKey, type Ref } from "vue";
+import { inject, ref, type App, type InjectionKey, type Ref } from "vue";
 import type { AgentTriggerEvent, AgentTriggerEnvelope } from "./triggers";
 import { AgentTriggerBuffer, triggerEnvelopeToSource } from "./triggers";
 import { useAgentSettings, type AgentSettings } from "./settings";
@@ -27,6 +27,21 @@ export interface AgentAutoTriggerOptions {
   getRuntimeStatus?: () => Promise<AgentRuntimeStatusSnapshot>;
 }
 
+export interface AgentAutoTriggerRunSummary {
+  trigger: AgentTriggerEvent["trigger"];
+  summary: string;
+  status: AgentRunnerTriggerResult["status"] | "skipped" | "failed";
+  diagnostic: string;
+  suggestionCount: number;
+  enqueuedCount: number;
+  ranAt: string;
+}
+
+export interface AgentAutoTriggerDiagnostics {
+  lastError: string | null;
+  lastRun: AgentAutoTriggerRunSummary | null;
+}
+
 const DEFAULT_THROTTLE_MS = 60_000;
 const DAILY_STARTUP_STORAGE_KEY = "liliatodo.agentAutoTriggers.lastDailyStartupDate";
 
@@ -48,6 +63,10 @@ export class AgentAutoTriggerController {
   private readonly throttleMs: number;
 
   lastError: string | null = null;
+  readonly diagnostics = ref<AgentAutoTriggerDiagnostics>({
+    lastError: null,
+    lastRun: null,
+  });
 
   constructor(
     private readonly repository: TaskRepository,
@@ -151,7 +170,7 @@ export class AgentAutoTriggerController {
         });
       }
     } catch (error) {
-      this.lastError = readableError(error);
+      this.setLastError(readableError(error));
     }
   }
 
@@ -171,21 +190,75 @@ export class AgentAutoTriggerController {
     try {
       const runtimeStatus = await this.getRuntimeStatus();
       if (!isAgentRuntimeRunning(runtimeStatus)) {
-        this.lastError = runtimeStatus.disabled_reason ?? "Agent runtime 未运行，请先启动 runtime。";
+        this.recordRun(envelope, {
+          status: "skipped",
+          diagnostic: runtimeStatus.disabled_reason ?? "Agent runtime 未运行，请先启动 runtime。",
+          suggestionCount: 0,
+          enqueuedCount: 0,
+        });
         return;
       }
       const snapshot = await this.buildSnapshot(this.repository);
       const result = await this.triggerScan(snapshot);
-      if (result.status !== "ready" || result.suggestions.length === 0) return;
+      if (result.status !== "ready" || result.suggestions.length === 0) {
+        this.recordRun(envelope, {
+          status: result.status,
+          diagnostic: result.diagnostic,
+          suggestionCount: result.suggestions.length,
+          enqueuedCount: 0,
+        });
+        return;
+      }
       await enqueueAgentRunnerSuggestions(this.repository, result.suggestions, (suggestion) => ({
           ...triggerEnvelopeToSource(envelope),
           taskIds: suggestion.task_ids?.length ? suggestion.task_ids : envelope.taskIds,
           codexThreadId: suggestion.codex_thread_id ?? null,
           codexTurnId: suggestion.codex_turn_id ?? null,
       }));
+      this.recordRun(envelope, {
+        status: result.status,
+        diagnostic: result.diagnostic,
+        suggestionCount: result.suggestions.length,
+        enqueuedCount: result.suggestions.length,
+      });
     } catch (error) {
-      this.lastError = readableError(error);
+      const message = readableError(error);
+      this.recordRun(envelope, {
+        status: "failed",
+        diagnostic: message,
+        suggestionCount: 0,
+        enqueuedCount: 0,
+      });
     }
+  }
+
+  private setLastError(message: string | null) {
+    this.lastError = message;
+    this.diagnostics.value = {
+      ...this.diagnostics.value,
+      lastError: message,
+    };
+  }
+
+  private recordRun(
+    envelope: AgentTriggerEnvelope,
+    result: Pick<AgentAutoTriggerRunSummary, "status" | "diagnostic" | "suggestionCount" | "enqueuedCount">,
+  ) {
+    const lastError =
+      result.status === "failed" || result.status === "skipped" ? result.diagnostic : null;
+    this.lastError = lastError;
+    this.diagnostics.value = {
+      lastError,
+      lastRun: {
+        trigger: envelope.trigger,
+        summary: envelope.summary,
+        status: result.status,
+        diagnostic: result.diagnostic,
+        suggestionCount: result.suggestionCount,
+        enqueuedCount: result.enqueuedCount,
+        ranAt: this.now().toISOString(),
+      },
+    };
   }
 }
 

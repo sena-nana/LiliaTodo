@@ -1,5 +1,6 @@
 import { fireEvent, screen, waitFor } from "@testing-library/vue";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { ref } from "vue";
 import { fakeSecretsStore, fakeWebdavController, invokeMock, renderAppAt, renderWithRepository, resetPageTestMocks } from "./pageTestUtils";
 import { createMemoryHistory } from "vue-router";
 import AgentSettings from "../src/pages/settings/AgentSettings.vue";
@@ -84,6 +85,19 @@ describe("pages.settings", () => {
     });
 
     const agentAutoTrigger = {
+      diagnostics: ref({
+        lastError: "自动扫描失败：backend 暂不可用",
+        lastRun: {
+          trigger: "task.updated",
+          summary: "任务更新",
+          status: "failed",
+          diagnostic: "自动扫描失败：backend 暂不可用",
+          suggestionCount: 0,
+          enqueuedCount: 0,
+          ranAt: "2026-05-16T12:00:00.000Z",
+        },
+      }),
+      lastError: "自动扫描失败：backend 暂不可用",
       runStartupChecks: vi.fn().mockResolvedValue(undefined),
       requestReminderDue: vi.fn(),
       stop: vi.fn(),
@@ -101,6 +115,8 @@ describe("pages.settings", () => {
     expect(await screen.findByText(disabledReason)).toBeInTheDocument();
     expect(screen.getByText("已禁用")).toBeInTheDocument();
     expect(screen.getByText("等待 runtime 启动")).toBeInTheDocument();
+    expect(screen.getByText("任务更新：自动扫描失败：backend 暂不可用")).toBeInTheDocument();
+    expect(screen.getByText("自动扫描失败：backend 暂不可用")).toBeInTheDocument();
     expect(screen.getByText("#1 runtime.disabled")).toBeInTheDocument();
 
     await fireEvent.click(screen.getByRole("button", { name: "启动 runtime" }));

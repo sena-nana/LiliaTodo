@@ -17,9 +17,22 @@ const busyAction = runtime.busyAction;
 const error = runtime.error;
 
 const runtimeRunning = runtime.runtimeRunning;
+const autoTriggerDiagnostics = computed(() => agentAutoTrigger.diagnostics?.value ?? {
+  lastError: agentAutoTrigger.lastError ?? null,
+  lastRun: null,
+});
 const automaticTriggerState = computed(() => {
   if (!settings.value.automaticTriggersEnabled) return "已关闭";
   return runtimeRunning.value ? "自动触发运行中" : "等待 runtime 启动";
+});
+const lastAutoTriggerRunText = computed(() => {
+  const lastRun = autoTriggerDiagnostics.value.lastRun;
+  if (!lastRun) return "暂无记录";
+  return `${lastRun.summary}：${lastRun.diagnostic}`;
+});
+const lastAutoTriggerErrorText = computed(() => {
+  const lastError = autoTriggerDiagnostics.value.lastError;
+  return lastError ? formatDisplayError(lastError) : "暂无错误";
 });
 
 onMounted(() => {
@@ -103,6 +116,14 @@ async function stopRuntime() {
         <li>
           <span>写入保护</span>
           <span>所有 Agent 写入进入确认队列</span>
+        </li>
+        <li>
+          <span>最近自动扫描</span>
+          <span>{{ lastAutoTriggerRunText }}</span>
+        </li>
+        <li>
+          <span>最近自动错误</span>
+          <span>{{ lastAutoTriggerErrorText }}</span>
         </li>
         <li>
           <span>审计撤销</span>

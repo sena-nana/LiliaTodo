@@ -71,6 +71,15 @@ describe("Agent 自动触发", () => {
       codexThreadId: "thread-1",
       codexTurnId: "turn-1",
     }));
+    expect(controller.diagnostics.value.lastRun).toEqual(expect.objectContaining({
+      trigger: "task.created",
+      summary: "任务创建：整理报告",
+      status: "ready",
+      diagnostic: "自动扫描完成，生成 1 条待确认建议。",
+      suggestionCount: 1,
+      enqueuedCount: 1,
+    }));
+    expect(controller.diagnostics.value.lastError).toBeNull();
     expect(repository.approveAgentPendingAction).not.toHaveBeenCalled();
   });
 
@@ -278,6 +287,15 @@ describe("Agent 自动触发", () => {
     controller.requestTaskUpdated("task-1", "2026-05-16T12:00:00.000Z");
     await vi.waitFor(() => expect(controller.lastError).toBe("尚未配置 backend，Agent 已禁用。"));
 
+    expect(controller.diagnostics.value.lastRun).toEqual(expect.objectContaining({
+      trigger: "task.updated",
+      summary: "任务更新",
+      status: "skipped",
+      diagnostic: "尚未配置 backend，Agent 已禁用。",
+      suggestionCount: 0,
+      enqueuedCount: 0,
+    }));
+    expect(controller.diagnostics.value.lastError).toBe("尚未配置 backend，Agent 已禁用。");
     expect(buildSnapshot).not.toHaveBeenCalled();
     expect(triggerScan).not.toHaveBeenCalled();
     expect(repository.createAgentPendingActionFromTool).not.toHaveBeenCalled();
