@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { Bot, Check, RefreshCw, RotateCcw, X } from "lucide-vue-next";
 import { TODO_AGENT_TOOL_DEFINITIONS, type AgentAuditRecord, type AgentInboxSnapshot, type AgentPendingAction } from "../agent/actions";
 import { buildAgentTaskContextSnapshot } from "../agent/context";
@@ -9,6 +9,7 @@ import { formatDisplayError } from "../utils/errors";
 import {
   formatAgentRuntimeLifecycle,
   getAgentRuntimeStatus,
+  isAgentRuntimeRunning,
   listAgentRuntimeEvents,
   triggerAgentRuntimeScan,
   type AgentRuntimeStatusSnapshot,
@@ -25,7 +26,9 @@ const loading = ref(true);
 const busyId = ref<string | null>(null);
 const error = ref<string | null>(null);
 const runnerResult = ref<AgentRunnerTriggerResult | null>(null);
+let refreshTimer: ReturnType<typeof setInterval> | null = null;
 
+const runtimeRunning = computed(() => isAgentRuntimeRunning(status.value));
 const pendingActions = computed(() => inbox.value.pendingActions.filter((item) => item.status === "pending"));
 const decidedActions = computed(() => inbox.value.pendingActions.filter((item) => item.status !== "pending").slice(0, 12));
 const auditBatches = computed(() => {
@@ -50,11 +53,33 @@ const auditBatches = computed(() => {
 
 onMounted(() => {
   void load();
+  refreshTimer = setInterval(() => {
+    if (document.visibilityState === "visible" && runtimeRunning.value && busyId.value === null) {
+      void refreshRuntimeBacklog();
+    }
+  }, 8_000);
+});
+
+onBeforeUnmount(() => {
+  if (refreshTimer) {
+    clearInterval(refreshTimer);
+    refreshTimer = null;
+  }
 });
 
 async function load() {
   loading.value = true;
   error.value = null;
+  try {
+    await refreshRuntimeBacklog();
+  } catch (e) {
+    error.value = String(e);
+  } finally {
+    loading.value = false;
+  }
+}
+
+async function refreshRuntimeBacklog() {
   try {
     const [nextStatus, nextEvents, nextInbox] = await Promise.all([
       getAgentRuntimeStatus(),
@@ -66,8 +91,6 @@ async function load() {
     inbox.value = nextInbox;
   } catch (e) {
     error.value = String(e);
-  } finally {
-    loading.value = false;
   }
 }
 
@@ -84,6 +107,14 @@ async function undoBatch(batchId: string) {
 }
 
 async function triggerScan() {
+  if (!runtimeRunning.value) {
+    runnerResult.value = {
+      status: "disabled",
+      diagnostic: status.value?.disabled_reason ?? "Agent runtime 未运行，请先启动 runtime。",
+      suggestions: [],
+    };
+    return;
+  }
   busyId.value = "trigger-scan";
   error.value = null;
   try {
@@ -102,9 +133,8 @@ async function triggerScan() {
           codexTurnId: suggestion.codex_turn_id ?? null,
         }),
       ));
-      await load();
     }
-    events.value = (await listAgentRuntimeEvents()).events;
+    await refreshRuntimeBacklog();
   } catch (e) {
     error.value = String(e);
   } finally {
@@ -172,7 +202,7 @@ function formatScalar(value: ScalarValue) {
           <span>{{ status?.buffered_event_count ?? 0 }} 条 runtime 事件</span>
         </div>
         <div class="agent-toolbar__actions">
-          <button type="button" :disabled="busyId === 'trigger-scan'" @click="triggerScan">
+          <button type="button" :disabled="busyId === 'trigger-scan' || !runtimeRunning" @click="triggerScan">
             <Bot :size="16" aria-hidden="true" />
             触发扫描
           </button>

@@ -3,8 +3,8 @@ import type { AgentTriggerEvent, AgentTriggerEnvelope } from "./triggers";
 import { AgentTriggerBuffer, triggerEnvelopeToSource } from "./triggers";
 import { useAgentSettings, type AgentSettings } from "./settings";
 import { buildAgentTaskContextSnapshot, type AgentTaskContextSnapshot } from "./context";
-import type { AgentRunnerTriggerResult } from "../agentRuntime";
-import { triggerAgentRuntimeScan } from "../agentRuntime";
+import type { AgentRunnerTriggerResult, AgentRuntimeStatusSnapshot } from "../agentRuntime";
+import { getAgentRuntimeStatus, isAgentRuntimeRunning, triggerAgentRuntimeScan } from "../agentRuntime";
 import type { TaskRepository } from "../data/taskRepository";
 import type { Task, UpdateTaskInput } from "../domain/tasks";
 
@@ -23,6 +23,7 @@ export interface AgentAutoTriggerOptions {
   clearTimeout?: typeof globalThis.clearTimeout;
   buildSnapshot?: (repository: TaskRepository) => Promise<AgentTaskContextSnapshot>;
   triggerScan?: (snapshot: AgentTaskContextSnapshot) => Promise<AgentRunnerTriggerResult>;
+  getRuntimeStatus?: () => Promise<AgentRuntimeStatusSnapshot>;
 }
 
 const DEFAULT_THROTTLE_MS = 60_000;
@@ -42,6 +43,7 @@ export class AgentAutoTriggerController {
   private readonly clearTimer: typeof globalThis.clearTimeout;
   private readonly buildSnapshot: (repository: TaskRepository) => Promise<AgentTaskContextSnapshot>;
   private readonly triggerScan: (snapshot: AgentTaskContextSnapshot) => Promise<AgentRunnerTriggerResult>;
+  private readonly getRuntimeStatus: () => Promise<AgentRuntimeStatusSnapshot>;
   private readonly throttleMs: number;
 
   lastError: string | null = null;
@@ -62,6 +64,7 @@ export class AgentAutoTriggerController {
     this.clearTimer = options.clearTimeout ?? globalThis.clearTimeout.bind(globalThis);
     this.buildSnapshot = options.buildSnapshot ?? buildAgentTaskContextSnapshot;
     this.triggerScan = options.triggerScan ?? triggerAgentRuntimeScan;
+    this.getRuntimeStatus = options.getRuntimeStatus ?? getAgentRuntimeStatus;
   }
 
   requestTrigger(event: AgentTriggerEvent): AgentTriggerEnvelope | null {
@@ -165,6 +168,11 @@ export class AgentAutoTriggerController {
     if (!envelope) return;
 
     try {
+      const runtimeStatus = await this.getRuntimeStatus();
+      if (!isAgentRuntimeRunning(runtimeStatus)) {
+        this.lastError = runtimeStatus.disabled_reason ?? "Agent runtime 未运行，请先启动 runtime。";
+        return;
+      }
       const snapshot = await this.buildSnapshot(this.repository);
       const result = await this.triggerScan(snapshot);
       if (result.status !== "ready" || result.suggestions.length === 0) return;

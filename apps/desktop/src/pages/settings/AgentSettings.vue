@@ -2,12 +2,14 @@
 import { computed, onMounted, ref } from "vue";
 import { Loader2, Play, RefreshCw, Square } from "lucide-vue-next";
 import { useAgentSettings } from "../../agent/settings";
+import { useAgentAutoTriggerController } from "../../agent/autoTriggers";
 import {
   formatAgentRuntimeLifecycle,
-  listAgentRuntimeEvents,
+  isAgentRuntimeRunning,
   loadAgentRuntimeSnapshot,
-  startAgentRuntime,
-  stopAgentRuntime,
+  startAgentRuntimeAndLoadSnapshot,
+  stopAgentRuntimeAndLoadSnapshot,
+  type AgentRuntimeSnapshot,
   type AgentRuntimeStatusSnapshot,
   type RuntimeEventShape,
   type ScalarValue,
@@ -15,13 +17,14 @@ import {
 import { formatDisplayError } from "../../utils/errors";
 
 const settings = useAgentSettings();
+const agentAutoTrigger = useAgentAutoTriggerController();
 const status = ref<AgentRuntimeStatusSnapshot | null>(null);
 const events = ref<RuntimeEventShape[]>([]);
 const loading = ref(true);
 const busyAction = ref<"start" | "stop" | "refresh" | null>(null);
 const error = ref<string | null>(null);
 
-const runtimeRunning = computed(() => status.value?.lifecycle === "running");
+const runtimeRunning = computed(() => isAgentRuntimeRunning(status.value));
 const automaticTriggerState = computed(() => {
   if (!settings.value.automaticTriggersEnabled) return "已关闭";
   return runtimeRunning.value ? "自动触发运行中" : "等待 runtime 启动";
@@ -48,19 +51,25 @@ async function loadRuntime(action: "refresh" | null = null) {
 }
 
 async function startRuntime() {
-  await runRuntimeCommand("start", startAgentRuntime);
+  await runRuntimeCommand("start", startAgentRuntimeAndLoadSnapshot);
+  if (runtimeRunning.value) {
+    void agentAutoTrigger.runStartupChecks().catch((e) => {
+      error.value = String(e);
+    });
+  }
 }
 
 async function stopRuntime() {
-  await runRuntimeCommand("stop", stopAgentRuntime);
+  await runRuntimeCommand("stop", stopAgentRuntimeAndLoadSnapshot);
 }
 
-async function runRuntimeCommand(action: "start" | "stop", command: () => Promise<AgentRuntimeStatusSnapshot>) {
+async function runRuntimeCommand(action: "start" | "stop", command: () => Promise<AgentRuntimeSnapshot>) {
   busyAction.value = action;
   error.value = null;
   try {
-    status.value = await command();
-    events.value = (await listAgentRuntimeEvents()).events;
+    const snapshot = await command();
+    status.value = snapshot.status;
+    events.value = snapshot.events;
   } catch (e) {
     error.value = String(e);
   } finally {

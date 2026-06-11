@@ -630,8 +630,7 @@ describe("桌面端 MVP 页面", () => {
     expect(screen.getByText("backend 未配置")).toBeInTheDocument();
     expect(screen.getByText("#2 runtime.disabled")).toBeInTheDocument();
 
-    await fireEvent.click(screen.getByRole("button", { name: "触发扫描" }));
-    expect(await screen.findByText(/当前浏览器预览不运行 Tauri runner/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "触发扫描" })).toBeDisabled();
   });
 
   it("Agent 设置页可启停 runtime 并回显自动触发有效状态", async () => {
@@ -667,7 +666,7 @@ describe("桌面端 MVP 页面", () => {
           lifecycle: "running",
           agent_id: "momo-agent",
           agent_phase: "awake",
-          backend_configured: false,
+          backend_configured: true,
           disabled_reason: null,
           buffered_event_count: 2,
         };
@@ -703,7 +702,19 @@ describe("桌面端 MVP 页面", () => {
       return Promise.reject(new Error(`未预期的 Tauri 命令：${command}`));
     });
 
-    renderWithRepository(AgentSettings, fakeRepository());
+    const agentAutoTrigger = {
+      runStartupChecks: vi.fn().mockResolvedValue(undefined),
+      requestReminderDue: vi.fn(),
+      stop: vi.fn(),
+    };
+
+    renderWithRepository(AgentSettings, fakeRepository(), {
+      global: {
+        provide: {
+          [AgentAutoTriggerKey as symbol]: agentAutoTrigger,
+        },
+      },
+    });
 
     expect(await screen.findByText("Runtime 控制")).toBeInTheDocument();
     expect(await screen.findByText(disabledReason)).toBeInTheDocument();
@@ -716,6 +727,7 @@ describe("桌面端 MVP 页面", () => {
     await waitFor(() => expect(invokeMock).toHaveBeenCalledWith("agent_runtime_start"));
     await waitFor(() => expect(screen.getByText("运行中")).toBeInTheDocument());
     expect(screen.getByText("自动触发运行中")).toBeInTheDocument();
+    await waitFor(() => expect(agentAutoTrigger.runStartupChecks).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(screen.getByText("#2 runtime.start")).toBeInTheDocument());
 
     await fireEvent.click(screen.getByRole("button", { name: "停止 runtime" }));
@@ -747,10 +759,10 @@ describe("桌面端 MVP 页面", () => {
     invokeMock.mockImplementation((command: string, args?: unknown) => {
       if (command === "agent_runtime_get_status") {
         return Promise.resolve({
-          lifecycle: "disabled",
+          lifecycle: "running",
           agent_id: "momo-agent",
-          agent_phase: "stop",
-          backend_configured: false,
+          agent_phase: "awake",
+          backend_configured: true,
           disabled_reason: null,
           buffered_event_count: 0,
         });
@@ -807,6 +819,76 @@ describe("桌面端 MVP 页面", () => {
     await waitFor(() =>
       expect(screen.getByText("Codex 扫描完成，生成 1 条待确认建议。")).toBeInTheDocument(),
     );
+  });
+
+  it("Agent 收件箱运行中会刷新后台入队的待确认操作", async () => {
+    vi.useFakeTimers();
+    (window as Window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ = {};
+    const repository = fakeRepository({ agentInbox: { pendingActions: [], audits: [] } });
+    const pendingAction = {
+      id: "agent-action-auto",
+      actionType: "task.update" as const,
+      status: "pending" as const,
+      summary: "更新任务 task-1：优先级",
+      risk: "medium" as const,
+      source: {
+        trigger: "task.updated" as const,
+        envelopeId: "auto-envelope",
+        summary: "任务更新",
+        taskIds: ["task-1"],
+      },
+      payload: { type: "task.update" as const, taskId: "task-1", patch: { priority: 2 } },
+      dryRun: {
+        reversible: true,
+        requiresConfirmation: true as const,
+        affectedTaskIds: ["task-1"],
+        impact: "将影响 1 个任务，确认后写入本地任务库。",
+      },
+      createdAt: "2026-05-16T12:00:00.000Z",
+      decidedAt: null,
+      decisionReason: null,
+      auditBatchId: null,
+      error: null,
+    };
+    vi.mocked(repository.getAgentInboxSnapshot)
+      .mockResolvedValueOnce({ pendingActions: [], audits: [] })
+      .mockResolvedValue({ pendingActions: [pendingAction], audits: [] });
+    invokeMock.mockImplementation((command: string) => {
+      if (command === "agent_runtime_get_status") {
+        return Promise.resolve({
+          lifecycle: "running",
+          agent_id: "momo-agent",
+          agent_phase: "awake",
+          backend_configured: true,
+          disabled_reason: null,
+          buffered_event_count: 2,
+        });
+      }
+      if (command === "agent_runtime_list_events") {
+        return Promise.resolve({ events: [{
+          sequence: 2,
+          kind: "backend",
+          name: "codex.runner.scan.completed",
+          agent_id: "momo-agent",
+          attributes: { suggestion_count: 1 },
+          error: null,
+        }] });
+      }
+      return Promise.reject(new Error(`未预期的 Tauri 命令：${command}`));
+    });
+
+    renderWithRepository(AgentInbox, repository);
+
+    expect(await screen.findByText("Agent 收件箱")).toBeInTheDocument();
+    expect(screen.getByText("当前没有待确认操作。")).toBeInTheDocument();
+
+    await vi.advanceTimersByTimeAsync(8_000);
+
+    await waitFor(() => expect(screen.getByText("更新任务 task-1：优先级")).toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.getByText("#2 codex.runner.scan.completed")).toBeInTheDocument(),
+    );
+    vi.useRealTimers();
   });
 
   it("Agent 收件箱支持确认、拒绝和撤销操作", async () => {

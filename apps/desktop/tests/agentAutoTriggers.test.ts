@@ -55,6 +55,7 @@ describe("Agent 自动触发", () => {
       throttleMs: 0,
       buildSnapshot,
       triggerScan,
+      getRuntimeStatus: runningRuntimeStatus,
     });
     const observedRepository = createAgentObservedTaskRepository(repository, controller);
 
@@ -94,6 +95,7 @@ describe("Agent 自动触发", () => {
       throttleMs: 60_000,
       buildSnapshot: vi.fn().mockResolvedValue(snapshotFixture()),
       triggerScan,
+      getRuntimeStatus: runningRuntimeStatus,
     });
 
     controller.requestTrigger({
@@ -164,6 +166,7 @@ describe("Agent 自动触发", () => {
       settings,
       throttleMs: 0,
       triggerScan,
+      getRuntimeStatus: runningRuntimeStatus,
     });
 
     await controller.scanOverdueTasks(new Date("2026-05-16T08:00:00.000Z"));
@@ -251,6 +254,34 @@ describe("Agent 自动触发", () => {
     expect(repository.updateTask).toHaveBeenCalledWith("task-1", { priority: 2 });
     expect(triggerScan).not.toHaveBeenCalled();
   });
+
+  it("runtime 未运行时不构建快照、不扫描、不写入待确认操作", async () => {
+    const settings = ref<AgentSettings>({ automaticTriggersEnabled: true });
+    const repository = fakeTaskRepository();
+    const buildSnapshot = vi.fn().mockResolvedValue(snapshotFixture());
+    const triggerScan = vi.fn();
+    const controller = new AgentAutoTriggerController(repository, {
+      settings,
+      throttleMs: 0,
+      buildSnapshot,
+      triggerScan,
+      getRuntimeStatus: () => Promise.resolve({
+        lifecycle: "disabled",
+        agent_id: "momo-agent",
+        agent_phase: "stop",
+        backend_configured: false,
+        disabled_reason: "尚未配置 backend，Agent 已禁用。",
+        buffered_event_count: 2,
+      }),
+    });
+
+    controller.requestTaskUpdated("task-1", "2026-05-16T12:00:00.000Z");
+    await vi.waitFor(() => expect(controller.lastError).toBe("尚未配置 backend，Agent 已禁用。"));
+
+    expect(buildSnapshot).not.toHaveBeenCalled();
+    expect(triggerScan).not.toHaveBeenCalled();
+    expect(repository.createAgentPendingActionFromTool).not.toHaveBeenCalled();
+  });
 });
 
 function snapshotFixture(): AgentTaskContextSnapshot {
@@ -262,6 +293,17 @@ function snapshotFixture(): AgentTaskContextSnapshot {
     lists: [],
     categories: [],
   };
+}
+
+function runningRuntimeStatus() {
+  return Promise.resolve({
+    lifecycle: "running" as const,
+    agent_id: "momo-agent",
+    agent_phase: "awake" as const,
+    backend_configured: true,
+    disabled_reason: null,
+    buffered_event_count: 3,
+  });
 }
 
 class MemoryStorage implements Storage {

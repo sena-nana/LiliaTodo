@@ -128,6 +128,10 @@ export async function loadAgentRuntimeSnapshot(): Promise<AgentRuntimeSnapshot> 
   };
 }
 
+export function isAgentRuntimeRunning(status: AgentRuntimeStatusSnapshot | null | undefined) {
+  return status?.lifecycle === "running" && status.backend_configured;
+}
+
 export async function startAgentRuntime(): Promise<AgentRuntimeStatusSnapshot> {
   if (!runningInTauri()) return browserFallbackStatus;
   return invoke<AgentRuntimeStatusSnapshot>("agent_runtime_start");
@@ -136,6 +140,16 @@ export async function startAgentRuntime(): Promise<AgentRuntimeStatusSnapshot> {
 export async function stopAgentRuntime(): Promise<AgentRuntimeStatusSnapshot> {
   if (!runningInTauri()) return browserFallbackStatus;
   return invoke<AgentRuntimeStatusSnapshot>("agent_runtime_stop");
+}
+
+export async function startAgentRuntimeAndLoadSnapshot(): Promise<AgentRuntimeSnapshot> {
+  await startAgentRuntime();
+  return loadAgentRuntimeSnapshot();
+}
+
+export async function stopAgentRuntimeAndLoadSnapshot(): Promise<AgentRuntimeSnapshot> {
+  await stopAgentRuntime();
+  return loadAgentRuntimeSnapshot();
 }
 
 export async function triggerAgentRuntimeScan(snapshot: AgentTaskContextSnapshot): Promise<AgentRunnerTriggerResult> {
