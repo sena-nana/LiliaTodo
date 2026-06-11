@@ -13,7 +13,7 @@ import type { TaskDto } from "../../schema/src/task";
 import type { TaskListDto } from "../../schema/src/task";
 import type { TaskCategoryDto } from "../../schema/src/task";
 
-export const SYNC_CONTRACT_VERSION = 3;
+export const SYNC_CONTRACT_VERSION = 4;
 
 export type LocalChangeActionDto =
   | "task.create"

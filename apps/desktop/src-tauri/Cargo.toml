@@ -24,6 +24,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tauri-plugin-sql = { version = "2.4.0", features = ["sqlite"] }
 tauri-plugin-http = "2"
+tauri-plugin-notification = "2"
 tauri-plugin-store = "2"
 mutsuki-runtime-contracts = { path = "../../../third_party/MutsukiCore/crates/mutsuki-runtime-contracts" }
 mutsuki-runtime-core = { path = "../../../third_party/MutsukiCore/crates/mutsuki-runtime-core" }

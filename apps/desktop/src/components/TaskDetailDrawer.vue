@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue';
 import { ArrowDown, ArrowUp, Check, Plus, Save, Trash2, X } from 'lucide-vue-next';
 import type { Task, TaskCategory, TaskChecklistItem, TaskList, TaskPriority, TaskReminder, TaskResource, TaskResourceType, UpdateTaskInput } from '../domain/tasks';
 import { taskHasDueReminder } from '../domain/tasks';
+import { formatDisplayError } from '../utils/errors';
 import { buildEditableContextMenuItems, useContextMenu } from './contextMenu';
 
 const props = defineProps<{
@@ -21,6 +22,7 @@ const emit = defineEmits<{
   complete: [task: Task];
   delete: [task: Task];
   openTask: [task: Task];
+  reorderChildren: [parentId: string, taskIds: string[]];
 }>();
 
 interface Draft {
@@ -37,6 +39,9 @@ interface Draft {
   tagsInput: string;
   listId: string;
   categoryId: string;
+  recurrenceEnabled: boolean;
+  recurrenceUnit: 'day' | 'week' | 'month';
+  recurrenceInterval: string;
 }
 
 type DraftResource = Omit<TaskResource, 'amount'> & {
@@ -45,6 +50,8 @@ type DraftResource = Omit<TaskResource, 'amount'> & {
 
 const contextMenu = useContextMenu();
 const draft = ref<Draft>(emptyDraft());
+const draggingChecklistIndex = ref<number | null>(null);
+const draggingChildId = ref<string | null>(null);
 const dueReminder = computed(() => props.task ? taskHasDueReminder(props.task) : false);
 const currentCategoryOptions = computed(() =>
   (props.categories ?? []).filter((category) => category.listId === draft.value.listId),
@@ -86,6 +93,13 @@ function save() {
     tags: splitTags(draft.value.tagsInput),
     listId: draft.value.listId,
     categoryId: draft.value.categoryId || null,
+    recurrence: draft.value.recurrenceEnabled
+      ? {
+        enabled: true,
+        unit: draft.value.recurrenceUnit,
+        interval: Math.max(1, Number.parseInt(draft.value.recurrenceInterval, 10) || 1),
+      }
+      : null,
   });
 }
 
@@ -116,6 +130,36 @@ function moveChecklistItem(index: number, direction: -1 | 1) {
   normalizeChecklistOrder();
 }
 
+function onChecklistDragStart(index: number) {
+  draggingChecklistIndex.value = index;
+}
+
+function onChecklistDrop(targetIndex: number) {
+  const sourceIndex = draggingChecklistIndex.value;
+  draggingChecklistIndex.value = null;
+  if (sourceIndex == null || sourceIndex === targetIndex) return;
+  const [item] = draft.value.checklist.splice(sourceIndex, 1);
+  draft.value.checklist.splice(targetIndex, 0, item);
+  normalizeChecklistOrder();
+}
+
+function onChildDragStart(child: Task) {
+  draggingChildId.value = child.id;
+}
+
+function onChildDrop(target: Task) {
+  const sourceId = draggingChildId.value;
+  draggingChildId.value = null;
+  if (!props.task || !sourceId || sourceId === target.id) return;
+  const ids = props.children.map((child) => child.id);
+  const sourceIndex = ids.indexOf(sourceId);
+  const targetIndex = ids.indexOf(target.id);
+  if (sourceIndex < 0 || targetIndex < 0) return;
+  ids.splice(sourceIndex, 1);
+  ids.splice(targetIndex, 0, sourceId);
+  emit('reorderChildren', props.task.id, ids);
+}
+
 function normalizeChecklistOrder() {
   draft.value.checklist.forEach((item, order) => { item.order = order; });
 }
@@ -129,7 +173,24 @@ function updateReminderTime(reminder: TaskReminder, value: string) {
 }
 
 function emptyDraft(): Draft {
-  return { title: '', notes: '', priority: 0, startAtInput: '', dueAtInput: '', estimateInput: '', resources: [], reminders: [], checklist: [], parentId: '', tagsInput: '', listId: 'inbox', categoryId: '' };
+  return {
+    title: '',
+    notes: '',
+    priority: 0,
+    startAtInput: '',
+    dueAtInput: '',
+    estimateInput: '',
+    resources: [],
+    reminders: [],
+    checklist: [],
+    parentId: '',
+    tagsInput: '',
+    listId: 'inbox',
+    categoryId: '',
+    recurrenceEnabled: false,
+    recurrenceUnit: 'day',
+    recurrenceInterval: '1',
+  };
 }
 
 function taskToDraft(task: Task): Draft {
@@ -147,6 +208,9 @@ function taskToDraft(task: Task): Draft {
     tagsInput: task.tags.join(', '),
     listId: task.listId,
     categoryId: task.categoryId ?? '',
+    recurrenceEnabled: Boolean(task.recurrence),
+    recurrenceUnit: task.recurrence?.unit ?? 'day',
+    recurrenceInterval: String(task.recurrence?.interval ?? 1),
   };
 }
 
@@ -228,6 +292,19 @@ const resourceTypes: Array<{ value: TaskResourceType; label: string }> = [
           <label><span>标签</span><input v-model="draft.tagsInput" placeholder="用逗号分隔" @contextmenu="onEditableContextMenu" /></label>
 
           <section class="drawer-section">
+            <div class="drawer-section__title"><h3>重复</h3></div>
+            <div class="drawer-row drawer-row--recurrence">
+              <label class="drawer-check-label"><input v-model="draft.recurrenceEnabled" type="checkbox" />启用重复</label>
+              <input v-model="draft.recurrenceInterval" type="number" min="1" step="1" aria-label="重复间隔" />
+              <select v-model="draft.recurrenceUnit" aria-label="重复单位">
+                <option value="day">天</option>
+                <option value="week">周</option>
+                <option value="month">月</option>
+              </select>
+            </div>
+          </section>
+
+          <section class="drawer-section">
             <div class="drawer-section__title"><h3>资源</h3><button type="button" @click="addResource"><Plus :size="15" aria-hidden="true" />新增</button></div>
             <div v-for="(resource, index) in draft.resources" :key="resource.id" class="drawer-row drawer-row--resource">
               <select v-model="resource.type"><option v-for="type in resourceTypes" :key="type.value" :value="type.value">{{ type.label }}</option></select>
@@ -251,7 +328,15 @@ const resourceTypes: Array<{ value: TaskResourceType; label: string }> = [
 
           <section class="drawer-section">
             <div class="drawer-section__title"><h3>检查清单</h3><button type="button" @click="addChecklistItem"><Plus :size="15" aria-hidden="true" />新增</button></div>
-            <div v-for="(item, index) in draft.checklist" :key="item.id" class="drawer-row drawer-row--check">
+            <div
+              v-for="(item, index) in draft.checklist"
+              :key="item.id"
+              class="drawer-row drawer-row--check"
+              draggable="true"
+              @dragstart="onChecklistDragStart(index)"
+              @dragover.prevent
+              @drop="onChecklistDrop(index)"
+            >
               <input v-model="item.done" type="checkbox" />
               <input v-model="item.title" placeholder="检查项" @contextmenu="onEditableContextMenu" />
               <button type="button" class="icon-button" :aria-label="`上移检查项 ${index + 1}`" @click="moveChecklistItem(index, -1)"><ArrowUp :size="15" aria-hidden="true" /></button>
@@ -263,10 +348,23 @@ const resourceTypes: Array<{ value: TaskResourceType; label: string }> = [
           <section class="drawer-section">
             <div class="drawer-section__title"><h3>子任务</h3></div>
             <p v-if="children.length === 0" class="drawer-empty">暂无子任务。</p>
-            <button v-for="child in children" :key="child.id" type="button" class="child-row" @click="emit('openTask', child)"><span>{{ child.title }}</span><span>{{ child.status === 'completed' ? '已完成' : '进行中' }}</span></button>
+            <button
+              v-for="child in children"
+              :key="child.id"
+              type="button"
+              class="child-row"
+              draggable="true"
+              @dragstart="onChildDragStart(child)"
+              @dragover.prevent
+              @drop="onChildDrop(child)"
+              @click="emit('openTask', child)"
+            >
+              <span>{{ child.title }}</span>
+              <span>{{ child.status === 'completed' ? '已完成' : '进行中' }}</span>
+            </button>
           </section>
 
-          <p v-if="error" class="drawer-error">{{ error.replace(/^Error:\s*/, '错误：') }}</p>
+          <p v-if="error" class="drawer-error">{{ formatDisplayError(error) }}</p>
           <footer class="task-drawer__footer">
             <button type="button" class="icon-button icon-button--danger" :aria-label="`删除任务 ${task.title}`" @click="emit('delete', task)"><Trash2 :size="16" aria-hidden="true" /></button>
             <div class="task-drawer__footer-actions">
@@ -299,7 +397,9 @@ textarea { resize: vertical; min-height: 92px; padding: 8px 10px; border-radius:
 .drawer-row--resource { grid-template-columns: 88px minmax(0, 1fr) 76px 70px 32px; }
 .drawer-row--reminder { grid-template-columns: 170px 90px minmax(0, 1fr) 54px 32px; }
 .drawer-row--check { grid-template-columns: 24px minmax(0, 1fr) 32px 32px 32px; }
+.drawer-row--recurrence { grid-template-columns: minmax(0, 1fr) 96px 110px; }
 .drawer-row input[type='checkbox'] { width: 18px; height: 18px; }
+.drawer-check-label { flex-direction: row; align-items: center; color: var(--text); }
 .child-row { width: 100%; height: auto; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--border-soft); }
 .child-row span:last-child, .drawer-empty { color: var(--text-muted); font-size: 12px; }
 .drawer-error { margin: 0; color: var(--err); }

@@ -17,6 +17,7 @@ export function createLiliaTodoRouter(history: RouterHistory = createWebHistory(
           { path: "", redirect: "/today" },
           { path: "today", component: () => import("./pages/Today.vue"), meta: { sidebar: "main", returnable: true } },
           { path: "inbox", component: () => import("./pages/Inbox.vue"), meta: { sidebar: "main", returnable: true } },
+          { path: "search", component: () => import("./pages/SearchTasks.vue"), meta: { sidebar: "main", returnable: true } },
           { path: "agent-inbox", component: () => import("./pages/AgentInbox.vue"), meta: { sidebar: "main", returnable: true } },
           { path: "tasks/:view", component: () => import("./pages/TaskViews.vue"), meta: { sidebar: "main", returnable: true } },
           { path: "lists/:listId", component: () => import("./pages/TaskListPage.vue"), meta: { sidebar: "main", returnable: true } },

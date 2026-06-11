@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { onMounted, ref } from "vue";
-import { CalendarDays, Loader2, RefreshCw } from "lucide-vue-next";
 import { useTaskRepository } from "../data/TaskRepositoryContext";
 import { useTaskDetailDrawer } from "../composables/useTaskDetailDrawer";
 import type { Task } from "../domain/tasks";
 import { AsyncTaskDetailDrawer } from "../components/AsyncTaskDetailDrawer";
+import PageStateBlock from "../components/PageStateBlock.vue";
+import { formatDisplayError } from "../utils/errors";
 
 const repository = useTaskRepository();
 const tasks = ref<Task[]>([]);
@@ -21,6 +22,7 @@ const {
   saveTask,
   completeTask,
   deleteTask,
+  reorderChildTasks,
   closeTask,
 } = useTaskDetailDrawer({
   repository,
@@ -61,28 +63,13 @@ function formatAgendaDate(value: string | null) {
   }).format(new Date(value));
 }
 
-function displayError(value: string) {
-  return value.replace(/^Error:\s*/, "错误：");
-}
 </script>
 
 <template>
   <section class="page">
-    <div v-if="loading" class="card state">
-      <Loader2 class="spin" :size="18" aria-hidden="true" />
-      <p>正在加载日程...</p>
-    </div>
-    <div v-if="error" class="card state state--error">
-      <p>{{ displayError(error) }}</p>
-      <button type="button" @click="load">
-        <RefreshCw :size="16" aria-hidden="true" />
-        重试
-      </button>
-    </div>
-    <div v-if="!loading && !error && tasks.length === 0" class="card empty">
-      <CalendarDays :size="20" aria-hidden="true" />
-      <p>未来 7 天暂无已安排任务。</p>
-    </div>
+    <PageStateBlock v-if="loading" kind="loading" title="正在加载日程..." />
+    <PageStateBlock v-else-if="error" kind="error" :title="formatDisplayError(error)" @action="load" />
+    <PageStateBlock v-else-if="tasks.length === 0" kind="empty" title="未来 7 天暂无已安排任务。" />
     <ol v-if="!loading && !error && tasks.length > 0" class="timeline">
       <li v-for="task in tasks" :key="task.id" class="timeline__item task-item--clickable" @click="openTask(task)">
         <time>{{ formatAgendaDate(task.startAt ?? task.dueAt) }}</time>
@@ -106,6 +93,7 @@ function displayError(value: string) {
       @complete="completeTask"
       @delete="deleteTask"
       @open-task="openTask"
+      @reorder-children="reorderChildTasks"
     />
   </section>
 </template>

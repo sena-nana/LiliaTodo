@@ -18,6 +18,7 @@ const DISABLED_REASON: &str = "尚未配置 backend，Agent 已禁用。";
 pub enum AgentRuntimeLifecycle {
     Bootstrapping,
     Disabled,
+    Running,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -101,6 +102,10 @@ impl AgentRuntimeStateStore {
         self.push_event(RuntimeEventKind::Lifecycle, name, attributes, None);
     }
 
+    fn push_backend(&mut self, name: impl Into<String>, attributes: BTreeMap<String, ScalarValue>) {
+        self.push_event(RuntimeEventKind::Backend, name, attributes, None);
+    }
+
     fn status_snapshot(&self) -> AgentRuntimeStatusSnapshot {
         AgentRuntimeStatusSnapshot {
             lifecycle: self.lifecycle.clone(),
@@ -127,6 +132,34 @@ fn lock_state<'a>(state: &'a AgentRuntimeState) -> MutexGuard<'a, AgentRuntimeSt
 
 pub fn init(app: &AppHandle) {
     app.manage(Mutex::new(AgentRuntimeStateStore::default()));
+}
+
+pub fn record_backend_event(
+    state: &tauri::State<'_, AgentRuntimeState>,
+    name: impl Into<String>,
+    attributes: BTreeMap<String, ScalarValue>,
+) {
+    lock_state(state).push_backend(name, attributes);
+}
+
+#[tauri::command]
+pub fn agent_runtime_start(state: tauri::State<'_, AgentRuntimeState>) -> AgentRuntimeStatusSnapshot {
+    let mut store = lock_state(&state);
+    store.lifecycle = AgentRuntimeLifecycle::Running;
+    store.agent_phase = Some(AgentPhase::Awake);
+    store.disabled_reason = None;
+    store.push_lifecycle("runtime.start", BTreeMap::new());
+    store.status_snapshot()
+}
+
+#[tauri::command]
+pub fn agent_runtime_stop(state: tauri::State<'_, AgentRuntimeState>) -> AgentRuntimeStatusSnapshot {
+    let mut store = lock_state(&state);
+    store.lifecycle = AgentRuntimeLifecycle::Disabled;
+    store.agent_phase = Some(AgentPhase::Stop);
+    store.disabled_reason = Some(DISABLED_REASON.into());
+    store.push_lifecycle("runtime.stop", BTreeMap::new());
+    store.status_snapshot()
 }
 
 #[tauri::command]

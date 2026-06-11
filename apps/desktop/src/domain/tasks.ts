@@ -5,6 +5,14 @@ export type TaskStatus = 'active' | 'completed' | 'archived';
 export type TaskPriority = 0 | 1 | 2 | 3;
 export type TaskResourceType = 'person' | 'tool' | 'space' | 'budget' | 'material' | 'other';
 export type TaskReminderStatus = 'pending' | 'fired' | 'dismissed';
+export type TaskRecurrenceUnit = 'day' | 'week' | 'month';
+export type TaskSearchReminderStatus = 'none' | 'pending' | 'due' | 'fired' | 'dismissed';
+
+export interface TaskRecurrence {
+  enabled: boolean;
+  unit: TaskRecurrenceUnit;
+  interval: number;
+}
 
 export interface TaskResource {
   id: string;
@@ -45,6 +53,9 @@ export interface Task {
   tags: string[];
   listId: string;
   categoryId: string | null;
+  recurrence: TaskRecurrence | null;
+  deletedAt: string | null;
+  lastReminderNotifiedAt: string | null;
   createdAt: string;
   updatedAt: string;
   completedAt: string | null;
@@ -84,6 +95,9 @@ export interface CreateTaskInput {
   tags?: string[];
   listId?: string;
   categoryId?: string | null;
+  recurrence?: TaskRecurrence | null;
+  deletedAt?: string | null;
+  lastReminderNotifiedAt?: string | null;
 }
 
 export interface UpdateTaskInput {
@@ -100,6 +114,41 @@ export interface UpdateTaskInput {
   childOrder?: number;
   tags?: string[];
   listId?: string;
+  categoryId?: string | null;
+  recurrence?: TaskRecurrence | null;
+  deletedAt?: string | null;
+  lastReminderNotifiedAt?: string | null;
+}
+
+export interface TaskSearchQuery {
+  text?: string;
+  tags?: string[];
+  listId?: string | null;
+  categoryId?: string | null;
+  statuses?: TaskStatus[];
+  priorities?: TaskPriority[];
+  timeFrom?: string | null;
+  timeTo?: string | null;
+  reminderStatus?: TaskSearchReminderStatus | null;
+  includeDeleted?: boolean;
+}
+
+export type BatchTaskOperation =
+  | { type: 'complete'; taskIds: string[] }
+  | { type: 'reschedule'; taskIds: string[]; startAt?: string | null; dueAt?: string | null }
+  | { type: 'move'; taskIds: string[]; listId: string; categoryId?: string | null }
+  | { type: 'tag'; taskIds: string[]; tags: string[]; mode?: 'replace' | 'merge' }
+  | { type: 'delete'; taskIds: string[] };
+
+export interface BatchTaskResult {
+  succeeded: string[];
+  failed: Array<{ id: string; error: string }>;
+}
+
+export interface ReorderTasksInput {
+  taskIds: string[];
+  parentId?: string | null;
+  listId?: string | null;
   categoryId?: string | null;
 }
 
@@ -147,6 +196,9 @@ export interface TaskRow {
   tags: string | null;
   list_id: string | null;
   category_id?: string | null;
+  recurrence?: string | null;
+  deleted_at?: string | null;
+  last_reminder_notified_at?: string | null;
   created_at: string;
   updated_at: string;
   completed_at: string | null;
@@ -192,6 +244,9 @@ export function normalizeCreateTaskInput(input: CreateTaskInput) {
     tags: normalizeTags(input.tags),
     listId: normalizeListId(input.listId),
     categoryId: normalizeNullableId(input.categoryId),
+    recurrence: normalizeRecurrence(input.recurrence),
+    deletedAt: normalizeNullableIso(input.deletedAt, '删除时间'),
+    lastReminderNotifiedAt: normalizeNullableIso(input.lastReminderNotifiedAt, '提醒通知时间'),
   };
 }
 
@@ -219,6 +274,9 @@ export function normalizeUpdateTaskInput(input: UpdateTaskInput) {
   if ('tags' in input) patch.tags = normalizeTags(input.tags);
   if ('listId' in input) patch.listId = normalizeListId(input.listId);
   if ('categoryId' in input) patch.categoryId = normalizeNullableId(input.categoryId);
+  if ('recurrence' in input) patch.recurrence = normalizeRecurrence(input.recurrence);
+  if ('deletedAt' in input) patch.deletedAt = normalizeNullableIso(input.deletedAt, '删除时间');
+  if ('lastReminderNotifiedAt' in input) patch.lastReminderNotifiedAt = normalizeNullableIso(input.lastReminderNotifiedAt, '提醒通知时间');
 
   return patch;
 }
@@ -288,6 +346,9 @@ export function mapTaskRow(row: TaskRow): Task {
     tags: parseTags(row.tags),
     listId: normalizeListId(row.list_id),
     categoryId: normalizeNullableId(row.category_id),
+    recurrence: parseRecurrence(row.recurrence ?? null),
+    deletedAt: row.deleted_at ?? null,
+    lastReminderNotifiedAt: row.last_reminder_notified_at ?? null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     completedAt: row.completed_at,
@@ -438,6 +499,21 @@ function normalizeTags(tags: string[] | undefined) {
   return [...new Set((tags ?? []).map((tag) => tag.trim()).filter(Boolean))];
 }
 
+function normalizeRecurrence(value: TaskRecurrence | null | undefined): TaskRecurrence | null {
+  if (!value || value.enabled === false) return null;
+  if (!['day', 'week', 'month'].includes(value.unit)) {
+    throw new Error('重复规则单位不合法');
+  }
+  if (!Number.isInteger(value.interval) || value.interval <= 0) {
+    throw new Error('重复间隔必须是正整数');
+  }
+  return {
+    enabled: true,
+    unit: value.unit,
+    interval: value.interval,
+  };
+}
+
 function normalizeResources(resources: TaskResource[] | undefined): TaskResource[] {
   return (resources ?? []).map((resource, index) => {
     const id = resource.id?.trim() || `resource-${index}`;
@@ -506,6 +582,15 @@ function parseReminders(value: string | null) {
 
 function parseChecklist(value: string | null) {
   return parseJsonArray(value, (items) => normalizeChecklist(items as TaskChecklistItem[]));
+}
+
+function parseRecurrence(value: string | null) {
+  if (!value) return null;
+  try {
+    return normalizeRecurrence(JSON.parse(value) as TaskRecurrence);
+  } catch {
+    return null;
+  }
 }
 
 function parseJsonArray<T>(value: string | null, normalize: (items: unknown[]) => T[]) {

@@ -12,6 +12,7 @@ import { useTaskRepository } from "../data/TaskRepositoryContext";
 import { notifyTaskListsChanged } from "../data/taskListEvents";
 import { compareByOrder, moveItemById } from "../domain/order";
 import type { TaskList } from "../domain/tasks";
+import { formatDisplayError } from "../utils/errors";
 
 const repository = useTaskRepository();
 const lists = ref<TaskList[]>([]);
@@ -20,6 +21,7 @@ const newName = ref("");
 const editingListId = ref<string | null>(null);
 const editingName = ref("");
 const listError = ref<string | null>(null);
+const draggingListId = ref<string | null>(null);
 
 const visibleLists = computed(() =>
   lists.value.filter((item) => item.id !== "inbox").sort(compareByOrder),
@@ -72,6 +74,25 @@ async function moveList(list: TaskList, direction: -1 | 1) {
   ));
 }
 
+function onListDragStart(list: TaskList) {
+  draggingListId.value = list.id;
+}
+
+async function onListDrop(target: TaskList) {
+  const sourceId = draggingListId.value;
+  draggingListId.value = null;
+  if (!sourceId || sourceId === target.id) return;
+  const ids = visibleLists.value.map((list) => list.id);
+  const sourceIndex = ids.indexOf(sourceId);
+  const targetIndex = ids.indexOf(target.id);
+  if (sourceIndex < 0 || targetIndex < 0) return;
+  ids.splice(sourceIndex, 1);
+  ids.splice(targetIndex, 0, sourceId);
+  await runListMutation(() => Promise.all(
+    ids.map((id, order) => repository.updateList(id, { order })),
+  ));
+}
+
 async function runListMutation(mutation: () => Promise<unknown>) {
   listError.value = null;
   try {
@@ -83,9 +104,6 @@ async function runListMutation(mutation: () => Promise<unknown>) {
   }
 }
 
-function displayError(value: string) {
-  return value.replace(/^Error:\s*/, "错误：");
-}
 </script>
 
 <template>
@@ -119,7 +137,7 @@ function displayError(value: string) {
         <button type="submit" class="sb-section__icon" aria-label="保存清单"><Check :size="13" aria-hidden="true" /></button>
         <button type="button" class="sb-section__icon" aria-label="取消新增清单" @click="creating = false"><X :size="13" aria-hidden="true" /></button>
       </form>
-      <p v-if="listError" class="state state--error state--inline sb-list-error">{{ displayError(listError) }}</p>
+      <p v-if="listError" class="state state--error state--inline sb-list-error">{{ formatDisplayError(listError) }}</p>
       <nav class="sb-tree" aria-label="任务清单">
         <template v-for="list in visibleLists" :key="list.id">
           <form v-if="editingListId === list.id" class="sb-list-form" @submit.prevent="saveRename(list)">
@@ -131,6 +149,10 @@ function displayError(value: string) {
             <div
               class="sb-tree__row sb-tree__row--list"
               :class="{ 'is-active': isActive }"
+              draggable="true"
+              @dragstart="onListDragStart(list)"
+              @dragover.prevent
+              @drop="onListDrop(list)"
             >
               <a :href="href" class="sb-tree__link" @click="navigate">
                 <span class="sb-tree__name">{{ list.name }}</span>

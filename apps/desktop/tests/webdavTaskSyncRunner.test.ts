@@ -400,7 +400,7 @@ describe("WebDAV task 同步 runner", () => {
     }
   });
 
-  it("旧 v1 task entity 收到 patch 后按 v3 写回并应用", async () => {
+  it("旧 v1 task entity 收到 patch 后按 v4 写回并应用", async () => {
     const state = freshState();
     const entities = new Map<string, Entity<Record<string, unknown>>>([
       [
@@ -447,8 +447,8 @@ describe("WebDAV task 同步 runner", () => {
     const result = await runner.runOnce();
 
     expect(result.ok).toBe(true);
-    expect(pushedEntities[0].schemaVersion).toBe(3);
-    expect(state.appliedTasks[0].remoteVersion).toBe(3);
+    expect(pushedEntities[0].schemaVersion).toBe(4);
+    expect(state.appliedTasks[0].remoteVersion).toBe(4);
     expect(state.appliedTasks[0].task.listId).toBe("inbox");
   });
 

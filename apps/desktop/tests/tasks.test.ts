@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { createAgentActionDraft } from "../src/agent/actions";
 import {
   groupTodayTasks,
   mapTaskRow,
@@ -91,6 +92,9 @@ describe("任务领域", () => {
         child_order: 0,
         tags: '["focus","writing"]',
         list_id: "inbox",
+        recurrence: null,
+        deleted_at: null,
+        last_reminder_notified_at: null,
         created_at: "2026-05-15T01:00:00.000Z",
         updated_at: "2026-05-15T01:30:00.000Z",
         completed_at: null,
@@ -112,6 +116,9 @@ describe("任务领域", () => {
       tags: ["focus", "writing"],
       listId: "inbox",
       categoryId: null,
+      recurrence: null,
+      deletedAt: null,
+      lastReminderNotifiedAt: null,
       createdAt: "2026-05-15T01:00:00.000Z",
       updatedAt: "2026-05-15T01:30:00.000Z",
       completedAt: null,
@@ -155,6 +162,8 @@ describe("TaskRepository 仓储", () => {
     expect(db.executedSql.join("\n")).toContain("CREATE TABLE IF NOT EXISTS sync_runs");
     expect(db.executedSql.join("\n")).toContain("CREATE TABLE IF NOT EXISTS task_sync_versions");
     expect(db.executedSql.join("\n")).toContain("CREATE TABLE IF NOT EXISTS entity_sync_versions");
+    expect(db.executedSql.join("\n")).toContain("CREATE TABLE IF NOT EXISTS agent_pending_actions");
+    expect(db.executedSql.join("\n")).toContain("CREATE TABLE IF NOT EXISTS agent_audit_records");
   });
 
   it("收件箱查询脱离仓储对象调用时仍加载默认清单任务", async () => {
@@ -173,7 +182,7 @@ describe("TaskRepository 仓储", () => {
         listId: "inbox",
       }),
     ]);
-    expect(db.paramsForLastSql("WHERE status = 'active' AND list_id = $1")).toEqual(["inbox"]);
+    expect(db.paramsForLastSql("WHERE status = 'active' AND deleted_at IS NULL AND list_id = $1")).toEqual(["inbox"]);
   });
 
   it("全局任务视图查询全部 active 任务并使用稳定排序", async () => {
@@ -238,6 +247,9 @@ describe("TaskRepository 仓储", () => {
       0,
       '["work"]',
       "inbox",
+      null,
+      null,
+      null,
       null,
       "2026-05-16T04:00:00.000Z",
       "2026-05-16T04:00:00.000Z",
@@ -486,6 +498,9 @@ describe("TaskRepository 仓储", () => {
       dueAt: "2026-05-17T02:30:00.000Z",
       estimateMin: 25,
       tags: ["sync"],
+      recurrence: null,
+      deletedAt: null,
+      lastReminderNotifiedAt: null,
       createdAt: "2026-05-16T10:00:00.000Z",
       updatedAt: "2026-05-16T11:00:00.000Z",
       completedAt: null,
@@ -507,6 +522,9 @@ describe("TaskRepository 仓储", () => {
       0,
       '["sync"]',
       "inbox",
+      null,
+      null,
+      null,
       null,
       "2026-05-16T10:00:00.000Z",
       "2026-05-16T11:00:00.000Z",
@@ -912,6 +930,109 @@ describe("TaskRepository 仓储", () => {
     expect(db.calls.some((call) => call.sql.includes("INSERT INTO local_changes")))
       .toBe(false);
   });
+
+  it("Agent 待确认操作持久化为 pending 且不直接写任务库", async () => {
+    const db = new RecordingDatabase();
+    const repository = createTaskRepository(() => Promise.resolve(db), {
+      now: () => new Date("2026-05-16T12:00:00.000Z"),
+      id: () => "agent-action-1",
+    });
+
+    const action = await repository.createAgentPendingAction(createAgentActionDraft(
+      { type: "task.update", taskId: "task-1", patch: { priority: 2 } },
+      {
+        trigger: "manual_scan",
+        envelopeId: "envelope-1",
+        summary: "手动扫描",
+        taskIds: ["task-1"],
+      },
+    ));
+
+    expect(action).toMatchObject({
+      id: "agent-action-1",
+      actionType: "task.update",
+      status: "pending",
+      summary: "更新任务 task-1：优先级",
+    });
+    expect(db.paramsForSql("INSERT INTO agent_pending_actions")?.slice(0, 5)).toEqual([
+      "agent-action-1",
+      "task.update",
+      "pending",
+      "更新任务 task-1：优先级",
+      "medium",
+    ]);
+    expect(db.calls.some((call) => call.sql.includes("UPDATE tasks SET priority"))).toBe(false);
+  });
+
+  it("确认 Agent 操作后通过任务仓储写入并记录审计批次", async () => {
+    const ids = ["batch-1", "change-1", "audit-1"];
+    const db = new RecordingDatabase({
+      taskRows: [
+        taskRow({ id: "task-1", title: "Agent task", priority: 2 }),
+      ],
+      agentPendingActions: [
+        agentPendingActionRow(),
+      ],
+    });
+    const repository = createTaskRepository(() => Promise.resolve(db), {
+      now: () => new Date("2026-05-16T12:00:00.000Z"),
+      id: () => ids.shift() ?? "id",
+      changeId: () => ids.shift() ?? "change",
+    });
+
+    const audit = await repository.approveAgentPendingAction("agent-action-1");
+
+    expect(db.paramsForLastSql("UPDATE tasks SET")).toContain(2);
+    expect(db.paramsForSql("INSERT INTO agent_audit_records")?.slice(0, 7)).toEqual([
+      "audit-1",
+      "batch-1",
+      "agent-action-1",
+      "task.update",
+      JSON.stringify({ type: "task.update", taskId: "task-1", patch: { priority: 2 } }),
+      "更新任务 task-1：优先级",
+      "applied",
+    ]);
+    expect(db.paramsForLastSql("UPDATE agent_pending_actions")).toEqual([
+      "approved",
+      "2026-05-16T12:00:00.000Z",
+      "batch-1",
+      null,
+      "agent-action-1",
+    ]);
+    expect(audit).toMatchObject({
+      id: "audit-1",
+      batchId: "batch-1",
+      actionId: "agent-action-1",
+      reversible: true,
+    });
+  });
+
+  it("撤销 Agent 审计批次会按 before 生成反向任务更新", async () => {
+    const db = new RecordingDatabase({
+      taskRows: [
+        taskRow({ id: "task-1", title: "Before", priority: 1 }),
+      ],
+      agentAuditRecords: [
+        agentAuditRecordRow({
+          before_payload: JSON.stringify(mapTaskRow(taskRow({ id: "task-1", title: "Before", priority: 1 }))),
+          after_payload: JSON.stringify(mapTaskRow(taskRow({ id: "task-1", title: "After", priority: 2 }))),
+        }),
+      ],
+    });
+    const repository = createTaskRepository(() => Promise.resolve(db), {
+      now: () => new Date("2026-05-16T12:10:00.000Z"),
+    });
+
+    await repository.undoAgentAuditBatch("batch-1");
+
+    expect(db.paramsForLastSql("UPDATE tasks SET")).toContain("Before");
+    expect(db.paramsForLastSql("UPDATE agent_audit_records")).toEqual([
+      "undone",
+      "2026-05-16T12:10:00.000Z",
+      null,
+      "audit-1",
+    ]);
+  });
 });
 
 function task(overrides: Partial<ReturnType<typeof baseTask>>) {
@@ -936,6 +1057,9 @@ function baseTask() {
     tags: [],
     listId: "inbox",
     categoryId: null,
+    recurrence: null,
+    deletedAt: null,
+    lastReminderNotifiedAt: null,
     createdAt: "2026-05-16T00:00:00.000Z",
     updatedAt: "2026-05-16T00:00:00.000Z",
     completedAt: null,
@@ -960,6 +1084,9 @@ function taskRow(overrides: Partial<TaskRow> = {}): TaskRow {
     tags: "[]",
     list_id: "inbox",
     category_id: null,
+    recurrence: null,
+    deleted_at: null,
+    last_reminder_notified_at: null,
     created_at: "2026-05-16T00:00:00.000Z",
     updated_at: "2026-05-16T00:00:00.000Z",
     completed_at: null,
@@ -984,6 +1111,37 @@ class RecordingDatabase implements SqlDatabase {
       active_tasks: number;
       completed_tasks: number;
       pending_local_changes: number;
+    }>;
+    agentPendingActions?: Array<{
+      id: string;
+      action_type: string;
+      status: string;
+      summary: string;
+      risk: string;
+      source: string;
+      payload: string;
+      dry_run: string;
+      created_at: string;
+      decided_at: string | null;
+      decision_reason: string | null;
+      audit_batch_id: string | null;
+      error: string | null;
+    }>;
+    agentAuditRecords?: Array<{
+      id: string;
+      batch_id: string;
+      action_id: string;
+      action_type: string;
+      action_payload: string;
+      summary: string;
+      status: string;
+      reversible: number;
+      before_payload: string;
+      after_payload: string;
+      source: string;
+      error: string | null;
+      created_at: string;
+      undone_at: string | null;
     }>;
   } = {}) {}
 
@@ -1028,6 +1186,12 @@ class RecordingDatabase implements SqlDatabase {
     if (sql.includes("FROM sync_runs")) {
       return (this.rows.syncRuns ?? []) as T[];
     }
+    if (sql.includes("FROM agent_pending_actions")) {
+      return (this.rows.agentPendingActions ?? []) as T[];
+    }
+    if (sql.includes("FROM agent_audit_records")) {
+      return (this.rows.agentAuditRecords ?? []) as T[];
+    }
     return [] as T[];
   }
 
@@ -1042,4 +1206,60 @@ class RecordingDatabase implements SqlDatabase {
   paramsForAllSql(fragment: string) {
     return this.calls.filter((call) => call.sql.includes(fragment)).map((call) => call.params);
   }
+}
+
+function agentPendingActionRow() {
+  return {
+    id: "agent-action-1",
+    action_type: "task.update",
+    status: "pending",
+    summary: "更新任务 task-1：优先级",
+    risk: "medium",
+    source: JSON.stringify({
+      trigger: "manual_scan",
+      envelopeId: "envelope-1",
+      summary: "手动扫描",
+      taskIds: ["task-1"],
+    }),
+    payload: JSON.stringify({ type: "task.update", taskId: "task-1", patch: { priority: 2 } }),
+    dry_run: JSON.stringify({
+      reversible: true,
+      requiresConfirmation: true,
+      affectedTaskIds: ["task-1"],
+      impact: "将影响 1 个任务，确认后写入本地任务库。",
+    }),
+    created_at: "2026-05-16T12:00:00.000Z",
+    decided_at: null,
+    decision_reason: null,
+    audit_batch_id: null,
+    error: null,
+  };
+}
+
+function agentAuditRecordRow(overrides: Partial<ReturnType<typeof baseAgentAuditRecordRow>> = {}) {
+  return { ...baseAgentAuditRecordRow(), ...overrides };
+}
+
+function baseAgentAuditRecordRow() {
+  return {
+    id: "audit-1",
+    batch_id: "batch-1",
+    action_id: "agent-action-1",
+    action_type: "task.update",
+    action_payload: JSON.stringify({ type: "task.update", taskId: "task-1", patch: { priority: 2 } }),
+    summary: "更新任务 task-1：优先级",
+    status: "applied",
+    reversible: 1,
+    before_payload: JSON.stringify(mapTaskRow(taskRow({ id: "task-1", title: "Before", priority: 1 }))),
+    after_payload: JSON.stringify(mapTaskRow(taskRow({ id: "task-1", title: "After", priority: 2 }))),
+    source: JSON.stringify({
+      trigger: "manual_scan",
+      envelopeId: "envelope-1",
+      summary: "手动扫描",
+      taskIds: ["task-1"],
+    }),
+    error: null,
+    created_at: "2026-05-16T12:00:00.000Z",
+    undone_at: null,
+  };
 }

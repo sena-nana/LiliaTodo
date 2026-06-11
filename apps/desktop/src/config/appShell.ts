@@ -1,7 +1,10 @@
 import {
+  Archive,
   Bot,
   CalendarDays,
+  CheckCircle2,
   Clock,
+  Search,
   Info,
   Inbox,
   LayoutGrid,
@@ -11,6 +14,7 @@ import {
   Settings,
   Sparkles,
   Sun,
+  Trash2,
 } from "lucide-vue-next";
 import { defineAsyncComponent, type Component } from "vue";
 import type { RouteLocationRaw } from "vue-router";
@@ -50,11 +54,15 @@ export interface SidebarFooterStatus {
 export const SIDEBAR_NAV: SidebarNavItem[] = [
   { to: "/today", label: "今日", icon: Sun },
   { to: "/inbox", label: "收件箱", icon: Inbox },
+  { to: "/search", label: "搜索", icon: Search },
   { to: "/agent-inbox", label: "Agent 收件箱", icon: Bot },
   { to: "/calendar", label: "日历", icon: CalendarDays },
   { to: "/tasks/all", label: "所有", icon: List },
   { to: "/tasks/quadrant", label: "四象限", icon: LayoutGrid },
   { to: "/tasks/timeline", label: "时间线", icon: Clock },
+  { to: "/tasks/completed", label: "已完成", icon: CheckCircle2 },
+  { to: "/tasks/archived", label: "已归档", icon: Archive },
+  { to: "/tasks/deleted", label: "最近删除", icon: Trash2 },
 ];
 
 export const SIDEBAR_FOOTER_LINKS: SidebarFooterLink[] = [
@@ -69,7 +77,7 @@ export const SIDEBAR_FOOTER_STATUS: SidebarFooterStatus = {
   icon: Sparkles,
 };
 
-export type SettingsTabKey = "sync" | "appearance" | "about";
+export type SettingsTabKey = "sync" | "agent" | "appearance" | "about";
 
 export interface SettingsTab {
   key: SettingsTabKey;
@@ -84,6 +92,12 @@ export const SETTINGS_TABS: SettingsTab[] = [
     label: "同步",
     icon: RefreshCw,
     to: { path: "/settings", query: { tab: "sync" } },
+  },
+  {
+    key: "agent",
+    label: "Agent",
+    icon: Bot,
+    to: { path: "/settings", query: { tab: "agent" } },
   },
   {
     key: "appearance",
@@ -103,6 +117,7 @@ export const DEFAULT_SETTINGS_TAB: SettingsTabKey = "sync";
 
 export const SETTINGS_SECTIONS: Record<SettingsTabKey, Component> = {
   sync: defineAsyncComponent(() => import("../pages/settings/SyncSettings.vue")),
+  agent: defineAsyncComponent(() => import("../pages/settings/AgentSettings.vue")),
   appearance: defineAsyncComponent(() => import("../pages/settings/AppearanceSettings.vue")),
   about: defineAsyncComponent(() => import("../pages/settings/AboutSettings.vue")),
 };
