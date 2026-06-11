@@ -3,6 +3,7 @@ import { createMemoryHistory } from "vue-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Component } from "vue";
 import { TaskRepositoryKey } from "../src/data/TaskRepositoryContext";
+import { AgentAutoTriggerKey } from "../src/agent/autoTriggers";
 import {
   WebdavSecretsStoreKey,
   WebdavSyncControllerKey,
@@ -35,6 +36,10 @@ import {
 } from "./taskFixtures";
 
 const invokeMock = vi.hoisted(() => vi.fn());
+const notificationMocks = vi.hoisted(() => ({
+  notifyDueReminders: vi.fn().mockResolvedValue(0),
+  listenReminderTicks: vi.fn().mockResolvedValue(vi.fn()),
+}));
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: invokeMock,
@@ -50,8 +55,16 @@ vi.mock("@tauri-apps/api/window", () => ({
   })),
 }));
 
+vi.mock("../src/notifications", () => ({
+  OPEN_TASK_EVENT: "liliatodo:open-task",
+  notifyDueReminders: notificationMocks.notifyDueReminders,
+  listenReminderTicks: notificationMocks.listenReminderTicks,
+}));
+
 afterEach(() => {
   invokeMock.mockReset();
+  notificationMocks.notifyDueReminders.mockClear();
+  notificationMocks.listenReminderTicks.mockClear();
   delete (window as Window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__;
 });
 
@@ -1163,6 +1176,36 @@ describe("桌面端 MVP 页面", () => {
     expect(screen.queryByText(/远程同步配置/)).not.toBeInTheDocument();
   });
 
+  it("App 启动时安装 Agent 自动触发并把提醒到期回调接回 controller", async () => {
+    const repository = fakeRepository();
+    const agentAutoTrigger = {
+      runStartupChecks: vi.fn().mockResolvedValue(undefined),
+      requestReminderDue: vi.fn(),
+      stop: vi.fn(),
+    };
+
+    await renderAppAt("/today", repository, {
+      [AgentAutoTriggerKey as symbol]: agentAutoTrigger,
+    });
+
+    await screen.findByText("今日到期");
+    await waitFor(() => expect(agentAutoTrigger.runStartupChecks).toHaveBeenCalledTimes(1));
+    expect(notificationMocks.notifyDueReminders).toHaveBeenCalledWith(repository, expect.objectContaining({
+      onReminderDue: expect.any(Function),
+    }));
+    expect(notificationMocks.listenReminderTicks).toHaveBeenCalledWith(repository, expect.objectContaining({
+      onReminderDue: expect.any(Function),
+    }));
+
+    const notifyOptions = notificationMocks.notifyDueReminders.mock.calls[0]?.[1] as {
+      onReminderDue?: (event: unknown) => void;
+    };
+    const event = { task: task({ id: "task-1" }), reminderId: "reminder-1", notifiedAt: "2026-05-16T08:00:00.000Z" };
+    notifyOptions.onReminderDue?.(event);
+
+    expect(agentAutoTrigger.requestReminderDue).toHaveBeenCalledWith(event);
+  });
+
   it("设置页通过 WebDAV controller 订阅同步完成通知", async () => {
     const repository = fakeRepository();
     const controller = fakeWebdavController({ kind: "enabled" });
@@ -1607,12 +1650,18 @@ function renderWithRepository(
   repository: TaskRepository,
   options: Record<string, unknown> = {},
 ) {
+  const agentAutoTrigger = {
+    runStartupChecks: vi.fn().mockResolvedValue(undefined),
+    requestReminderDue: vi.fn(),
+    stop: vi.fn(),
+  };
   return render(component, {
     ...options,
     global: {
       ...(options.global as Record<string, unknown> | undefined),
       provide: {
         [TaskRepositoryKey as symbol]: repository,
+        [AgentAutoTriggerKey as symbol]: agentAutoTrigger,
         ...(((options.global as { provide?: Record<symbol, unknown> } | undefined)?.provide) ?? {}),
       },
     },
@@ -1746,7 +1795,11 @@ async function expectDrawerError(message: string) {
   expect(getDrawer()).toBeInTheDocument();
 }
 
-async function renderAppAt(path: string, repository: TaskRepository) {
+async function renderAppAt(
+  path: string,
+  repository: TaskRepository,
+  provide: Record<symbol, unknown> = {},
+) {
   const router = createLiliaTodoRouter(createMemoryHistory());
   await router.push(path);
   await router.isReady();
@@ -1754,6 +1807,7 @@ async function renderAppAt(path: string, repository: TaskRepository) {
   return renderWithRepository(App, repository, {
     global: {
       plugins: [router],
+      provide,
     },
   });
 }

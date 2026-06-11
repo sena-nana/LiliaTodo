@@ -7,6 +7,7 @@ import {
   type Options,
 } from "@tauri-apps/plugin-notification";
 import { listen } from "@tauri-apps/api/event";
+import type { AgentReminderDueEvent } from "./agent/autoTriggers";
 import type { TaskRepository } from "./data/taskRepository";
 
 const REMINDER_TICK_EVENT = "liliatodo:reminder-tick";
@@ -17,13 +18,21 @@ const SNOOZE_MINUTES = 10;
 let actionTypesReady: Promise<void> | null = null;
 let actionListenerReady: Promise<unknown> | null = null;
 
-export async function notifyDueReminders(repository: TaskRepository) {
+export interface ReminderNotificationOptions {
+  onReminderDue?: (event: AgentReminderDueEvent) => void;
+}
+
+export async function notifyDueReminders(
+  repository: TaskRepository,
+  options: ReminderNotificationOptions = {},
+) {
   const granted = await ensureNotificationPermission();
   if (!granted) {
     throw new Error("系统通知权限不足");
   }
   await ensureReminderActions(repository);
   const now = new Date();
+  const notifiedAt = now.toISOString();
   const tasks = await repository.listDueReminders(now);
   for (const task of tasks) {
     if (task.lastReminderNotifiedAt) continue;
@@ -42,7 +51,12 @@ export async function notifyDueReminders(repository: TaskRepository) {
         reminderId: dueReminder.id,
       },
     });
-    await repository.updateTask(task.id, { lastReminderNotifiedAt: now.toISOString() });
+    options.onReminderDue?.({
+      task,
+      reminderId: dueReminder.id,
+      notifiedAt,
+    });
+    await repository.updateTask(task.id, { lastReminderNotifiedAt: notifiedAt });
   }
   return tasks.length;
 }
@@ -54,10 +68,13 @@ export async function ensureNotificationPermission() {
   return permission === "granted";
 }
 
-export async function listenReminderTicks(repository: TaskRepository) {
+export async function listenReminderTicks(
+  repository: TaskRepository,
+  options: ReminderNotificationOptions = {},
+) {
   await ensureReminderActions(repository);
   return listen(REMINDER_TICK_EVENT, () => {
-    void notifyDueReminders(repository).catch(() => undefined);
+    void notifyDueReminders(repository, options).catch(() => undefined);
   });
 }
 
