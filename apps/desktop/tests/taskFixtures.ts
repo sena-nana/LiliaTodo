@@ -1,4 +1,10 @@
 import { vi } from "vitest";
+import {
+  createAgentActionDraft,
+  type AgentAuditRecord,
+  type AgentInboxSnapshot,
+  type AgentPendingAction,
+} from "../src/agent/actions";
 import type { TaskRepository } from "../src/data/taskRepository";
 import type {
   CreateTaskCategoryInput,
@@ -14,6 +20,8 @@ import type {
 export interface FakeTaskRepositoryOverrides {
   today?: TodayTaskGroups;
   activeTasks?: Task[];
+  statusTasks?: Record<string, Task[]>;
+  searchResults?: Task[];
   inbox?: Task[];
   agenda?: Task[];
   lists?: TaskList[];
@@ -21,6 +29,7 @@ export interface FakeTaskRepositoryOverrides {
   children?: Record<string, Task[]>;
   listTasks?: Record<string, Task[]>;
   dueReminders?: Task[];
+  agentInbox?: AgentInboxSnapshot;
 }
 
 export function fakeTaskRepository(
@@ -36,6 +45,51 @@ export function fakeTaskRepository(
     lastSyncedAt: null,
     lastError: null,
     updatedAt: null,
+  };
+  const defaultAgentSource = {
+    trigger: "manual_scan" as const,
+    envelopeId: "test-envelope",
+    summary: "测试触发",
+    taskIds: ["task-1"],
+  };
+  const defaultAgentAction = createAgentActionDraft(
+    { type: "task.update", taskId: "task-1", patch: { priority: 2 } },
+    defaultAgentSource,
+  );
+  const defaultPending: AgentPendingAction = {
+    id: "agent-action-1",
+    actionType: defaultAgentAction.action.type,
+    status: "pending",
+    summary: defaultAgentAction.summary,
+    risk: defaultAgentAction.risk,
+    source: defaultAgentAction.source,
+    payload: defaultAgentAction.action,
+    dryRun: defaultAgentAction.dryRun,
+    createdAt: "2026-05-16T12:00:00.000Z",
+    decidedAt: null,
+    decisionReason: null,
+    auditBatchId: null,
+    error: null,
+  };
+  const agentInbox = overrides.agentInbox ?? {
+    pendingActions: [defaultPending],
+    audits: [],
+  };
+  const defaultAudit: AgentAuditRecord = {
+    id: "audit-1",
+    batchId: "batch-1",
+    actionId: defaultPending.id,
+    actionType: defaultPending.actionType,
+    payload: defaultPending.payload,
+    summary: defaultPending.summary,
+    status: "applied",
+    reversible: true,
+    before: null,
+    after: null,
+    source: defaultPending.source,
+    error: null,
+    createdAt: "2026-05-16T12:01:00.000Z",
+    undoneAt: null,
   };
 
   function findTask(taskId: string) {
@@ -71,6 +125,22 @@ export function fakeTaskRepository(
       Promise.resolve(taskFixture({ ...findTask(id), status: "completed" })),
     ),
     deleteTask: vi.fn().mockResolvedValue(undefined),
+    restoreTask: vi.fn().mockImplementation((id: string) =>
+      Promise.resolve(taskFixture({ ...findTask(id), deletedAt: null })),
+    ),
+    purgeTask: vi.fn().mockResolvedValue(undefined),
+    listTasksByStatus: vi.fn().mockImplementation((status: string) =>
+      Promise.resolve(overrides.statusTasks?.[status] ?? []),
+    ),
+    searchTasks: vi.fn().mockResolvedValue(overrides.searchResults ?? []),
+    batchUpdateTasks: vi.fn().mockImplementation((input) =>
+      Promise.resolve({ succeeded: input.taskIds ?? [], failed: [] }),
+    ),
+    reorderTasks: vi.fn().mockImplementation((input) =>
+      Promise.resolve((input.taskIds ?? []).map((id: string, order: number) => taskFixture({ ...findTask(id), childOrder: order }))),
+    ),
+    snoozeReminder: vi.fn().mockImplementation((id: string) => Promise.resolve(findTask(id))),
+    dismissReminder: vi.fn().mockImplementation((id: string) => Promise.resolve(findTask(id))),
     applyRemoteTask: vi.fn().mockResolvedValue(undefined),
     deleteRemoteTask: vi.fn().mockResolvedValue(undefined),
     applyRemoteList: vi.fn().mockResolvedValue(undefined),
@@ -133,6 +203,40 @@ export function fakeTaskRepository(
       completedTasks: 0,
       pendingLocalChanges: 0,
     }),
+    createAgentPendingAction: vi.fn().mockImplementation((draft) =>
+      Promise.resolve({
+        id: "agent-action-new",
+        actionType: draft.action.type,
+        status: "pending",
+        summary: draft.summary,
+        risk: draft.risk,
+        source: draft.source,
+        payload: draft.action,
+        dryRun: draft.dryRun,
+        createdAt: "2026-05-16T12:00:00.000Z",
+        decidedAt: null,
+        decisionReason: null,
+        auditBatchId: null,
+        error: null,
+      }),
+    ),
+    createAgentPendingActionFromTool: vi.fn().mockImplementation((action, source) =>
+      repository.createAgentPendingAction(createAgentActionDraft(action, source)),
+    ),
+    getAgentInboxSnapshot: vi.fn().mockResolvedValue(agentInbox),
+    approveAgentPendingAction: vi.fn().mockResolvedValue(defaultAudit),
+    rejectAgentPendingAction: vi.fn().mockImplementation((id: string, reason?: string | null) =>
+      Promise.resolve({
+        ...defaultPending,
+        id,
+        status: "rejected",
+        decisionReason: reason ?? null,
+        decidedAt: "2026-05-16T12:02:00.000Z",
+      }),
+    ),
+    undoAgentAuditBatch: vi.fn().mockResolvedValue([
+      { ...defaultAudit, status: "undone", undoneAt: "2026-05-16T12:03:00.000Z" },
+    ]),
   } satisfies TaskRepository;
 
   return repository;
@@ -156,6 +260,9 @@ export function taskFixture(overrides: Partial<Task> = {}): Task {
     tags: [],
     listId: "inbox",
     categoryId: null,
+    recurrence: null,
+    deletedAt: null,
+    lastReminderNotifiedAt: null,
     createdAt: "2026-05-16T00:00:00.000Z",
     updatedAt: "2026-05-16T00:00:00.000Z",
     completedAt: null,

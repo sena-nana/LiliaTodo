@@ -1,24 +1,34 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref } from "vue";
-import { ArrowDown, ArrowUp, Check, Loader2, Pencil, Plus, RefreshCw, Trash2 } from "lucide-vue-next";
+import { computed, onMounted, onUnmounted, ref } from "vue";
+import { Plus } from "lucide-vue-next";
+import { AsyncTaskDetailDrawer } from "../components/AsyncTaskDetailDrawer";
+import PageStateBlock from "../components/PageStateBlock.vue";
+import TaskBulkToolbar from "../components/TaskBulkToolbar.vue";
+import TaskTableRow from "../components/TaskTableRow.vue";
+import { useBulkSelection } from "../composables/useBulkSelection";
+import { useGlobalShortcuts } from "../composables/useGlobalShortcuts";
 import { useTaskRepository } from "../data/TaskRepositoryContext";
 import { onTaskListsChanged } from "../data/taskListEvents";
 import { useLatestAsyncRun } from "../composables/useLatestAsyncRun";
 import { useTaskDetailDrawer } from "../composables/useTaskDetailDrawer";
+import { useTaskBulkActions } from "../composables/useTaskBulkActions";
 import { useTaskListActions } from "../composables/useTaskListActions";
+import { formatDisplayError } from "../utils/errors";
 import type { Task } from "../domain/tasks";
-import { taskHasDueReminder } from "../domain/tasks";
-import { AsyncTaskDetailDrawer } from "../components/AsyncTaskDetailDrawer";
 
 const repository = useTaskRepository();
 const tasks = ref<Task[]>([]);
+const quickAddInput = ref<HTMLInputElement | null>(null);
 const loading = ref(true);
 const error = ref<string | null>(null);
+const draggingTaskId = ref<string | null>(null);
 const loadRuns = useLatestAsyncRun();
+const selection = useBulkSelection();
 const {
   selectedTask,
   childTasks,
   lists,
+  categories,
   saving,
   drawerError,
   parentCandidates,
@@ -26,13 +36,14 @@ const {
   saveTask,
   completeTask,
   deleteTask: deleteTaskFromDrawer,
+  reorderChildTasks,
   closeTask,
 } = useTaskDetailDrawer({
   repository,
   reload: load,
   getParentCandidates: () => tasks.value,
 });
-const { newTitle, quickAddSaving, createTask, moveTask } = useTaskListActions({
+const { newTitle, quickAddSaving, createTask } = useTaskListActions({
   repository,
   tasks,
   reload: load,
@@ -41,9 +52,39 @@ const { newTitle, quickAddSaving, createTask, moveTask } = useTaskListActions({
     error.value = value;
   },
 });
+const selectedTasks = computed(() => tasks.value.filter((task) => selection.has(task.id)));
+const { applyBulk } = useTaskBulkActions({
+  repository,
+  selection,
+  reload: load,
+  setError: (value) => {
+    error.value = value;
+  },
+  getTaskIds: () => selectedTasks.value.map((task) => task.id),
+});
 
 onMounted(() => {
   void load();
+});
+
+useGlobalShortcuts({
+  n: () => quickAddInput.value?.focus(),
+  o: () => {
+    const task = selectedTask.value ?? selectedTasks.value[0] ?? tasks.value[0];
+    if (task) void openTask(task);
+  },
+  x: () => {
+    const task = selectedTask.value ?? selectedTasks.value[0] ?? tasks.value[0];
+    if (task) void completeTask(task);
+  },
+  delete: () => {
+    if (selection.selectedCount.value > 0) {
+      void bulkDelete();
+      return;
+    }
+    const task = selectedTask.value ?? tasks.value[0];
+    if (task) void deleteTask(task);
+  },
 });
 
 const stopTaskListEvents = onTaskListsChanged(() => {
@@ -62,9 +103,13 @@ async function load() {
     },
     execute: () => Promise.all([
       repository.listInbox(),
+      repository.listLists(),
+      repository.listCategoriesByList("inbox"),
     ]),
-    commit: ([nextTasks]) => {
+    commit: ([nextTasks, nextLists, nextCategories]) => {
       tasks.value = nextTasks;
+      lists.value = nextLists;
+      categories.value = nextCategories;
     },
     fail: (e) => {
       error.value = String(e);
@@ -86,8 +131,35 @@ async function deleteTask(task: Task) {
   }
 }
 
-function displayError(value: string) {
-  return value.replace(/^Error:\s*/, "错误：");
+async function bulkDelete() {
+  await applyBulk({ type: "delete" });
+}
+
+async function bulkComplete() {
+  await applyBulk({ type: "complete" });
+}
+
+function onTaskDragStart(task: Task) {
+  draggingTaskId.value = task.id;
+}
+
+async function onTaskDrop(target: Task) {
+  const sourceId = draggingTaskId.value;
+  draggingTaskId.value = null;
+  if (!sourceId || sourceId === target.id) return;
+  const ids = tasks.value.map((task) => task.id);
+  const sourceIndex = ids.indexOf(sourceId);
+  const targetIndex = ids.indexOf(target.id);
+  if (sourceIndex < 0 || targetIndex < 0) return;
+  ids.splice(sourceIndex, 1);
+  ids.splice(targetIndex, 0, sourceId);
+  error.value = null;
+  try {
+    await repository.reorderTasks({ taskIds: ids, listId: "inbox", categoryId: null });
+    await load();
+  } catch (e) {
+    error.value = String(e);
+  }
 }
 </script>
 
@@ -96,65 +168,51 @@ function displayError(value: string) {
     <form class="quick-add" @submit.prevent="createTask">
       <label class="sr-only" for="inbox-quick-add">添加收件箱任务</label>
       <div class="row">
-        <input id="inbox-quick-add" v-model="newTitle" placeholder="添加收件箱任务" />
+        <input ref="quickAddInput" id="inbox-quick-add" v-model="newTitle" placeholder="添加收件箱任务" />
         <button class="primary" type="submit" :disabled="quickAddSaving || !newTitle.trim()">
           <Plus :size="16" aria-hidden="true" />
           添加任务
         </button>
       </div>
     </form>
-    <div v-if="loading" class="card state">
-      <Loader2 class="spin" :size="18" aria-hidden="true" />
-      <p>正在加载收件箱...</p>
-    </div>
-    <div v-if="error" class="card state state--error">
-      <p>{{ displayError(error) }}</p>
-      <button type="button" @click="load">
-        <RefreshCw :size="16" aria-hidden="true" />
-        重试
-      </button>
-    </div>
-    <div v-if="!loading && !error && tasks.length === 0" class="card empty">
-      <p>收件箱暂无任务。可在今日页添加任务并选择收件箱。</p>
-    </div>
-    <ul
-      v-if="!loading && !error && tasks.length > 0"
-      class="card task-list task-list--roomy"
-    >
-      <li
+    <section v-if="!loading && !error && tasks.length > 0" class="task-toolbar">
+      <div class="task-toolbar__left">
+        <span>收件箱 {{ tasks.length }} 条</span>
+        <span v-if="selection.selectedCount.value > 0">已选 {{ selection.selectedCount.value }} 条</span>
+      </div>
+      <div class="task-toolbar__right">
+        <button type="button" :disabled="selection.selectedCount.value === 0" @click="bulkComplete">批量完成</button>
+        <button type="button" :disabled="selection.selectedCount.value === 0" @click="bulkDelete">批量删除</button>
+      </div>
+    </section>
+    <TaskBulkToolbar
+      v-if="selection.selectedCount.value > 0"
+      :selected-count="selection.selectedCount.value"
+      :lists="lists"
+      :categories="categories"
+      current-list-id="inbox"
+      @apply="applyBulk"
+      @clear="selection.clear"
+    />
+    <PageStateBlock v-if="loading" kind="loading" title="正在加载收件箱..." />
+    <PageStateBlock v-else-if="error" kind="error" :title="formatDisplayError(error)" @action="load" />
+    <PageStateBlock v-else-if="tasks.length === 0" kind="empty" title="收件箱暂无任务。可在今日页添加任务并选择收件箱。" />
+    <ul v-else class="task-table">
+      <TaskTableRow
         v-for="task in tasks"
         :key="task.id"
-        class="task-item task-item--actions task-item--clickable"
-        @click="openTask(task)"
-      >
-        <div class="task-copy">
-          <span class="task-title">{{ task.title }}</span>
-          <span v-if="task.notes" class="task-meta">{{ task.notes }}</span>
-          <span class="task-meta">
-            <template v-if="task.startAt">开始 {{ task.startAt }}</template>
-            <template v-if="task.dueAt"> 截止 {{ task.dueAt }}</template>
-            <template v-if="taskHasDueReminder(task)"> 提醒已到</template>
-          </span>
-          <span v-if="task.priority > 0" class="task-badge">P{{ task.priority }}</span>
-        </div>
-        <div class="task-actions" @click.stop>
-          <button type="button" class="icon-button" :aria-label="`完成 ${task.title}`" @click="completeTask(task)">
-            <Check :size="16" aria-hidden="true" />
-          </button>
-          <button type="button" class="icon-button" :aria-label="`上移 ${task.title}`" @click="moveTask(task, -1)">
-            <ArrowUp :size="16" aria-hidden="true" />
-          </button>
-          <button type="button" class="icon-button" :aria-label="`下移 ${task.title}`" @click="moveTask(task, 1)">
-            <ArrowDown :size="16" aria-hidden="true" />
-          </button>
-          <button type="button" class="icon-button" :aria-label="`编辑 ${task.title}`" @click="openTask(task)">
-            <Pencil :size="16" aria-hidden="true" />
-          </button>
-          <button type="button" class="icon-button icon-button--danger" :aria-label="`删除 ${task.title}`" @click="deleteTask(task)">
-            <Trash2 :size="16" aria-hidden="true" />
-          </button>
-        </div>
-      </li>
+        :task="task"
+        selectable
+        draggable-row
+        :checked="selection.has(task.id)"
+        :selected="selectedTask?.id === task.id"
+        @toggle="(_, checked) => selection.toggle(task.id, checked)"
+        @open="openTask"
+        @complete="completeTask"
+        @delete="deleteTask"
+        @drag-start="onTaskDragStart"
+        @drop-on="onTaskDrop"
+      />
     </ul>
     <AsyncTaskDetailDrawer
       v-if="selectedTask"
@@ -169,6 +227,41 @@ function displayError(value: string) {
       @complete="completeTask"
       @delete="deleteTaskFromDrawer"
       @open-task="openTask"
+      @reorder-children="reorderChildTasks"
     />
   </section>
 </template>
+
+<style scoped>
+.task-toolbar {
+  min-height: 42px;
+  padding: 0 10px;
+  margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-elev);
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.task-toolbar__left,
+.task-toolbar__right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.task-table {
+  list-style: none;
+  padding: 0 12px;
+  margin: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-elev);
+}
+
+</style>

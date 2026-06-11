@@ -15,7 +15,7 @@ import type {
 export const TASK_ENTITY_TYPE = 'task';
 export const TASK_LIST_ENTITY_TYPE = 'taskList';
 export const TASK_CATEGORY_ENTITY_TYPE = 'taskCategory';
-export const TASK_SCHEMA_VERSION = 3;
+export const TASK_SCHEMA_VERSION = 4;
 export const TASK_LIST_SCHEMA_VERSION = 1;
 export const TASK_CATEGORY_SCHEMA_VERSION = 1;
 
@@ -97,6 +97,9 @@ export function entityToTask(entity: Entity<unknown>): Task {
     tags: asStringArray(payload.tags),
     listId: asStringWithDefault(payload.listId, 'inbox'),
     categoryId: asNullableString(payload.categoryId),
+    recurrence: asRecurrence(payload.recurrence),
+    deletedAt: asNullableIsoString(payload.deletedAt, 'task.deletedAt'),
+    lastReminderNotifiedAt: asNullableIsoString(payload.lastReminderNotifiedAt, 'task.lastReminderNotifiedAt'),
     createdAt: asRequiredIsoString(payload.createdAt, 'task.createdAt'),
     updatedAt: asRequiredIsoString(entity.updatedAt, 'task.updatedAt'),
     completedAt: asNullableIsoString(payload.completedAt, 'task.completedAt'),
@@ -380,4 +383,22 @@ function asChecklist(value: unknown): TaskChecklistItem[] {
       order: asIntegerWithDefault(record.order, index, `task.checklist[${index}].order`),
     };
   });
+}
+
+function asRecurrence(value: unknown): Task['recurrence'] {
+  if (value === null || value === undefined) return null;
+  if (!isPlainObject(value)) throw new Error('WebDAV 同步：task.recurrence 必须为对象');
+  const record = value as Record<string, unknown>;
+  const unit = record.unit;
+  const interval = record.interval;
+  if (typeof record.enabled !== 'boolean' || record.enabled !== true) {
+    throw new Error('WebDAV 同步：task.recurrence.enabled 必须为 true');
+  }
+  if (typeof unit !== 'string' || !['day', 'week', 'month'].includes(unit)) {
+    throw new Error('WebDAV 同步：task.recurrence.unit 非法');
+  }
+  if (typeof interval !== 'number' || !Number.isInteger(interval) || interval <= 0) {
+    throw new Error('WebDAV 同步：task.recurrence.interval 必须为正整数');
+  }
+  return { enabled: true, unit: unit as 'day' | 'week' | 'month', interval };
 }

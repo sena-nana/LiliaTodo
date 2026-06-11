@@ -1,5 +1,19 @@
 import Database from '@tauri-apps/plugin-sql';
 import {
+  createAgentActionDraft,
+  type AgentActionDraft,
+  type AgentActionSource,
+  type AgentActionType,
+  type AgentAuditRecord,
+  type AgentAuditStatus,
+  type AgentInboxSnapshot,
+  type AgentPendingAction,
+  type AgentPendingActionStatus,
+  type AgentRiskLevel,
+  type AgentToolInput,
+} from '../agent/actions';
+import { executeAgentAction, undoAgentAction } from '../agent/executor';
+import {
   DEFAULT_TASK_LIST_ID,
   DEFAULT_TASK_LIST_NAME,
   getDayBounds,
@@ -14,15 +28,19 @@ import {
   normalizeUpdateTaskInput,
   normalizeUpdateTaskListInput,
   taskHasDueReminder,
+  type BatchTaskOperation,
+  type BatchTaskResult,
   type CreateTaskCategoryInput,
   type CreateTaskInput,
   type CreateTaskListInput,
+  type ReorderTasksInput,
   type Task,
   type TaskCategory,
   type TaskCategoryRow,
   type TaskList,
   type TaskListRow,
   type TaskRow,
+  type TaskSearchQuery,
   type TaskStatus,
   type TodayTaskGroups,
   type UpdateTaskCategoryInput,
@@ -62,10 +80,19 @@ export interface SqlDatabase {
 export interface TaskRepository {
   databasePath: string;
   init(): Promise<void>;
+  findTaskById(id: string): Promise<Task | null>;
   createTask(input: CreateTaskInput): Promise<Task>;
   updateTask(id: string, patch: UpdateTaskInput): Promise<Task>;
   setStatus(id: string, status: TaskStatus): Promise<Task>;
   deleteTask(id: string): Promise<void>;
+  restoreTask(id: string): Promise<Task>;
+  purgeTask(id: string): Promise<void>;
+  listTasksByStatus(status: TaskStatus | "deleted"): Promise<Task[]>;
+  searchTasks(query: TaskSearchQuery): Promise<Task[]>;
+  batchUpdateTasks(input: BatchTaskOperation): Promise<BatchTaskResult>;
+  reorderTasks(input: ReorderTasksInput): Promise<Task[]>;
+  snoozeReminder(taskId: string, reminderId: string, until: string): Promise<Task>;
+  dismissReminder(taskId: string, reminderId: string): Promise<Task>;
   applyRemoteTask(task: Task, remoteVersion?: number): Promise<void>;
   deleteRemoteTask(id: string): Promise<void>;
   applyRemoteList(list: TaskList, remoteVersion?: number): Promise<void>;
@@ -94,6 +121,12 @@ export interface TaskRepository {
   listAgenda(start: Date, end: Date): Promise<Task[]>;
   listDueReminders(now: Date): Promise<Task[]>;
   getStats(): Promise<DatabaseStats>;
+  createAgentPendingAction(draft: AgentActionDraft): Promise<AgentPendingAction>;
+  createAgentPendingActionFromTool(action: AgentToolInput, source: AgentActionSource): Promise<AgentPendingAction>;
+  getAgentInboxSnapshot(): Promise<AgentInboxSnapshot>;
+  approveAgentPendingAction(id: string): Promise<AgentAuditRecord>;
+  rejectAgentPendingAction(id: string, reason?: string | null): Promise<AgentPendingAction>;
+  undoAgentAuditBatch(batchId: string): Promise<AgentAuditRecord[]>;
 }
 
 export type LocalChangeAction =
@@ -201,6 +234,39 @@ export interface DatabaseStats {
   databasePath: string;
 }
 
+interface AgentPendingActionRow {
+  id: string;
+  action_type: AgentActionType;
+  status: AgentPendingActionStatus;
+  summary: string;
+  risk: AgentRiskLevel;
+  source: string;
+  payload: string;
+  dry_run: string;
+  created_at: string;
+  decided_at: string | null;
+  decision_reason: string | null;
+  audit_batch_id: string | null;
+  error: string | null;
+}
+
+interface AgentAuditRecordRow {
+  id: string;
+  batch_id: string;
+  action_id: string;
+  action_type: AgentActionType;
+  action_payload?: string;
+  summary: string;
+  status: AgentAuditStatus;
+  reversible: number | boolean;
+  before_payload: string;
+  after_payload: string;
+  source: string;
+  error: string | null;
+  created_at: string;
+  undone_at: string | null;
+}
+
 interface RepositoryOptions {
   now?: () => Date;
   id?: () => string;
@@ -245,6 +311,138 @@ export function createTaskRepository(
       throw new Error('任务不存在');
     }
     return mapTaskRow(row);
+  }
+
+  async function createNextRecurringTask(db: SqlDatabase, task: Task, timestamp: string) {
+    if (!task.recurrence?.enabled) return null;
+    const nextDueAt = shiftIso(task.dueAt, task.recurrence);
+    const nextStartAt = shiftIso(task.startAt, task.recurrence);
+    const nextTask: Task = {
+      ...task,
+      id: id(),
+      status: 'active',
+      startAt: nextStartAt,
+      dueAt: nextDueAt,
+      reminders: task.reminders.map((reminder) => ({
+        ...reminder,
+        triggerAt: shiftIso(reminder.triggerAt, task.recurrence!) ?? reminder.triggerAt,
+        status: 'pending',
+      })),
+      completedAt: null,
+      deletedAt: null,
+      lastReminderNotifiedAt: null,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    };
+    await db.execute(INSERT_TASK_SQL, taskParams(nextTask));
+    await recordLocalChange(db, 'task', nextTask.id, 'task.create', nextTask, timestamp);
+    return nextTask;
+  }
+
+  function filterTasks(tasks: Task[], query: TaskSearchQuery) {
+    const needle = query.text?.trim().toLowerCase() ?? '';
+    const statuses = query.statuses?.length ? new Set(query.statuses) : null;
+    const priorities = query.priorities?.length ? new Set(query.priorities) : null;
+    const tags = query.tags?.length ? new Set(query.tags.map((tag) => tag.trim()).filter(Boolean)) : null;
+    const fromTime = query.timeFrom ? new Date(query.timeFrom).getTime() : null;
+    const toTime = query.timeTo ? new Date(query.timeTo).getTime() : null;
+
+    return tasks.filter((task) => {
+      if (!query.includeDeleted && task.deletedAt) return false;
+      if (needle) {
+        const haystack = [task.title, task.notes ?? '', task.tags.join(' ')].join('\n').toLowerCase();
+        if (!haystack.includes(needle)) return false;
+      }
+      if (tags && ![...tags].every((tag) => task.tags.includes(tag))) return false;
+      if (query.listId && task.listId !== query.listId) return false;
+      if (query.categoryId && task.categoryId !== query.categoryId) return false;
+      if (statuses && !statuses.has(task.status)) return false;
+      if (priorities && !priorities.has(task.priority)) return false;
+      if (fromTime != null || toTime != null) {
+        const target = task.startAt ?? task.dueAt ?? task.completedAt ?? task.createdAt;
+        const time = new Date(target).getTime();
+        if (fromTime != null && time < fromTime) return false;
+        if (toTime != null && time > toTime) return false;
+      }
+      if (query.reminderStatus) {
+        const hasReminders = task.reminders.length > 0;
+        const nowTime = now().getTime();
+        if (query.reminderStatus === 'none' && hasReminders) return false;
+        if (query.reminderStatus === 'pending' && !task.reminders.some((item) => item.status === 'pending')) return false;
+        if (query.reminderStatus === 'due' && !task.reminders.some((item) => item.status === 'pending' && new Date(item.triggerAt).getTime() <= nowTime)) return false;
+        if (query.reminderStatus === 'fired' && !task.reminders.some((item) => item.status === 'fired')) return false;
+        if (query.reminderStatus === 'dismissed' && !task.reminders.some((item) => item.status === 'dismissed')) return false;
+      }
+      return true;
+    });
+  }
+
+  async function findTaskById(taskId: string) {
+    await init();
+    const db = await getDb();
+    const rows = await db.select<TaskRow>('SELECT * FROM tasks WHERE id = $1 LIMIT 1', [taskId]);
+    return rows[0] ? mapTaskRow(rows[0]) : null;
+  }
+
+  async function selectPendingAction(actionId: string) {
+    const db = await getDb();
+    const rows = await db.select<AgentPendingActionRow>(
+      'SELECT * FROM agent_pending_actions WHERE id = $1 LIMIT 1',
+      [actionId],
+    );
+    const row = rows[0];
+    if (!row) {
+      throw new Error('Agent 待确认操作不存在');
+    }
+    return mapAgentPendingActionRow(row);
+  }
+
+  async function insertAgentAuditRecord(
+    action: AgentPendingAction,
+    execution: Awaited<ReturnType<typeof executeAgentAction>>,
+    batchId: string,
+    createdAt: string,
+  ) {
+    const db = await getDb();
+    const audit: AgentAuditRecord = {
+      id: id(),
+      batchId,
+      actionId: action.id,
+      actionType: action.actionType,
+      payload: action.payload,
+      summary: action.summary,
+      status: 'applied',
+      reversible: execution.reversible,
+      before: execution.before,
+      after: execution.after,
+      source: action.source,
+      error: null,
+      createdAt,
+      undoneAt: null,
+    };
+    await db.execute(
+      `INSERT INTO agent_audit_records (
+        id, batch_id, action_id, action_type, action_payload, summary, status, reversible,
+        before_payload, after_payload, source, error, created_at, undone_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
+      [
+        audit.id,
+        audit.batchId,
+        audit.actionId,
+        audit.actionType,
+        JSON.stringify(action.payload),
+        audit.summary,
+        audit.status,
+        audit.reversible ? 1 : 0,
+        JSON.stringify(audit.before),
+        JSON.stringify(audit.after),
+        JSON.stringify(audit.source),
+        audit.error,
+        audit.createdAt,
+        audit.undoneAt,
+      ],
+    );
+    return audit;
   }
 
   async function selectList(listId: string) {
@@ -379,6 +577,7 @@ export function createTaskRepository(
     const childRows = await db.select<{ id: string }>(
       `SELECT id FROM tasks
        WHERE parent_id = $1 AND status = 'active'
+         AND deleted_at IS NULL
        LIMIT 1`,
       [taskId],
     );
@@ -396,7 +595,7 @@ export function createTaskRepository(
     const db = await getDb();
     const rows = await db.select<TaskRow>(
       `SELECT * FROM tasks
-       WHERE status = 'active' AND list_id = $1
+       WHERE status = 'active' AND deleted_at IS NULL AND list_id = $1
        ORDER BY child_order ASC, COALESCE(start_at, due_at, created_at) ASC, priority DESC`,
       [listId],
     );
@@ -408,7 +607,7 @@ export function createTaskRepository(
     const db = await getDb();
     const rows = await db.select<TaskRow>(
       `SELECT * FROM tasks
-       WHERE status = 'active'
+       WHERE status = 'active' AND deleted_at IS NULL
        ORDER BY child_order ASC, COALESCE(start_at, due_at, created_at) ASC, priority DESC`,
     );
     return rows.map(mapTaskRow);
@@ -417,6 +616,7 @@ export function createTaskRepository(
   return {
     databasePath: LILIATODO_DATABASE_PATH,
     init,
+    findTaskById,
 
     async createTask(input) {
       await init();
@@ -439,6 +639,9 @@ export function createTaskRepository(
         tags: normalized.tags,
         listId: normalized.listId,
         categoryId: normalized.categoryId,
+        recurrence: normalized.recurrence ?? null,
+        deletedAt: normalized.deletedAt ?? null,
+        lastReminderNotifiedAt: normalized.lastReminderNotifiedAt ?? null,
         createdAt: timestamp,
         updatedAt: timestamp,
         completedAt: null,
@@ -473,6 +676,9 @@ export function createTaskRepository(
       if ('tags' in normalized) appendUpdate(updates, values, 'tags', JSON.stringify(normalized.tags));
       appendUpdate(updates, values, 'list_id', normalized.listId);
       appendUpdate(updates, values, 'category_id', normalized.categoryId);
+      if ('recurrence' in normalized) appendUpdate(updates, values, 'recurrence', normalized.recurrence ? JSON.stringify(normalized.recurrence) : null);
+      appendUpdate(updates, values, 'deleted_at', normalized.deletedAt);
+      appendUpdate(updates, values, 'last_reminder_notified_at', normalized.lastReminderNotifiedAt);
 
       if (updates.length > 0) {
         const timestamp = now().toISOString();
@@ -522,15 +728,136 @@ export function createTaskRepository(
         await withBaseVersion(db, 'task', taskId, { id: taskId, status, completedAt, updatedAt: timestamp }),
         timestamp,
       );
-      return selectTask(taskId);
+      const task = await selectTask(taskId);
+      if (status === 'completed' && task.recurrence) {
+        await createNextRecurringTask(db, task, timestamp);
+      }
+      return task;
     },
 
     async deleteTask(taskId) {
       await init();
       const timestamp = now().toISOString();
       const db = await getDb();
+      await db.execute('UPDATE tasks SET deleted_at = $1, updated_at = $2 WHERE id = $3', [timestamp, timestamp, taskId]);
+      await recordLocalChange(
+        db,
+        'task',
+        taskId,
+        'task.update',
+        await withBaseVersion(db, 'task', taskId, { id: taskId, patch: { deletedAt: timestamp }, updatedAt: timestamp }),
+        timestamp,
+      );
+    },
+
+    async restoreTask(taskId) {
+      await init();
+      const timestamp = now().toISOString();
+      const db = await getDb();
+      await db.execute('UPDATE tasks SET deleted_at = $1, updated_at = $2 WHERE id = $3', [null, timestamp, taskId]);
+      await recordLocalChange(
+        db,
+        'task',
+        taskId,
+        'task.update',
+        await withBaseVersion(db, 'task', taskId, { id: taskId, patch: { deletedAt: null }, updatedAt: timestamp }),
+        timestamp,
+      );
+      return selectTask(taskId);
+    },
+
+    async purgeTask(taskId) {
+      await init();
+      const timestamp = now().toISOString();
+      const db = await getDb();
       await db.execute('DELETE FROM tasks WHERE id = $1', [taskId]);
       await recordLocalChange(db, 'task', taskId, 'task.delete', await withBaseVersion(db, 'task', taskId, { id: taskId }), timestamp);
+    },
+
+    async listTasksByStatus(status) {
+      await init();
+      const db = await getDb();
+      const rows = await db.select<TaskRow>(
+        status === 'deleted'
+          ? `SELECT * FROM tasks WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC, updated_at DESC`
+          : `SELECT * FROM tasks WHERE status = $1 AND deleted_at IS NULL ORDER BY COALESCE(completed_at, updated_at, created_at) DESC`,
+        status === 'deleted' ? [] : [status],
+      );
+      return rows.map(mapTaskRow);
+    },
+
+    async searchTasks(query) {
+      await init();
+      const db = await getDb();
+      const rows = await db.select<TaskRow>(
+        `SELECT * FROM tasks ORDER BY COALESCE(start_at, due_at, completed_at, updated_at, created_at) DESC`,
+      );
+      return filterTasks(rows.map(mapTaskRow), query);
+    },
+
+    async batchUpdateTasks(input) {
+      await init();
+      const taskIds = [...new Set(input.taskIds)].filter(Boolean);
+      const result: BatchTaskResult = { succeeded: [], failed: [] };
+      for (const taskId of taskIds) {
+        try {
+          if (input.type === 'complete') {
+            await this.setStatus(taskId, 'completed');
+          } else if (input.type === 'reschedule') {
+            await this.updateTask(taskId, { startAt: input.startAt ?? null, dueAt: input.dueAt ?? null });
+          } else if (input.type === 'move') {
+            await this.updateTask(taskId, { listId: input.listId, categoryId: input.categoryId ?? null });
+          } else if (input.type === 'tag') {
+            const current = await selectTask(taskId);
+            const nextTags = input.mode === 'merge'
+              ? [...new Set([...current.tags, ...input.tags])]
+              : input.tags;
+            await this.updateTask(taskId, { tags: nextTags });
+          } else if (input.type === 'delete') {
+            await this.deleteTask(taskId);
+          }
+          result.succeeded.push(taskId);
+        } catch (error) {
+          result.failed.push({ id: taskId, error: readableError(error) });
+        }
+      }
+      return result;
+    },
+
+    async reorderTasks(input) {
+      await init();
+      const tasks: Task[] = [];
+      for (const [order, taskId] of input.taskIds.entries()) {
+        tasks.push(await this.updateTask(taskId, {
+          childOrder: order,
+          ...(input.parentId !== undefined ? { parentId: input.parentId } : {}),
+          ...(input.listId ? { listId: input.listId } : {}),
+          ...(input.categoryId !== undefined ? { categoryId: input.categoryId } : {}),
+        }));
+      }
+      return tasks;
+    },
+
+    async snoozeReminder(taskId, reminderId, until) {
+      const task = await selectTask(taskId);
+      return this.updateTask(taskId, {
+        reminders: task.reminders.map((reminder) =>
+          reminder.id === reminderId
+            ? { ...reminder, triggerAt: new Date(until).toISOString(), status: 'pending' }
+            : reminder,
+        ),
+        lastReminderNotifiedAt: null,
+      });
+    },
+
+    async dismissReminder(taskId, reminderId) {
+      const task = await selectTask(taskId);
+      return this.updateTask(taskId, {
+        reminders: task.reminders.map((reminder) =>
+          reminder.id === reminderId ? { ...reminder, status: 'dismissed' } : reminder,
+        ),
+        lastReminderNotifiedAt: now().toISOString(),
+      });
     },
 
     async applyRemoteTask(task, remoteVersion) {
@@ -648,7 +975,7 @@ export function createTaskRepository(
       const db = await getDb();
       const rows = await db.select<TaskRow>(
         `SELECT * FROM tasks
-         WHERE status != 'archived' AND parent_id = $1
+         WHERE status != 'archived' AND deleted_at IS NULL AND parent_id = $1
          ORDER BY child_order ASC, COALESCE(start_at, due_at, created_at) ASC`,
         [parentId],
       );
@@ -911,11 +1238,11 @@ export function createTaskRepository(
       const db = await getDb();
       const rows = await db.select<TaskRow>(
         `SELECT * FROM tasks
-         WHERE (status = 'active' AND (
+         WHERE (status = 'active' AND deleted_at IS NULL AND (
               (due_at IS NOT NULL AND due_at <= $1)
               OR (start_at IS NOT NULL AND start_at >= $2 AND start_at <= $1)
             ))
-            OR (status = 'completed' AND completed_at >= $2 AND completed_at <= $1)
+            OR (status = 'completed' AND deleted_at IS NULL AND completed_at >= $2 AND completed_at <= $1)
          ORDER BY COALESCE(start_at, due_at, completed_at, created_at), priority DESC`,
         [end.toISOString(), start.toISOString()],
       );
@@ -931,7 +1258,7 @@ export function createTaskRepository(
       const db = await getDb();
       const rows = await db.select<TaskRow>(
         `SELECT * FROM tasks
-         WHERE status != 'archived'
+         WHERE status != 'archived' AND deleted_at IS NULL
            AND (
              (start_at IS NOT NULL AND start_at >= $1 AND start_at <= $2)
              OR (due_at IS NOT NULL AND due_at >= $1 AND due_at <= $2)
@@ -947,7 +1274,7 @@ export function createTaskRepository(
       const db = await getDb();
       const rows = await db.select<TaskRow>(
         `SELECT * FROM tasks
-         WHERE status = 'active' AND reminders != '[]'
+         WHERE status = 'active' AND deleted_at IS NULL AND reminders != '[]'
          ORDER BY COALESCE(start_at, due_at, created_at), priority DESC`,
       );
       return rows.map(mapTaskRow).filter((task) => taskHasDueReminder(task, currentDate));
@@ -982,6 +1309,179 @@ export function createTaskRepository(
         databasePath: LILIATODO_DATABASE_PATH,
       };
     },
+
+    async createAgentPendingAction(draft) {
+      await init();
+      const timestamp = now().toISOString();
+      const action: AgentPendingAction = {
+        id: id(),
+        actionType: draft.action.type,
+        status: 'pending',
+        summary: draft.summary,
+        risk: draft.risk,
+        source: draft.source,
+        payload: draft.action,
+        dryRun: draft.dryRun,
+        createdAt: timestamp,
+        decidedAt: null,
+        decisionReason: null,
+        auditBatchId: null,
+        error: null,
+      };
+      const db = await getDb();
+      await db.execute(
+        `INSERT INTO agent_pending_actions (
+          id, action_type, status, summary, risk, source, payload, dry_run,
+          created_at, decided_at, decision_reason, audit_batch_id, error
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+        [
+          action.id,
+          action.actionType,
+          action.status,
+          action.summary,
+          action.risk,
+          JSON.stringify(action.source),
+          JSON.stringify(action.payload),
+          JSON.stringify(action.dryRun),
+          action.createdAt,
+          action.decidedAt,
+          action.decisionReason,
+          action.auditBatchId,
+          action.error,
+        ],
+      );
+      return action;
+    },
+
+    async createAgentPendingActionFromTool(action, source) {
+      return this.createAgentPendingAction(createAgentActionDraft(action, source));
+    },
+
+    async getAgentInboxSnapshot() {
+      await init();
+      const db = await getDb();
+      const [pendingRows, auditRows] = await Promise.all([
+        db.select<AgentPendingActionRow>(
+          `SELECT * FROM agent_pending_actions
+           ORDER BY CASE status WHEN 'pending' THEN 0 ELSE 1 END, created_at DESC`,
+        ),
+        db.select<AgentAuditRecordRow>(
+          `SELECT * FROM agent_audit_records
+           ORDER BY created_at DESC
+           LIMIT 80`,
+        ),
+      ]);
+      return {
+        pendingActions: pendingRows.map(mapAgentPendingActionRow),
+        audits: auditRows.map(mapAgentAuditRecordRow),
+      };
+    },
+
+    async approveAgentPendingAction(actionId) {
+      await init();
+      const action = await selectPendingAction(actionId);
+      if (action.status !== 'pending') {
+        throw new Error('Agent 操作已处理');
+      }
+      const timestamp = now().toISOString();
+      const batchId = id();
+      const db = await getDb();
+      try {
+        const execution = await executeAgentAction(this, action.payload);
+        const audit = await insertAgentAuditRecord(action, execution, batchId, timestamp);
+        await db.execute(
+          `UPDATE agent_pending_actions
+           SET status = $1, decided_at = $2, audit_batch_id = $3, error = $4
+           WHERE id = $5`,
+          ['approved', timestamp, batchId, null, action.id],
+        );
+        return audit;
+      } catch (error) {
+        const message = readableError(error);
+        await db.execute(
+          `UPDATE agent_pending_actions
+           SET status = $1, decided_at = $2, error = $3
+           WHERE id = $4`,
+          ['failed', timestamp, message, action.id],
+        );
+        throw new Error(message);
+      }
+    },
+
+    async rejectAgentPendingAction(actionId, reason = null) {
+      await init();
+      const action = await selectPendingAction(actionId);
+      if (action.status !== 'pending') {
+        throw new Error('Agent 操作已处理');
+      }
+      const timestamp = now().toISOString();
+      const db = await getDb();
+      await db.execute(
+        `UPDATE agent_pending_actions
+         SET status = $1, decided_at = $2, decision_reason = $3
+         WHERE id = $4`,
+        ['rejected', timestamp, reason, action.id],
+      );
+      return {
+        ...action,
+        status: 'rejected',
+        decidedAt: timestamp,
+        decisionReason: reason,
+      };
+    },
+
+    async undoAgentAuditBatch(batchId) {
+      await init();
+      const db = await getDb();
+      const rows = await db.select<AgentAuditRecordRow>(
+        `SELECT * FROM agent_audit_records
+         WHERE batch_id = $1
+         ORDER BY created_at DESC`,
+        [batchId],
+      );
+      const audits = rows.map(mapAgentAuditRecordRow);
+      if (audits.length === 0) {
+        throw new Error('Agent 审计批次不存在');
+      }
+      const timestamp = now().toISOString();
+      const results: AgentAuditRecord[] = [];
+      for (const audit of audits) {
+        if (audit.status !== 'applied') {
+          results.push(audit);
+          continue;
+        }
+        if (!audit.reversible) {
+          await db.execute(
+            `UPDATE agent_audit_records
+             SET status = $1, error = $2
+             WHERE id = $3`,
+            ['undo_failed', '该操作不可撤销', audit.id],
+          );
+          results.push({ ...audit, status: 'undo_failed', error: '该操作不可撤销' });
+          continue;
+        }
+        try {
+          await undoAgentAction(this, auditActionPayload(audit), audit.before, audit.after);
+          await db.execute(
+            `UPDATE agent_audit_records
+             SET status = $1, undone_at = $2, error = $3
+             WHERE id = $4`,
+            ['undone', timestamp, null, audit.id],
+          );
+          results.push({ ...audit, status: 'undone', undoneAt: timestamp, error: null });
+        } catch (error) {
+          const message = readableError(error);
+          await db.execute(
+            `UPDATE agent_audit_records
+             SET status = $1, error = $2
+             WHERE id = $3`,
+            ['undo_failed', message, audit.id],
+          );
+          results.push({ ...audit, status: 'undo_failed', error: message });
+        }
+      }
+      return results;
+    },
   };
 }
 
@@ -990,4 +1490,85 @@ function createId() {
     return globalThis.crypto.randomUUID();
   }
   return `task-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+function mapAgentPendingActionRow(row: AgentPendingActionRow): AgentPendingAction {
+  return {
+    id: row.id,
+    actionType: row.action_type,
+    status: row.status,
+    summary: row.summary,
+    risk: row.risk,
+    source: parseJson(row.source, fallbackSource()),
+    payload: parseJson(row.payload, { type: row.action_type } as AgentToolInput),
+    dryRun: parseJson(row.dry_run, {
+      reversible: false,
+      requiresConfirmation: true,
+      affectedTaskIds: [],
+      impact: '缺少 dry-run 结果',
+    }),
+    createdAt: row.created_at,
+    decidedAt: row.decided_at,
+    decisionReason: row.decision_reason,
+    auditBatchId: row.audit_batch_id,
+    error: row.error,
+  };
+}
+
+function mapAgentAuditRecordRow(row: AgentAuditRecordRow): AgentAuditRecord {
+  return {
+    id: row.id,
+    batchId: row.batch_id,
+    actionId: row.action_id,
+    actionType: row.action_type,
+    payload: parseJson(row.action_payload ?? '{}', { type: row.action_type } as AgentToolInput),
+    summary: row.summary,
+    status: row.status,
+    reversible: row.reversible === true || row.reversible === 1,
+    before: parseJson(row.before_payload, null),
+    after: parseJson(row.after_payload, null),
+    source: parseJson(row.source, fallbackSource()),
+    error: row.error,
+    createdAt: row.created_at,
+    undoneAt: row.undone_at,
+  };
+}
+
+function auditActionPayload(audit: AgentAuditRecord): AgentToolInput {
+  return audit.payload;
+}
+
+function parseJson<T>(value: string, fallback: T): T {
+  try {
+    return JSON.parse(value) as T;
+  } catch {
+    return fallback;
+  }
+}
+
+function fallbackSource(): AgentActionSource {
+  return {
+    trigger: 'manual_scan',
+    envelopeId: 'unknown',
+    summary: '未知来源',
+    taskIds: [],
+  };
+}
+
+function readableError(error: unknown) {
+  return String((error as Error)?.message ?? error);
+}
+
+function shiftIso(value: string | null, recurrence: NonNullable<Task['recurrence']>) {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  if (recurrence.unit === 'day') {
+    date.setDate(date.getDate() + recurrence.interval);
+  } else if (recurrence.unit === 'week') {
+    date.setDate(date.getDate() + recurrence.interval * 7);
+  } else {
+    date.setMonth(date.getMonth() + recurrence.interval);
+  }
+  return date.toISOString();
 }

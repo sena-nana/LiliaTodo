@@ -278,17 +278,19 @@ describe("桌面端 MVP 页面", () => {
         name: "完成 Inbox task",
       }),
     );
+    await waitFor(() => expect(repository.setStatus).toHaveBeenCalledWith("inbox-1", "completed"));
+    const refreshedRow = (await screen.findByText("Inbox task")).closest("li");
+    expect(refreshedRow).not.toBeNull();
     await fireEvent.click(
-      within(row as HTMLElement).getByRole("button", {
+      within(refreshedRow as HTMLElement).getByRole("button", {
         name: "删除 Inbox task",
       }),
     );
 
-    expect(repository.setStatus).toHaveBeenCalledWith("inbox-1", "completed");
     expect(repository.deleteTask).toHaveBeenCalledWith("inbox-1");
   });
 
-  it("收件箱任务支持上下移动", async () => {
+  it("收件箱任务支持拖拽重排", async () => {
     const repository = fakeRepository({
       inbox: [
         task({ id: "task-1", title: "任务一", childOrder: 0 }),
@@ -298,16 +300,106 @@ describe("桌面端 MVP 页面", () => {
 
     renderWithRepository(Inbox, repository);
 
-    const item = await screen.findByText("任务一");
-    const row = item.closest("li");
-    expect(row).not.toBeNull();
+    const firstRow = (await screen.findByText("任务一")).closest("li");
+    const secondRow = screen.getByText("任务二").closest("li");
+    expect(firstRow).not.toBeNull();
+    expect(secondRow).not.toBeNull();
 
-    await fireEvent.click(
-      within(row as HTMLElement).getByRole("button", { name: "下移 任务一" }),
+    await fireEvent.dragStart(firstRow as HTMLElement);
+    await fireEvent.drop(secondRow as HTMLElement);
+
+    await waitFor(() =>
+      expect(repository.reorderTasks).toHaveBeenCalledWith({
+        taskIds: ["task-2", "task-1"],
+        listId: "inbox",
+        categoryId: null,
+      }),
     );
+  });
 
-    await waitFor(() => expect(repository.updateTask).toHaveBeenCalledWith("task-2", { childOrder: 0 }));
-    expect(repository.updateTask).toHaveBeenCalledWith("task-1", { childOrder: 1 });
+  it("收件箱批量工具条支持改期", async () => {
+    const repository = fakeRepository({
+      inbox: [
+        task({ id: "task-1", title: "任务一" }),
+        task({ id: "task-2", title: "任务二" }),
+      ],
+    });
+
+    renderWithRepository(Inbox, repository);
+
+    await fireEvent.click(await screen.findByLabelText("选择 任务一"));
+    await fireEvent.click(screen.getByLabelText("选择 任务二"));
+    await fireEvent.update(screen.getByLabelText("批量截止时间"), "2026-06-12T09:30");
+    await fireEvent.click(screen.getByRole("button", { name: /改期/ }));
+
+    await waitFor(() =>
+      expect(repository.batchUpdateTasks).toHaveBeenCalledWith({
+        type: "reschedule",
+        taskIds: ["task-1", "task-2"],
+        dueAt: expect.any(String),
+      }),
+    );
+  });
+
+  it("搜索页提交完整筛选条件", async () => {
+    const repository = fakeRepository({
+      lists: [
+        taskListFixture(),
+        taskListFixture({ id: "project", name: "项目", order: 1 }),
+      ],
+      categories: {
+        project: [taskCategoryFixture({ id: "category-1", listId: "project", name: "工作" })],
+      },
+      searchResults: [task({ id: "search-1", title: "搜索结果", listId: "project", categoryId: "category-1" })],
+    });
+
+    await renderAppAt("/search", repository);
+
+    await screen.findByText("搜索结果");
+    await fireEvent.update(screen.getByLabelText("搜索任务"), "报告");
+    await fireEvent.update(screen.getByLabelText("筛选状态"), "completed");
+    await fireEvent.update(screen.getByLabelText("筛选标签"), "客户, 复盘");
+    await fireEvent.update(screen.getByLabelText("筛选清单"), "project");
+    await fireEvent.update(screen.getByLabelText("筛选分类"), "category-1");
+    await fireEvent.update(screen.getByLabelText("筛选优先级"), "2");
+    await fireEvent.update(screen.getByLabelText("筛选开始时间"), "2026-06-01T00:00");
+    await fireEvent.update(screen.getByLabelText("筛选结束时间"), "2026-06-30T23:59");
+    await fireEvent.update(screen.getByLabelText("筛选提醒状态"), "due");
+    await fireEvent.click(screen.getByLabelText("含最近删除"));
+
+    await waitFor(() =>
+      expect(repository.searchTasks).toHaveBeenLastCalledWith(expect.objectContaining({
+        text: "报告",
+        tags: ["客户", "复盘"],
+        listId: "project",
+        categoryId: "category-1",
+        statuses: ["completed"],
+        priorities: [2],
+        timeFrom: expect.any(String),
+        timeTo: expect.any(String),
+        reminderStatus: "due",
+        includeDeleted: true,
+      })),
+    );
+  });
+
+  it("最近删除页支持恢复和彻底删除", async () => {
+    const repository = fakeRepository({
+      statusTasks: {
+        deleted: [
+          task({ id: "deleted-1", title: "可恢复任务", deletedAt: "2026-06-01T00:00:00.000Z" }),
+          task({ id: "deleted-2", title: "可清理任务", deletedAt: "2026-06-02T00:00:00.000Z" }),
+        ],
+      },
+    });
+
+    await renderAppAt("/tasks/deleted", repository);
+
+    await fireEvent.click(await screen.findByRole("button", { name: "恢复 可恢复任务" }));
+    await fireEvent.click(await screen.findByRole("button", { name: "彻底删除 可清理任务" }));
+
+    await waitFor(() => expect(repository.restoreTask).toHaveBeenCalledWith("deleted-1"));
+    expect(repository.purgeTask).toHaveBeenCalledWith("deleted-2");
   });
 
   it("编辑收件箱任务标题、备注和优先级", async () => {
@@ -507,11 +599,88 @@ describe("桌面端 MVP 页面", () => {
   it("Agent 收件箱页面显示未配置 backend 时的禁用状态", async () => {
     renderWithRepository(AgentInbox, fakeRepository());
 
-    expect(await screen.findByText("Agent Inbox")).toBeInTheDocument();
+    expect(await screen.findByText("Agent 收件箱")).toBeInTheDocument();
     expect(screen.getByText("尚未配置 backend，Agent 已禁用。", { selector: "p" })).toBeInTheDocument();
     expect(screen.getByText("已禁用")).toBeInTheDocument();
-    expect(screen.getByText("未配置")).toBeInTheDocument();
-    expect(screen.getByText("runtime.disabled")).toBeInTheDocument();
+    expect(screen.getByText("backend 未配置")).toBeInTheDocument();
+    expect(screen.getByText("#2 runtime.disabled")).toBeInTheDocument();
+
+    await fireEvent.click(screen.getByRole("button", { name: "触发扫描" }));
+    expect(await screen.findByText(/缺少 Codex CLI 或无法启动/)).toBeInTheDocument();
+  });
+
+  it("Agent 收件箱支持确认、拒绝和撤销操作", async () => {
+    const repository = fakeRepository({
+      agentInbox: {
+        pendingActions: [
+          {
+            id: "agent-action-1",
+            actionType: "task.update",
+            status: "pending",
+            summary: "更新任务 task-1：优先级",
+            risk: "medium",
+            source: {
+              trigger: "manual_scan",
+              envelopeId: "envelope-1",
+              summary: "手动扫描",
+              taskIds: ["task-1"],
+            },
+            payload: { type: "task.update", taskId: "task-1", patch: { priority: 2 } },
+            dryRun: {
+              reversible: true,
+              requiresConfirmation: true,
+              affectedTaskIds: ["task-1"],
+              impact: "将影响 1 个任务，确认后写入本地任务库。",
+            },
+            createdAt: "2026-05-16T12:00:00.000Z",
+            decidedAt: null,
+            decisionReason: null,
+            auditBatchId: null,
+            error: null,
+          },
+        ],
+        audits: [
+          {
+            id: "audit-1",
+            batchId: "batch-1",
+            actionId: "agent-action-old",
+            actionType: "task.update",
+            payload: { type: "task.update", taskId: "task-1", patch: { priority: 2 } },
+            summary: "更新任务 task-1：优先级",
+            status: "applied",
+            reversible: true,
+            before: null,
+            after: null,
+            source: {
+              trigger: "manual_scan",
+              envelopeId: "envelope-old",
+              summary: "手动扫描",
+              taskIds: ["task-1"],
+            },
+            error: null,
+            createdAt: "2026-05-16T12:01:00.000Z",
+            undoneAt: null,
+          },
+        ],
+      },
+    });
+
+    const firstRender = renderWithRepository(AgentInbox, repository);
+    await screen.findAllByText("更新任务 task-1：优先级");
+    await fireEvent.click(screen.getByRole("button", { name: "确认" }));
+    await waitFor(() => expect(repository.approveAgentPendingAction).toHaveBeenCalledWith("agent-action-1"));
+    firstRender.unmount();
+
+    const secondRender = renderWithRepository(AgentInbox, repository);
+    await screen.findAllByText("更新任务 task-1：优先级");
+    await fireEvent.click(screen.getByRole("button", { name: "拒绝" }));
+    await waitFor(() => expect(repository.rejectAgentPendingAction).toHaveBeenCalledWith("agent-action-1", "用户拒绝"));
+    secondRender.unmount();
+
+    renderWithRepository(AgentInbox, repository);
+    await screen.findAllByText("更新任务 task-1：优先级");
+    await fireEvent.click(screen.getByRole("button", { name: "撤销" }));
+    await waitFor(() => expect(repository.undoAgentAuditBatch).toHaveBeenCalledWith("batch-1"));
   });
 
   it("使用重试恢复日历加载错误", async () => {
@@ -904,7 +1073,7 @@ describe("桌面端 MVP 页面", () => {
     }
   });
 
-  it("清单页面不常驻显示分类管理入口", async () => {
+  it("清单页面提供分类管理入口并可创建分类", async () => {
     const project = taskListFixture({ id: "list-1", name: "项目", order: 1 });
     const repository = fakeRepository({
       lists: [taskListFixture(), project],
@@ -914,8 +1083,13 @@ describe("桌面端 MVP 页面", () => {
     await renderAppAt("/lists/list-1", repository);
 
     expect(await screen.findByRole("button", { name: /工作\s*0/ })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "新增分类" })).toBeNull();
-    expect(screen.queryByLabelText("分类名称")).toBeNull();
+    await fireEvent.click(screen.getByRole("button", { name: "新增分类" }));
+    await fireEvent.update(screen.getByLabelText("分类名称"), "生活");
+    await fireEvent.click(screen.getByRole("button", { name: "保存分类" }));
+
+    await waitFor(() =>
+      expect(repository.createCategory).toHaveBeenCalledWith({ listId: "list-1", name: "生活" }),
+    );
   });
 
   it("侧边栏支持重命名清单并广播清单刷新事件", async () => {
@@ -958,6 +1132,28 @@ describe("桌面端 MVP 页面", () => {
     await renderAppAt("/calendar", repository);
 
     await fireEvent.click(await screen.findByRole("button", { name: "下移清单 项目一" }));
+
+    await waitFor(() => expect(repository.updateList).toHaveBeenCalledWith("list-2", { order: 0 }));
+    expect(repository.updateList).toHaveBeenCalledWith("list-1", { order: 1 });
+  });
+
+  it("侧边栏支持拖拽排序清单", async () => {
+    const inbox = taskListFixture();
+    const first = taskListFixture({ id: "list-1", name: "项目一", order: 0 });
+    const second = taskListFixture({ id: "list-2", name: "项目二", order: 1 });
+    const repository = fakeRepository({
+      lists: [inbox, first, second],
+    });
+
+    await renderAppAt("/calendar", repository);
+
+    const firstRow = (await screen.findByRole("link", { name: "项目一" })).closest(".sb-tree__row");
+    const secondRow = screen.getByRole("link", { name: "项目二" }).closest(".sb-tree__row");
+    expect(firstRow).not.toBeNull();
+    expect(secondRow).not.toBeNull();
+
+    await fireEvent.dragStart(firstRow as HTMLElement);
+    await fireEvent.drop(secondRow as HTMLElement);
 
     await waitFor(() => expect(repository.updateList).toHaveBeenCalledWith("list-2", { order: 0 }));
     expect(repository.updateList).toHaveBeenCalledWith("list-1", { order: 1 });

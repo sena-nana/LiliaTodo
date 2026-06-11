@@ -18,6 +18,8 @@ const BG_DARK: Color = Color(0x18, 0x18, 0x18, 0xFF);
 
 mod window_state;
 mod agent_runtime_state;
+mod agent_codex_runner;
+mod notification_scheduler;
 
 #[derive(Debug, PartialEq, Eq)]
 enum WidgetTrayCommand {
@@ -179,6 +181,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_sql::Builder::default().build())
         .plugin(tauri_plugin_http::init())
+        .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_store::Builder::default().build())
         .on_window_event(|window, event| {
             if window.label() == MAIN_WINDOW_LABEL
@@ -205,6 +208,7 @@ pub fn run() {
         })
         .setup(|app| {
             agent_runtime_state::init(app.handle());
+            notification_scheduler::start(app.handle().clone());
             build_tray(app.handle())?;
             if let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) {
                 if let Some(state) = window_state::load_main_window_state(app.handle()) {
@@ -225,7 +229,10 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             greet,
             agent_runtime_state::agent_runtime_get_status,
-            agent_runtime_state::agent_runtime_list_events
+            agent_runtime_state::agent_runtime_list_events,
+            agent_runtime_state::agent_runtime_start,
+            agent_runtime_state::agent_runtime_stop,
+            agent_codex_runner::agent_runtime_trigger_scan
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

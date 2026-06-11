@@ -1,12 +1,15 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
-import { Check, Loader2, Plus, RefreshCw } from "lucide-vue-next";
+import { Check, Plus } from "lucide-vue-next";
 import { useTaskRepository } from "../data/TaskRepositoryContext";
 import { useTaskDetailDrawer } from "../composables/useTaskDetailDrawer";
-import type { Task, TodayTaskGroups } from "../domain/tasks";
+import { useGlobalShortcuts } from "../composables/useGlobalShortcuts";
+import type { TodayTaskGroups } from "../domain/tasks";
 import { taskHasDueReminder } from "../domain/tasks";
 import { buildEditableContextMenuItems, useContextMenu } from "../components/contextMenu";
 import { AsyncTaskDetailDrawer } from "../components/AsyncTaskDetailDrawer";
+import PageStateBlock from "../components/PageStateBlock.vue";
+import { formatDisplayError } from "../utils/errors";
 
 const contextMenu = useContextMenu();
 function onEditableContextMenu(event: MouseEvent) {
@@ -20,6 +23,7 @@ const groups = ref<TodayTaskGroups>({
   completedToday: [],
 });
 const title = ref("");
+const quickAddInput = ref<HTMLInputElement | null>(null);
 const destination = ref<"today" | "inbox">("today");
 const dueAtInput = ref("");
 const estimateInput = ref("");
@@ -42,6 +46,7 @@ const {
   saveTask,
   completeTask,
   deleteTask,
+  reorderChildTasks,
   closeTask,
 } = useTaskDetailDrawer({
   repository,
@@ -51,6 +56,22 @@ const {
 
 onMounted(() => {
   void load();
+});
+
+useGlobalShortcuts({
+  n: () => quickAddInput.value?.focus(),
+  o: () => {
+    const task = selectedTask.value ?? allVisibleTasks.value[0];
+    if (task) void openTask(task);
+  },
+  x: () => {
+    const task = selectedTask.value ?? allVisibleTasks.value[0];
+    if (task) void completeTask(task);
+  },
+  delete: () => {
+    const task = selectedTask.value ?? allVisibleTasks.value[0];
+    if (task) void deleteTask(task);
+  },
 });
 
 async function load() {
@@ -115,9 +136,6 @@ function formatDateTime(value: string | null) {
   }).format(new Date(value));
 }
 
-function displayError(value: string) {
-  return value.replace(/^Error:\s*/, "错误：");
-}
 </script>
 
 <template>
@@ -126,6 +144,7 @@ function displayError(value: string) {
       <label class="sr-only" for="today-quick-add">快速添加任务</label>
       <div class="row">
         <input
+          ref="quickAddInput"
           id="today-quick-add"
           v-model="title"
           placeholder="添加今日任务"
@@ -162,17 +181,8 @@ function displayError(value: string) {
       </div>
     </form>
 
-    <div v-if="loading" class="card state">
-      <Loader2 class="spin" :size="18" aria-hidden="true" />
-      <p>正在加载本地任务...</p>
-    </div>
-    <div v-if="error" class="card state state--error">
-      <p>{{ displayError(error) }}</p>
-      <button type="button" @click="load">
-        <RefreshCw :size="16" aria-hidden="true" />
-        重试
-      </button>
-    </div>
+    <PageStateBlock v-if="loading" kind="loading" title="正在加载本地任务..." />
+    <PageStateBlock v-else-if="error" kind="error" :title="formatDisplayError(error)" @action="load" />
 
     <div v-if="!loading && !error" class="task-grid">
       <section class="card task-section">
@@ -243,6 +253,7 @@ function displayError(value: string) {
       @complete="completeTask"
       @delete="deleteTask"
       @open-task="openTask"
+      @reorder-children="reorderChildTasks"
     />
   </section>
 </template>

@@ -26,6 +26,7 @@
     "store:allow-delete",
     "store:allow-clear",
     "store:allow-has",
+    "notification:default",
     {
       "identifier": "http:default",
       "allow": [

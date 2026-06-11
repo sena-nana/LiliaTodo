@@ -79,6 +79,17 @@ export function useTaskDetailDrawer(options: UseTaskDetailDrawerOptions) {
     }
   }
 
+  async function reorderChildTasks(parentId: string, taskIds: string[]) {
+    drawerError.value = null;
+    try {
+      const reordered = await options.repository.reorderTasks({ parentId, taskIds });
+      childTasks.value = reordered;
+      await options.reload();
+    } catch (e) {
+      drawerError.value = String(e);
+    }
+  }
+
   function closeTask() {
     selectedTask.value = null;
   }
@@ -95,6 +106,7 @@ export function useTaskDetailDrawer(options: UseTaskDetailDrawerOptions) {
     saveTask,
     completeTask,
     deleteTask,
+    reorderChildTasks,
     closeTask,
     loadLists,
   };

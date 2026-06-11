@@ -1,26 +1,40 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRoute } from "vue-router";
-import { ChevronDown, ChevronRight, Circle, Loader2, Plus, RefreshCw } from "lucide-vue-next";
+import { Check, ChevronDown, ChevronRight, Circle, Pencil, Plus, Trash2, X } from "lucide-vue-next";
 import { useTaskRepository } from "../data/TaskRepositoryContext";
 import { onTaskListsChanged } from "../data/taskListEvents";
 import { useLatestAsyncRun } from "../composables/useLatestAsyncRun";
 import { useTaskDetailDrawer } from "../composables/useTaskDetailDrawer";
 import { useTaskListActions } from "../composables/useTaskListActions";
+import { useBulkSelection } from "../composables/useBulkSelection";
+import { useGlobalShortcuts } from "../composables/useGlobalShortcuts";
+import { useTaskBulkActions } from "../composables/useTaskBulkActions";
 import { compareByOrder } from "../domain/order";
 import type { Task, TaskCategory } from "../domain/tasks";
 import { taskHasDueReminder } from "../domain/tasks";
+import { formatDisplayError } from "../utils/errors";
 import { AsyncTaskDetailDrawer } from "../components/AsyncTaskDetailDrawer";
+import PageStateBlock from "../components/PageStateBlock.vue";
+import TaskBulkToolbar from "../components/TaskBulkToolbar.vue";
 
 const route = useRoute();
 const repository = useTaskRepository();
 const listId = computed(() => String(route.params.listId ?? "inbox"));
 const tasks = ref<Task[]>([]);
+const quickAddInput = ref<HTMLInputElement | null>(null);
 const loading = ref(true);
 const error = ref<string | null>(null);
 const selectedCategoryId = ref<string | null>(null);
 const collapsedSectionIds = ref<Set<string>>(new Set());
+const creatingCategory = ref(false);
+const newCategoryName = ref("");
+const editingCategoryId = ref<string | null>(null);
+const editingCategoryName = ref("");
+const draggingTaskId = ref<string | null>(null);
+const draggingCategoryId = ref<string | null>(null);
 const loadRuns = useLatestAsyncRun();
+const selection = useBulkSelection();
 const {
   selectedTask,
   childTasks,
@@ -33,6 +47,7 @@ const {
   saveTask,
   completeTask,
   deleteTask: deleteTaskFromDrawer,
+  reorderChildTasks,
   closeTask,
 } = useTaskDetailDrawer({
   repository,
@@ -69,9 +84,39 @@ const selectedSectionName = computed(() => {
   if (selectedCategoryId.value === null) return "未分类";
   return sortedCategories.value.find((category) => category.id === selectedCategoryId.value)?.name ?? "未分类";
 });
+const selectedTasks = computed(() => tasks.value.filter((task) => selection.has(task.id)));
+const { applyBulk } = useTaskBulkActions({
+  repository,
+  selection,
+  reload: load,
+  setError: (value) => {
+    error.value = value;
+  },
+  getTaskIds: () => selectedTasks.value.map((task) => task.id),
+});
 
 onMounted(() => {
   void load();
+});
+
+useGlobalShortcuts({
+  n: () => quickAddInput.value?.focus(),
+  o: () => {
+    const task = selectedTask.value ?? selectedTasks.value[0] ?? tasks.value[0];
+    if (task) void openTaskFromRow(task);
+  },
+  x: () => {
+    const task = selectedTask.value ?? selectedTasks.value[0] ?? tasks.value[0];
+    if (task) void completeTask(task);
+  },
+  delete: () => {
+    if (selection.selectedCount.value > 0) {
+      void bulkDelete();
+      return;
+    }
+    const task = selectedTask.value ?? tasks.value[0];
+    if (task) void deleteTaskFromDrawer(task);
+  },
 });
 
 const stopTaskListEvents = onTaskListsChanged(() => {
@@ -87,6 +132,7 @@ watch(listId, () => {
   newTitle.value = "";
   selectedCategoryId.value = null;
   collapsedSectionIds.value = new Set();
+  selection.clear();
   void load();
 });
 
@@ -139,6 +185,96 @@ function openTaskFromRow(task: Task) {
   void openTask(task);
 }
 
+async function createCategory() {
+  if (!newCategoryName.value.trim()) return;
+  error.value = null;
+  try {
+    const category = await repository.createCategory({ listId: listId.value, name: newCategoryName.value });
+    newCategoryName.value = "";
+    creatingCategory.value = false;
+    selectedCategoryId.value = category.id;
+    await load();
+  } catch (e) {
+    error.value = String(e);
+  }
+}
+
+function beginRenameCategory(category: TaskCategory) {
+  editingCategoryId.value = category.id;
+  editingCategoryName.value = category.name;
+}
+
+async function saveCategory(category: TaskCategory) {
+  if (!editingCategoryName.value.trim()) return;
+  error.value = null;
+  try {
+    await repository.updateCategory(category.id, { name: editingCategoryName.value });
+    editingCategoryId.value = null;
+    await load();
+  } catch (e) {
+    error.value = String(e);
+  }
+}
+
+async function removeCategory(category: TaskCategory) {
+  error.value = null;
+  try {
+    await repository.deleteCategory(category.id);
+    if (selectedCategoryId.value === category.id) selectedCategoryId.value = null;
+    await load();
+  } catch (e) {
+    error.value = String(e);
+  }
+}
+
+async function bulkComplete() {
+  await applyBulk({ type: "complete" });
+}
+
+async function bulkDelete() {
+  await applyBulk({ type: "delete" });
+}
+
+function onTaskDragStart(task: Task) {
+  draggingTaskId.value = task.id;
+}
+
+async function onTaskDrop(target: Task, section: { category: TaskCategory | null; tasks: Task[] }) {
+  const sourceId = draggingTaskId.value;
+  draggingTaskId.value = null;
+  if (!sourceId || sourceId === target.id) return;
+  const ids = section.tasks.map((task) => task.id);
+  const sourceIndex = ids.indexOf(sourceId);
+  const targetIndex = ids.indexOf(target.id);
+  if (sourceIndex < 0 || targetIndex < 0) return;
+  ids.splice(sourceIndex, 1);
+  ids.splice(targetIndex, 0, sourceId);
+  await repository.reorderTasks({
+    taskIds: ids,
+    listId: listId.value,
+    categoryId: section.category?.id ?? null,
+  });
+  await load();
+}
+
+function onCategoryDragStart(category: TaskCategory | null) {
+  draggingCategoryId.value = category?.id ?? null;
+}
+
+async function onCategoryDrop(target: TaskCategory | null) {
+  const sourceId = draggingCategoryId.value;
+  draggingCategoryId.value = null;
+  if (!sourceId || !target || sourceId === target.id) return;
+  const ids = sortedCategories.value.map((category) => category.id);
+  const sourceIndex = ids.indexOf(sourceId);
+  const targetIndex = ids.indexOf(target.id);
+  if (sourceIndex < 0 || targetIndex < 0) return;
+  ids.splice(sourceIndex, 1);
+  ids.splice(targetIndex, 0, sourceId);
+  await Promise.all(ids.map((id, order) => repository.updateCategory(id, { order })));
+  await load();
+}
+
 function formatDateTime(value: string | null) {
   if (!value) return "";
   const date = new Date(value);
@@ -156,9 +292,6 @@ function checklistProgress(task: Task) {
   return `${done}/${task.checklist.length}`;
 }
 
-function displayError(value: string) {
-  return value.replace(/^Error:\s*/, "错误：");
-}
 </script>
 
 <template>
@@ -166,7 +299,7 @@ function displayError(value: string) {
     <form class="quick-add" @submit.prevent="createTask">
       <label class="sr-only" for="list-quick-add">添加清单任务</label>
       <div class="row">
-        <input id="list-quick-add" v-model="newTitle" :placeholder="`添加到${listName} · ${selectedSectionName}`" />
+        <input ref="quickAddInput" id="list-quick-add" v-model="newTitle" :placeholder="`添加到${listName} · ${selectedSectionName}`" />
         <button class="primary" type="submit" :disabled="quickAddSaving || !newTitle.trim()">
           <Plus :size="16" aria-hidden="true" />
           添加任务
@@ -174,33 +307,92 @@ function displayError(value: string) {
       </div>
     </form>
 
-    <div v-if="loading" class="card state">
-      <Loader2 class="spin" :size="18" aria-hidden="true" />
-      <p>正在加载清单...</p>
-    </div>
-    <div v-else-if="error" class="card state state--error">
-      <p>{{ displayError(error) }}</p>
-      <button type="button" @click="load">
-        <RefreshCw :size="16" aria-hidden="true" />
-        重试
-      </button>
-    </div>
+    <section class="list-toolbar">
+      <div class="list-toolbar__left">
+        <strong>{{ listName }}</strong>
+        <span>{{ tasks.length }} 条任务</span>
+        <span v-if="selection.selectedCount.value > 0">已选 {{ selection.selectedCount.value }} 条</span>
+      </div>
+      <div class="list-toolbar__right">
+        <button type="button" @click="creatingCategory = true">
+          <Plus :size="16" aria-hidden="true" />
+          新增分类
+        </button>
+        <button type="button" :disabled="selection.selectedCount.value === 0" @click="bulkComplete">批量完成</button>
+        <button type="button" :disabled="selection.selectedCount.value === 0" @click="bulkDelete">批量删除</button>
+      </div>
+    </section>
+    <TaskBulkToolbar
+      v-if="selection.selectedCount.value > 0"
+      :selected-count="selection.selectedCount.value"
+      :lists="lists"
+      :categories="categories"
+      :current-list-id="listId"
+      @apply="applyBulk"
+      @clear="selection.clear"
+    />
+
+    <form v-if="creatingCategory" class="category-form" @submit.prevent="createCategory">
+      <input v-model="newCategoryName" aria-label="分类名称" placeholder="分类名称" />
+      <button type="submit" class="icon-button" aria-label="保存分类"><Check :size="16" aria-hidden="true" /></button>
+      <button type="button" class="icon-button" aria-label="取消新增分类" @click="creatingCategory = false"><X :size="16" aria-hidden="true" /></button>
+    </form>
+
+    <PageStateBlock v-if="loading" kind="loading" title="正在加载清单..." />
+    <PageStateBlock v-else-if="error" kind="error" :title="formatDisplayError(error)" @action="load" />
     <section v-else-if="tasks.length > 0 || categories.length > 0" class="task-sections">
       <div v-for="section in categorySections" :key="section.id" class="task-section">
         <button
           type="button"
           class="task-section__header"
+          :draggable="Boolean(section.category)"
           :class="{ 'is-selected': selectedCategoryId === (section.category?.id ?? null) }"
           :aria-expanded="!isSectionCollapsed(section.id)"
           :aria-controls="`task-section-${section.id}`"
+          @dragstart="onCategoryDragStart(section.category)"
+          @dragover.prevent
+          @drop="onCategoryDrop(section.category)"
           @click="toggleSection(section)"
         >
           <span class="task-section__title">
             <ChevronRight v-if="isSectionCollapsed(section.id)" :size="16" aria-hidden="true" />
             <ChevronDown v-else :size="16" aria-hidden="true" />
-            <span>{{ section.name }}</span>
+            <template v-if="editingCategoryId === section.category?.id">
+              <input v-model="editingCategoryName" :aria-label="`重命名分类 ${section.name}`" @click.stop />
+            </template>
+            <span v-else>{{ section.name }}</span>
           </span>
-          <span class="task-section__count">{{ section.tasks.length }}</span>
+          <span class="task-section__tools" @click.stop>
+            <span class="task-section__count">{{ section.tasks.length }}</span>
+            <template v-if="section.category">
+              <button
+                v-if="editingCategoryId === section.category.id"
+                type="button"
+                class="icon-button"
+                :aria-label="`保存分类 ${section.name}`"
+                @click="saveCategory(section.category)"
+              >
+                <Check :size="14" aria-hidden="true" />
+              </button>
+              <button
+                v-else
+                type="button"
+                class="icon-button"
+                :aria-label="`重命名分类 ${section.name}`"
+                @click="beginRenameCategory(section.category)"
+              >
+                <Pencil :size="14" aria-hidden="true" />
+              </button>
+              <button
+                type="button"
+                class="icon-button icon-button--danger"
+                :aria-label="`删除分类 ${section.name}`"
+                @click="removeCategory(section.category)"
+              >
+                <Trash2 :size="14" aria-hidden="true" />
+              </button>
+            </template>
+          </span>
         </button>
         <ul
           v-if="!isSectionCollapsed(section.id)"
@@ -211,7 +403,19 @@ function displayError(value: string) {
             v-for="task in section.tasks"
             :key="task.id"
             :class="['task-row', { 'is-selected': selectedTask?.id === task.id }]"
+            draggable="true"
+            @dragstart="onTaskDragStart(task)"
+            @dragover.prevent
+            @drop="onTaskDrop(task, section)"
           >
+            <label class="task-row__select">
+              <input
+                type="checkbox"
+                :checked="selection.has(task.id)"
+                :aria-label="`选择 ${task.title}`"
+                @change="selection.toggle(task.id, ($event.target as HTMLInputElement).checked)"
+              />
+            </label>
             <button type="button" class="task-row__complete" :aria-label="`完成 ${task.title}`" @click="completeTask(task)">
               <Circle :size="18" aria-hidden="true" />
             </button>
@@ -231,9 +435,7 @@ function displayError(value: string) {
         </ul>
       </div>
     </section>
-    <div v-else class="card empty">
-      <p>这个清单暂无任务。</p>
-    </div>
+    <PageStateBlock v-else kind="empty" title="这个清单暂无任务。" />
 
     <AsyncTaskDetailDrawer
       v-if="selectedTask"
@@ -249,6 +451,7 @@ function displayError(value: string) {
       @complete="completeTask"
       @delete="deleteTaskFromDrawer"
       @open-task="openTask"
+      @reorder-children="reorderChildTasks"
     />
   </section>
 </template>
@@ -258,6 +461,39 @@ function displayError(value: string) {
   position: sticky;
   top: 0;
   z-index: 2;
+}
+
+.list-toolbar {
+  min-height: 42px;
+  padding: 0 10px;
+  margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-elev);
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.list-toolbar__left,
+.list-toolbar__right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.list-toolbar__left strong {
+  color: var(--text);
+}
+
+.category-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 32px 32px;
+  gap: 6px;
+  margin-bottom: 10px;
 }
 
 .task-sections {
@@ -294,7 +530,8 @@ function displayError(value: string) {
 }
 
 .task-section__title,
-.task-section__count {
+.task-section__count,
+.task-section__tools {
   display: inline-flex;
   align-items: center;
 }
@@ -309,6 +546,15 @@ function displayError(value: string) {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.task-section__title input {
+  height: 26px;
+  min-width: 160px;
+}
+
+.task-section__tools {
+  gap: 4px;
 }
 
 .task-section__count {
@@ -326,10 +572,18 @@ function displayError(value: string) {
 
 .task-row {
   display: grid;
-  grid-template-columns: 34px minmax(0, 1fr);
+  grid-template-columns: 28px 34px minmax(0, 1fr);
   align-items: start;
   min-height: 46px;
   border-radius: 6px;
+}
+
+.task-row__select {
+  width: 28px;
+  height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .task-row:hover,

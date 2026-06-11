@@ -1,21 +1,41 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent } from "vue";
-import { RouterView } from "vue-router";
+import { computed, defineAsyncComponent, onMounted, onUnmounted } from "vue";
+import { RouterView, useRouter } from "vue-router";
 import { APP_TITLE, SETTINGS_TABS, normalizeSettingsTab } from "../config/appShell";
 import { useRouteReturnTarget } from "../composables/useRouteReturnTarget";
 import { useShellSidebar } from "../composables/useShellSidebar";
+import { useGlobalShortcuts } from "../composables/useGlobalShortcuts";
+import { OPEN_TASK_EVENT } from "../notifications";
 import TitleBar from "../components/TitleBar.vue";
 import "../styles/shell.css";
 
 const SecondaryPanel = defineAsyncComponent(() => import("./SecondaryPanel.vue"));
 const SettingsSidebar = defineAsyncComponent(() => import("./SettingsSidebar.vue"));
 
+const router = useRouter();
 const { route, returnTo } = useRouteReturnTarget("/today");
 const sidebarLocked = computed(() => route.meta.lockSidebar === true);
 const sidebarVariant = computed(() => route.meta.sidebar ?? "main");
 const isSettingsMode = computed(() => sidebarVariant.value === "settings");
 const activeSettingsTab = computed(() => normalizeSettingsTab(route.query.tab));
 const sidebar = useShellSidebar(sidebarLocked);
+
+useGlobalShortcuts({
+  "mod+k": () => void router.push("/search"),
+  "mod+g": () => void router.push("/today"),
+  "mod+i": () => void router.push("/inbox"),
+  "mod+a": () => void router.push("/agent-inbox"),
+});
+
+function onOpenTask(event: Event) {
+  const taskId = (event as CustomEvent<{ taskId?: string }>).detail?.taskId;
+  if (taskId) {
+    void router.push({ path: "/search", query: { taskId } });
+  }
+}
+
+onMounted(() => window.addEventListener(OPEN_TASK_EVENT, onOpenTask));
+onUnmounted(() => window.removeEventListener(OPEN_TASK_EVENT, onOpenTask));
 </script>
 
 <template>

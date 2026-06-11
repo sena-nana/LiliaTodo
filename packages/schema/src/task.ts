@@ -1,6 +1,13 @@
 export type TaskStatusDto = 'active' | 'completed' | 'archived';
 export type TaskResourceTypeDto = 'person' | 'tool' | 'space' | 'budget' | 'material' | 'other';
 export type TaskReminderStatusDto = 'pending' | 'fired' | 'dismissed';
+export type TaskRecurrenceUnitDto = 'day' | 'week' | 'month';
+
+export interface TaskRecurrenceDto {
+  enabled: boolean;
+  unit: TaskRecurrenceUnitDto;
+  interval: number;
+}
 
 export interface TaskResourceDto {
   id: string;
@@ -61,6 +68,9 @@ export interface TaskDto {
   tags: string[];
   listId: string;
   categoryId: string | null;
+  recurrence: TaskRecurrenceDto | null;
+  deletedAt: string | null;
+  lastReminderNotifiedAt: string | null;
   createdAt: string;
   updatedAt: string;
   completedAt: string | null;

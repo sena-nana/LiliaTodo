@@ -15,8 +15,8 @@ export const SYNC_STATE_ID = "default";
 export const INSERT_TASK_SQL = `INSERT INTO tasks (
   id, title, notes, status, priority, start_at, due_at, estimate_min,
   resources, reminders, checklist, parent_id, child_order, tags, list_id,
-  category_id, created_at, updated_at, completed_at
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)`;
+  category_id, recurrence, deleted_at, last_reminder_notified_at, created_at, updated_at, completed_at
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)`;
 
 export const INSERT_TASK_LIST_SQL = `INSERT INTO task_lists (
   id, name, color, archived, list_order, created_at, updated_at
@@ -66,6 +66,9 @@ export const SCHEMA = [
     tags TEXT NOT NULL DEFAULT '[]',
     list_id TEXT NOT NULL DEFAULT 'inbox',
     category_id TEXT,
+    recurrence TEXT,
+    deleted_at TEXT,
+    last_reminder_notified_at TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     completed_at TEXT
@@ -106,6 +109,37 @@ export const SCHEMA = [
     updated_at TEXT NOT NULL,
     PRIMARY KEY (entity_type, entity_id)
   )`,
+  `CREATE TABLE IF NOT EXISTS agent_pending_actions (
+    id TEXT PRIMARY KEY,
+    action_type TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('pending', 'approved', 'rejected', 'failed')),
+    summary TEXT NOT NULL,
+    risk TEXT NOT NULL CHECK (risk IN ('low', 'medium', 'high')),
+    source TEXT NOT NULL,
+    payload TEXT NOT NULL,
+    dry_run TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    decided_at TEXT,
+    decision_reason TEXT,
+    audit_batch_id TEXT,
+    error TEXT
+  )`,
+  `CREATE TABLE IF NOT EXISTS agent_audit_records (
+    id TEXT PRIMARY KEY,
+    batch_id TEXT NOT NULL,
+    action_id TEXT NOT NULL,
+    action_type TEXT NOT NULL,
+    action_payload TEXT NOT NULL DEFAULT '{}',
+    summary TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('applied', 'undone', 'undo_failed')),
+    reversible INTEGER NOT NULL CHECK (reversible IN (0, 1)),
+    before_payload TEXT NOT NULL,
+    after_payload TEXT NOT NULL,
+    source TEXT NOT NULL,
+    error TEXT,
+    created_at TEXT NOT NULL,
+    undone_at TEXT
+  )`,
   `INSERT OR IGNORE INTO schema_migrations (version, name, applied_at)
    VALUES (1, 'create_tasks', datetime('now'))`,
   `INSERT OR IGNORE INTO schema_migrations (version, name, applied_at)
@@ -124,6 +158,10 @@ export const SCHEMA = [
    VALUES (8, 'create_task_list_groups', datetime('now'))`,
   `INSERT OR IGNORE INTO schema_migrations (version, name, applied_at)
    VALUES (9, 'create_task_categories', datetime('now'))`,
+  `INSERT OR IGNORE INTO schema_migrations (version, name, applied_at)
+   VALUES (10, 'create_agent_queue_audit', datetime('now'))`,
+  `INSERT OR IGNORE INTO schema_migrations (version, name, applied_at)
+   VALUES (11, 'p1_task_recurrence_delete_notification', datetime('now'))`,
 ];
 
 const TASK_COLUMN_MIGRATIONS = [
@@ -135,6 +173,9 @@ const TASK_COLUMN_MIGRATIONS = [
   `ALTER TABLE tasks ADD COLUMN child_order INTEGER NOT NULL DEFAULT 0 CHECK (child_order >= 0)`,
   `ALTER TABLE tasks ADD COLUMN list_id TEXT NOT NULL DEFAULT 'inbox'`,
   `ALTER TABLE tasks ADD COLUMN category_id TEXT`,
+  `ALTER TABLE tasks ADD COLUMN recurrence TEXT`,
+  `ALTER TABLE tasks ADD COLUMN deleted_at TEXT`,
+  `ALTER TABLE tasks ADD COLUMN last_reminder_notified_at TEXT`,
 ];
 
 const TASK_LIST_COLUMN_MIGRATIONS = [
@@ -143,6 +184,10 @@ const TASK_LIST_COLUMN_MIGRATIONS = [
 
 const CATEGORY_MIGRATIONS = [
   `DROP TABLE IF EXISTS task_list_groups`,
+];
+
+const AGENT_AUDIT_COLUMN_MIGRATIONS = [
+  `ALTER TABLE agent_audit_records ADD COLUMN action_payload TEXT NOT NULL DEFAULT '{}'`,
 ];
 
 export function appendUpdate(
@@ -174,6 +219,9 @@ export function taskParams(task: Task) {
     JSON.stringify(task.tags ?? []),
     task.listId ?? DEFAULT_TASK_LIST_ID,
     task.categoryId ?? null,
+    task.recurrence ? JSON.stringify(task.recurrence) : null,
+    task.deletedAt ?? null,
+    task.lastReminderNotifiedAt ?? null,
     task.createdAt,
     task.updatedAt,
     task.completedAt,
@@ -227,6 +275,9 @@ export async function runTaskMigrations(db: SqlDatabase) {
     await runIgnorableMigration(db, statement);
   }
   for (const statement of CATEGORY_MIGRATIONS) {
+    await runIgnorableMigration(db, statement);
+  }
+  for (const statement of AGENT_AUDIT_COLUMN_MIGRATIONS) {
     await runIgnorableMigration(db, statement);
   }
   await db.execute(`UPDATE tasks SET list_id = 'inbox' WHERE list_id IS NULL OR list_id = ''`);

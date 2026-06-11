@@ -44,6 +44,18 @@ export interface AgentRuntimeEventsSnapshot {
   events: RuntimeEventShape[];
 }
 
+export interface AgentRunnerSuggestion {
+  action_type: string;
+  summary: string;
+  risk: string;
+}
+
+export interface AgentRunnerTriggerResult {
+  status: "disabled" | "ready";
+  diagnostic: string;
+  suggestions: AgentRunnerSuggestion[];
+}
+
 const FALLBACK_AGENT_ID = "local-agent";
 const FALLBACK_DISABLED_REASON = "尚未配置 backend，Agent 已禁用。";
 
@@ -92,4 +104,15 @@ export async function getAgentRuntimeStatus(): Promise<AgentRuntimeStatusSnapsho
 export async function listAgentRuntimeEvents(): Promise<AgentRuntimeEventsSnapshot> {
   if (!runningInTauri()) return browserFallbackEvents;
   return invoke<AgentRuntimeEventsSnapshot>("agent_runtime_list_events");
+}
+
+export async function triggerAgentRuntimeScan(): Promise<AgentRunnerTriggerResult> {
+  if (!runningInTauri()) {
+    return {
+      status: "disabled",
+      diagnostic: "缺少 Codex CLI 或无法启动：当前浏览器预览不运行 Tauri runner。",
+      suggestions: [],
+    };
+  }
+  return invoke<AgentRunnerTriggerResult>("agent_runtime_trigger_scan");
 }
