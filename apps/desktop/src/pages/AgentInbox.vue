@@ -14,10 +14,13 @@ import {
   type AgentRunnerTriggerResult,
 } from "../agentRuntime";
 import { useAgentRuntimeSnapshot } from "../composables/useAgentRuntimeSnapshot";
+import { buildAgentReviewReport, formatReviewMinutes, type AgentReviewReport } from "../agent/reviewReport";
+
 
 const repository = useTaskRepository();
 const runtime = useAgentRuntimeSnapshot();
 const inbox = ref<AgentInboxSnapshot>({ pendingActions: [], audits: [] });
+const reviewReport = ref<AgentReviewReport | null>(null);
 const loading = ref(true);
 const busyId = ref<string | null>(null);
 const error = ref<string | null>(null);
@@ -79,11 +82,14 @@ async function load() {
 
 async function refreshRuntimeBacklog() {
   try {
-    const [, nextInbox] = await Promise.all([
+    const [, nextInbox, activeTasks, completedTasks] = await Promise.all([
       runtime.refresh(),
       repository.getAgentInboxSnapshot(),
+      repository.listActiveTasks(),
+      repository.listTasksByStatus("completed"),
     ]);
     inbox.value = nextInbox;
+    reviewReport.value = buildAgentReviewReport([...activeTasks, ...completedTasks]);
   } catch (e) {
     error.value = String(e);
   }
@@ -209,6 +215,52 @@ function formatDate(value: string | null) {
       <p v-if="runnerResult" class="agent-notice">
         {{ runnerResult.diagnostic }}
       </p>
+
+      <section v-if='reviewReport' class='agent-panel agent-review'>
+        <div class='agent-panel__head'>
+          <h2>复盘报告</h2>
+          <span>{{ reviewReport.weekly.label }}</span>
+        </div>
+        <div class='agent-review__summary'>
+          <span>计划 {{ reviewReport.weekly.plannedCount }} 个</span>
+          <span>完成 {{ reviewReport.weekly.completedCount }} 个</span>
+          <span>完成估时 {{ formatReviewMinutes(reviewReport.weekly.completedEstimateMin) }}</span>
+          <span>延期 {{ reviewReport.weekly.missedCount }} 个</span>
+        </div>
+        <div class='agent-review__columns'>
+          <div>
+            <h3>日复盘</h3>
+            <ol class='agent-review__days'>
+              <li v-for='day in reviewReport.daily' :key='day.date'>
+                <strong>{{ day.label }}</strong>
+                <span>计划 {{ day.plannedCount }} · 完成 {{ day.completedCount }} · 延期 {{ day.delayedCount }}</span>
+              </li>
+            </ol>
+          </div>
+          <div>
+            <h3>延期原因</h3>
+            <ul v-if='reviewReport.delayReasons.length > 0' class='agent-review__list'>
+              <li v-for='reason in reviewReport.delayReasons' :key='reason.id'>
+                <strong>{{ reason.title }} · {{ reason.count }}</strong>
+                <span>{{ reason.detail }}</span>
+              </li>
+            </ul>
+            <p v-else class='agent-review__empty'>没有明显延期原因。</p>
+          </div>
+          <div>
+            <h3>下周建议</h3>
+            <ul class='agent-review__list'>
+              <li v-for='suggestion in reviewReport.nextWeekSuggestions' :key='suggestion.id'>
+                <strong>{{ suggestion.title }}</strong>
+                <span>{{ suggestion.detail }}</span>
+              </li>
+            </ul>
+          </div>
+        </div>
+        <ul class='agent-review__deviation'>
+          <li v-for='item in reviewReport.weekly.deviationItems' :key='item'>{{ item }}</li>
+        </ul>
+      </section>
 
       <section class="agent-grid">
         <div class="agent-panel agent-panel--main">
@@ -516,9 +568,81 @@ function formatDate(value: string | null) {
   max-width: 100%;
 }
 
+.agent-review {
+  margin-bottom: 10px;
+}
+
+.agent-review__summary,
+.agent-review__columns {
+  display: grid;
+  gap: 8px;
+}
+
+.agent-review__summary {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin-bottom: 10px;
+}
+
+.agent-review__summary span {
+  padding: 7px 8px;
+  border: 1px solid var(--border-soft);
+  border-radius: 6px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.agent-review__columns {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.agent-review h3 {
+  margin: 0 0 6px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.agent-review__days,
+.agent-review__list,
+.agent-review__deviation {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.agent-review__days li,
+.agent-review__list li {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 5px 0;
+  border-bottom: 1px solid var(--border-soft);
+  font-size: 12px;
+}
+
+.agent-review__days span,
+.agent-review__list span,
+.agent-review__empty,
+.agent-review__deviation {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.agent-review__empty {
+  margin: 0;
+}
+
+.agent-review__deviation {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
 @media (max-width: 920px) {
   .agent-grid,
-  .agent-grid--bottom {
+  .agent-grid--bottom,
+  .agent-review__summary,
+  .agent-review__columns {
     grid-template-columns: 1fr;
   }
 
