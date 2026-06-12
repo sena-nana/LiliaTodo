@@ -44,6 +44,7 @@ import {
   serializeOps,
 } from "./serialize";
 import {
+  cleanupCoveredOplogChunks,
   writeCompactedSnapshot,
   loadSnapshot,
   pickLatestSnapshot,
@@ -87,6 +88,7 @@ export interface CompactWebdavSnapshotResult {
   readonly entries: readonly SnapshotEntry[];
   readonly cursor: string;
   readonly pulledOpsCount: number;
+  readonly cleanedOplogChunkCount: number;
 }
 
 export async function compactWebdavSnapshot({
@@ -106,11 +108,13 @@ export async function compactWebdavSnapshot({
     ops: pulled.ops,
     cursor: pulled.cursor,
   });
+  const cleaned = await cleanupCoveredOplogChunks(client, layout, written.cursor);
   return {
     meta: written.meta,
     entries: written.entries,
     cursor: written.cursor,
     pulledOpsCount: pulled.ops.length,
+    cleanedOplogChunkCount: cleaned.deletedPaths.length,
   };
 }
 
