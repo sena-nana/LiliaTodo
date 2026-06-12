@@ -1,12 +1,14 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { TaskRepository } from "../src/data/taskRepository";
 import type { HttpFetcher } from "../src/sync/webdav/httpClient";
-import { createWebdavRuntime } from "../src/sync/webdav/runtime";
+import { createSnapshotCompactingRunner, createWebdavRuntime } from "../src/sync/webdav/runtime";
 import {
   createInMemoryWebdavSecretsStore,
   type WebdavSecrets,
   type WebdavSecretsStore,
 } from "../src/sync/webdav/secretsStore";
+import type { WebdavRunOnceResult } from "../src/sync/webdav/taskSyncRunner";
+import type { WebdavClient } from "../src/sync/webdav/types";
 
 const noopFetcher: HttpFetcher = {
   async request() {
@@ -152,3 +154,118 @@ describe("createWebdavRuntime", () => {
     }
   });
 });
+
+describe("createSnapshotCompactingRunner", () => {
+  it("同步成功但 oplog 未达阈值时不 compact", async () => {
+    const compactCalls: unknown[] = [];
+    const runner = createSnapshotCompactingRunner({
+      runner: fixedRunner({ ok: true, report: emptyRunReport("同步完成") }),
+      client: {} as WebdavClient,
+      layout: {} as never,
+      deviceId: "desk-a",
+      threshold: 3,
+      countOplogChunks: async () => ({ chunkCount: 2 }),
+      compactSnapshot: async (options) => {
+        compactCalls.push(options);
+        return compactResult();
+      },
+    });
+
+    await expect(runner.runOnce()).resolves.toEqual({ ok: true, report: emptyRunReport("同步完成") });
+    expect(compactCalls).toEqual([]);
+  });
+
+  it("同步成功且 oplog 达阈值时执行 compact", async () => {
+    const compactCalls: unknown[] = [];
+    const runner = createSnapshotCompactingRunner({
+      runner: fixedRunner({ ok: true, report: emptyRunReport("同步完成") }),
+      client: {} as WebdavClient,
+      layout: { snapshots: "/liliatodo/snapshots" } as never,
+      deviceId: "desk-a",
+      threshold: 3,
+      countOplogChunks: async () => ({ chunkCount: 3 }),
+      compactSnapshot: async (options) => {
+        compactCalls.push(options);
+        return compactResult();
+      },
+    });
+
+    const result = await runner.runOnce();
+
+    expect(result.ok).toBe(true);
+    expect(compactCalls).toHaveLength(1);
+  });
+
+  it("compact 失败不影响本次同步成功结果", async () => {
+    const runner = createSnapshotCompactingRunner({
+      runner: fixedRunner({ ok: true, report: emptyRunReport("同步完成") }),
+      client: {} as WebdavClient,
+      layout: {} as never,
+      deviceId: "desk-a",
+      threshold: 1,
+      countOplogChunks: async () => ({ chunkCount: 1 }),
+      compactSnapshot: async () => {
+        throw new Error("snapshot 写入失败");
+      },
+    });
+
+    await expect(runner.runOnce()).resolves.toEqual({ ok: true, report: emptyRunReport("同步完成") });
+  });
+
+  it("同步失败时不统计 oplog 也不 compact", async () => {
+    const count = vi.fn().mockResolvedValue({ chunkCount: 10 });
+    const compact = vi.fn().mockResolvedValue(compactResult());
+    const runner = createSnapshotCompactingRunner({
+      runner: fixedRunner({ ok: false, error: "远端失败" }),
+      client: {} as WebdavClient,
+      layout: {} as never,
+      deviceId: "desk-a",
+      threshold: 1,
+      countOplogChunks: count,
+      compactSnapshot: compact,
+    });
+
+    await expect(runner.runOnce()).resolves.toEqual({ ok: false, error: "远端失败" });
+    expect(count).not.toHaveBeenCalled();
+    expect(compact).not.toHaveBeenCalled();
+  });
+});
+
+function fixedRunner(result: WebdavRunOnceResult) {
+  return {
+    async runOnce() {
+      return result;
+    },
+  };
+}
+
+function emptyRunReport(message: string) {
+  return {
+    pushedOpsCount: 0,
+    pushedTaskChangeCount: 0,
+    pushedTaskListChangeCount: 0,
+    pushedTaskCategoryChangeCount: 0,
+    markedSyncedCount: 0,
+    markedTaskChangeSyncedCount: 0,
+    markedTaskListChangeSyncedCount: 0,
+    markedTaskCategoryChangeSyncedCount: 0,
+    pulledOpsCount: 0,
+    appliedTaskCount: 0,
+    deletedTaskCount: 0,
+    appliedTaskListCount: 0,
+    deletedTaskListCount: 0,
+    appliedTaskCategoryCount: 0,
+    deletedTaskCategoryCount: 0,
+    serverCursor: "{}",
+    message,
+  };
+}
+
+function compactResult() {
+  return {
+    meta: { timestamp: "202605191230", path: "/liliatodo/snapshots/202605191230.jsonl" },
+    entries: [],
+    cursor: "cursor-after",
+    pulledOpsCount: 0,
+  };
+}

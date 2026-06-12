@@ -12,7 +12,7 @@
 //   - WebdavSyncProvider 骨架，consumed by 上层 SyncRunner
 //
 // 本 sprint 完成最小可运行回路（push 单设备 jsonl chunk、pull 多设备扫日合并）；
-// snapshot / 冲突仲裁 / idle 缓冲 / feature detect 留后续 sprint。
+// snapshot 文件优先用于冷启动恢复；冲突仲裁 / idle 缓冲 / feature detect 留后续 sprint。
 
 import type { Entity } from "../types/entity";
 import type { Op } from "../types/op";
@@ -28,6 +28,7 @@ import {
   createWebdavLayout,
   entityCollectionPath,
   entityPath,
+  formatYyyymmddhhmm,
   formatYyyymmdd,
   oplogChunkPath,
   oplogDayCollectionPath,
@@ -42,6 +43,13 @@ import {
   serializeEntity,
   serializeOps,
 } from "./serialize";
+import {
+  writeCompactedSnapshot,
+  loadSnapshot,
+  pickLatestSnapshot,
+  type SnapshotEntry,
+  type SnapshotMeta,
+} from "./snapshot";
 import type { WebdavClient, WebdavStat } from "./types";
 
 export interface SyncPushResult {
@@ -65,6 +73,45 @@ export interface SyncProvider {
   snapshot(): Promise<SyncSnapshot>;
   pushEntity<T>(entity: Entity<T>): Promise<void>;
   getEntity<T>(entityType: string, entityId: string): Promise<Entity<T> | null>;
+}
+
+export interface CompactWebdavSnapshotOptions {
+  readonly client: WebdavClient;
+  readonly deviceId: string;
+  readonly layout?: WebdavLayout;
+  readonly clock?: () => Date;
+}
+
+export interface CompactWebdavSnapshotResult {
+  readonly meta: SnapshotMeta;
+  readonly entries: readonly SnapshotEntry[];
+  readonly cursor: string;
+  readonly pulledOpsCount: number;
+}
+
+export async function compactWebdavSnapshot({
+  client,
+  deviceId,
+  layout = createWebdavLayout(),
+  clock = () => new Date(),
+}: CompactWebdavSnapshotOptions): Promise<CompactWebdavSnapshotResult> {
+  const provider = createWebdavSyncProvider({ client, deviceId, layout, clock });
+  const base = await provider.snapshot();
+  const pulled = await provider.pull(base.cursor);
+  const written = await writeCompactedSnapshot({
+    client,
+    layout,
+    timestamp: formatYyyymmddhhmm(clock()),
+    baseEntries: base.entities as readonly SnapshotEntry[],
+    ops: pulled.ops,
+    cursor: pulled.cursor,
+  });
+  return {
+    meta: written.meta,
+    entries: written.entries,
+    cursor: written.cursor,
+    pulledOpsCount: pulled.ops.length,
+  };
 }
 
 export interface CreateWebdavSyncProviderOptions {
@@ -160,8 +207,16 @@ export function createWebdavSyncProvider({
     },
 
     async snapshot() {
-      // 本 sprint 暂只把"已存在的 entities 文件"按 entityType 扫一遍读出。
-      // snapshot 合并（plan D：oplog > 1k 触发）放在后续 sprint。
+      const latestSnapshot = await pickLatestSnapshot(client, layout);
+      if (latestSnapshot !== null) {
+        const loaded = await loadSnapshot(client, latestSnapshot);
+        return {
+          entities: [...loaded.entries],
+          cursor: loaded.cursor ?? encodeCursor(EMPTY_CURSOR),
+        };
+      }
+
+      // 兼容还没有 snapshots/ 的旧远端：继续扫读 entities/ 目录。
       const entityRoot = layout.entities;
       const typeStats = await tryList(client, entityRoot);
       const entities: Entity[] = [];

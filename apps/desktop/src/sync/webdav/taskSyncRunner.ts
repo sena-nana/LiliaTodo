@@ -20,16 +20,11 @@ import {
 } from "./merge";
 import type { SyncProvider } from "./provider";
 import {
-  entityToTaskCategory,
-  entityToTaskList,
-  entityToTask,
-  localChangeToOp,
+  getTaskEntityBridge,
   TASK_CATEGORY_ENTITY_TYPE,
-  TASK_CATEGORY_SCHEMA_VERSION,
   TASK_LIST_ENTITY_TYPE,
-  TASK_LIST_SCHEMA_VERSION,
   TASK_ENTITY_TYPE,
-  TASK_SCHEMA_VERSION,
+  schemaVersionForTaskEntity,
 } from "./taskBridge";
 
 export interface WebdavRunReport {
@@ -183,14 +178,18 @@ async function pushPending(input: {
 }): Promise<PushReport> {
   const { provider, repository, deviceId, actor, syncedAt } = input;
   const pending = await repository.listPendingChanges();
-  const entityChanges = pending.filter((c) => isSupportedEntityType(c.entityType));
+  const entityChanges = pending.filter((c) => getTaskEntityBridge(c.entityType) !== null);
   if (entityChanges.length === 0) {
     return emptyPushReport();
   }
   const pushedCounts = countEntityChanges(entityChanges);
-  const ops: Op[] = entityChanges.map((change) =>
-    localChangeToOp(change, { deviceId, actor })
-  );
+  const ops: Op[] = entityChanges.map((change) => {
+    const bridge = getTaskEntityBridge(change.entityType);
+    if (bridge === null) {
+      throw new Error(`WebDAV 同步：不支持的实体类型：${change.entityType}`);
+    }
+    return bridge.localChangeToOp(change, { deviceId, actor });
+  });
   const result = await provider.push(ops);
   if (result.acceptedCount > 0) {
     for (const change of entityChanges) {
@@ -226,7 +225,7 @@ function emptyPushReport(): PushReport {
 }
 
 function countEntityChanges(
-  changes: ReadonlyArray<{ readonly entityType: SupportedEntityType }>,
+  changes: ReadonlyArray<{ readonly entityType: string }>,
 ): EntityChangeCounts {
   return changes.reduce<EntityChangeCounts>(
     (counts, change) => {
@@ -256,7 +255,7 @@ async function pullAndApply(input: {
   const { provider, repository } = input;
   const syncState = await repository.getSyncState();
   const { ops, cursor } = await provider.pull(syncState.serverCursor);
-  const entityOps = ops.filter((op) => isSupportedEntityType(op.target.entityType));
+  const entityOps = ops.filter((op) => getTaskEntityBridge(op.target.entityType) !== null);
   if (entityOps.length === 0) {
     return {
       pulledOpsCount: 0,
@@ -273,7 +272,7 @@ async function pullAndApply(input: {
     entityOps,
     {
       async loadEntity(entityType, entityId) {
-        if (!isSupportedEntityType(entityType)) return null;
+        if (getTaskEntityBridge(entityType) === null) return null;
         const fetched = await provider.getEntity<Record<string, unknown>>(
           entityType,
           entityId,
@@ -289,7 +288,7 @@ async function pullAndApply(input: {
   let deletedTaskListCount = 0;
   let appliedTaskCategoryCount = 0;
   let deletedTaskCategoryCount = 0;
-  for (const entry of merged.entries) {
+  for (const entry of sortMergedEntriesForApply(merged.entries)) {
     const { entity } = entry.result;
     if (entity === null) {
       if (entry.entityType === TASK_ENTITY_TYPE) {
@@ -306,19 +305,20 @@ async function pullAndApply(input: {
     }
     const normalizedEntity: EntityWithUnknownPayload = {
       ...entity,
-      schemaVersion: Math.max(entity.schemaVersion ?? 0, schemaVersionForEntity(entity.type)),
+      schemaVersion: Math.max(entity.schemaVersion ?? 0, schemaVersionForTaskEntity(entity.type)),
     };
     await provider.pushEntity(normalizedEntity);
-    if (normalizedEntity.type === TASK_ENTITY_TYPE) {
-      const task = entityToTask(normalizedEntity);
+    const bridge = getTaskEntityBridge(normalizedEntity.type);
+    if (bridge?.kind === "task") {
+      const task = bridge.entityToLocal(normalizedEntity);
       await repository.applyRemoteTask(task, normalizedEntity.schemaVersion);
       appliedTaskCount += 1;
-    } else if (normalizedEntity.type === TASK_LIST_ENTITY_TYPE) {
-      const list = entityToTaskList(normalizedEntity);
+    } else if (bridge?.kind === "taskList") {
+      const list = bridge.entityToLocal(normalizedEntity);
       await repository.applyRemoteList(list, normalizedEntity.schemaVersion);
       appliedTaskListCount += 1;
-    } else if (normalizedEntity.type === TASK_CATEGORY_ENTITY_TYPE) {
-      const category = entityToTaskCategory(normalizedEntity);
+    } else if (bridge?.kind === "taskCategory") {
+      const category = bridge.entityToLocal(normalizedEntity);
       await repository.applyRemoteCategory(category, normalizedEntity.schemaVersion);
       appliedTaskCategoryCount += 1;
     }
@@ -333,6 +333,17 @@ async function pullAndApply(input: {
     deletedTaskCategoryCount,
     serverCursor: cursor,
   };
+}
+
+function sortMergedEntriesForApply(entries: MergeOpsAcrossEntitiesResult["entries"]) {
+  return [...entries].sort((a, b) => entityApplyRank(a.entityType) - entityApplyRank(b.entityType));
+}
+
+function entityApplyRank(entityType: string) {
+  if (entityType === TASK_LIST_ENTITY_TYPE) return 0;
+  if (entityType === TASK_CATEGORY_ENTITY_TYPE) return 1;
+  if (entityType === TASK_ENTITY_TYPE) return 2;
+  return 3;
 }
 
 function buildMessage(input: {
@@ -372,18 +383,6 @@ function buildMessage(input: {
     return "WebDAV 同步完成（无新增变更）";
   }
   return segments.join("，");
-}
-
-type SupportedEntityType = typeof TASK_ENTITY_TYPE | typeof TASK_LIST_ENTITY_TYPE | typeof TASK_CATEGORY_ENTITY_TYPE;
-
-function isSupportedEntityType(entityType: string): entityType is SupportedEntityType {
-  return entityType === TASK_ENTITY_TYPE || entityType === TASK_LIST_ENTITY_TYPE || entityType === TASK_CATEGORY_ENTITY_TYPE;
-}
-
-function schemaVersionForEntity(entityType: string) {
-  if (entityType === TASK_LIST_ENTITY_TYPE) return TASK_LIST_SCHEMA_VERSION;
-  if (entityType === TASK_CATEGORY_ENTITY_TYPE) return TASK_CATEGORY_SCHEMA_VERSION;
-  return TASK_SCHEMA_VERSION;
 }
 
 async function recordRunBestEffort(

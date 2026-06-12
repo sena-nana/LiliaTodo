@@ -223,6 +223,8 @@ export function fakeWebdavController(
   options: FakeWebdavControllerOptions,
 ): WebdavSyncController & {
   runOnce: ReturnType<typeof vi.fn>;
+  setAutoSyncEnabled: ReturnType<typeof vi.fn>;
+  restoreAutoSync: ReturnType<typeof vi.fn>;
   onRunCompleted: ReturnType<typeof vi.fn>;
   emitRunCompleted(report: WebdavRunReport): void;
 } {
@@ -246,10 +248,24 @@ export function fakeWebdavController(
       }
       : { kind: "disabled", reason: "尚未配置 WebDAV 凭据" };
   const runOnce = vi.fn().mockResolvedValue(result);
+  let autoSyncEnabled = false;
+  const getAutoSyncStatus = () => ({
+    enabled: autoSyncEnabled,
+    running: autoSyncEnabled,
+    intervalMs: 300000,
+    lastRunAt: null,
+    lastError: null,
+  });
   const listeners = new Set<(report: WebdavRunReport) => void>();
   return {
     inspect: vi.fn().mockResolvedValue(resolution),
     runOnce,
+    getAutoSyncStatus: vi.fn(getAutoSyncStatus),
+    setAutoSyncEnabled: vi.fn((enabled: boolean) => {
+      autoSyncEnabled = enabled;
+      return Promise.resolve(getAutoSyncStatus());
+    }),
+    restoreAutoSync: vi.fn(() => Promise.resolve(getAutoSyncStatus())),
     onRunCompleted: vi.fn((listener: (report: WebdavRunReport) => void) => {
       listeners.add(listener);
       return () => listeners.delete(listener);

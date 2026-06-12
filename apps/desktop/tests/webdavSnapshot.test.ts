@@ -3,13 +3,18 @@ import type { Op } from "../src/sync/types/op";
 import { createWebdavLayout } from "../src/sync/webdav/paths";
 import {
   DEFAULT_SNAPSHOT_OPLOG_THRESHOLD,
+  buildCompactedSnapshot,
+  countOplogChunks,
   listSnapshots,
   loadSnapshot,
   mergeOpsIntoSnapshot,
   parseSnapshot,
+  parseSnapshotDocument,
   pickLatestSnapshot,
+  serializeSnapshotDocument,
   serializeSnapshot,
   shouldCompactSnapshot,
+  writeCompactedSnapshot,
   writeSnapshot,
   type SnapshotEntry,
 } from "../src/sync/webdav/snapshot";
@@ -62,6 +67,17 @@ describe("serializeSnapshot / parseSnapshot", () => {
     const text = serializeSnapshot(entries);
     const parsed = parseSnapshot(text);
     expect(parsed).toEqual(entries);
+  });
+
+  it("snapshot 文档可携带 pull cursor 水位且兼容 parseSnapshot", () => {
+    const entry = makeEntity("task", "a", { title: "A" });
+    const text = serializeSnapshotDocument([entry], { cursor: "cursor-after" });
+
+    expect(parseSnapshot(text)).toEqual([entry]);
+    expect(parseSnapshotDocument(text)).toEqual({
+      entries: [entry],
+      cursor: "cursor-after",
+    });
   });
 
   it("解析容忍 CRLF 与多余空行", () => {
@@ -140,6 +156,90 @@ describe("mergeOpsIntoSnapshot", () => {
   });
 });
 
+describe("buildCompactedSnapshot / writeCompactedSnapshot", () => {
+  it("构建 compact 快照时合并 oplog 并保留新的 cursor 水位", () => {
+    const base = [makeEntity("task", "t1", { title: "旧", done: false })];
+    const result = buildCompactedSnapshot({
+      baseEntries: base,
+      ops: [
+        makeOp({
+          ts: "2026-01-02T00:00:00.000Z",
+          originDevice: "d2",
+          op: "patch",
+          target: { entityType: "task", entityId: "t1" },
+          params: { done: true },
+        }),
+        makeOp({
+          ts: "2026-01-02T00:01:00.000Z",
+          originDevice: "d2",
+          op: "put",
+          target: { entityType: "task", entityId: "t2" },
+          params: { title: "新" },
+        }),
+      ],
+      cursor: "cursor-after-pull",
+    });
+
+    expect(result.cursor).toBe("cursor-after-pull");
+    expect(result.entries.map((entry) => [entry.type, entry.id])).toEqual([
+      ["task", "t1"],
+      ["task", "t2"],
+    ]);
+    expect(result.entries[0].payload).toEqual({ title: "旧", done: true });
+    expect(result.conflicts).toEqual([]);
+  });
+
+  it("compact 快照会剔除被 delete op 删除的实体", () => {
+    const result = buildCompactedSnapshot({
+      baseEntries: [
+        makeEntity("task", "t1", { title: "删除" }),
+        makeEntity("task", "t2", { title: "保留" }),
+      ],
+      ops: [
+        makeOp({
+          ts: "2026-01-02T00:00:00.000Z",
+          originDevice: "d2",
+          op: "delete",
+          target: { entityType: "task", entityId: "t1" },
+          params: null,
+        }),
+      ],
+      cursor: "cursor-after-delete",
+    });
+
+    expect(result.entries.map((entry) => entry.id)).toEqual(["t2"]);
+    expect(result.cursor).toBe("cursor-after-delete");
+  });
+
+  it("写入 compact 快照时把合并结果和 cursor 一起落到 WebDAV", async () => {
+    const client = new StubWebdavClient();
+    const layout = createWebdavLayout("/liliatodo");
+    const base = [makeEntity("task", "t1", { title: "旧" })];
+
+    const written = await writeCompactedSnapshot({
+      client,
+      layout,
+      timestamp: "202601030900",
+      baseEntries: base,
+      ops: [
+        makeOp({
+          ts: "2026-01-03T08:00:00.000Z",
+          originDevice: "d2",
+          op: "patch",
+          target: { entityType: "task", entityId: "t1" },
+          params: { title: "新" },
+        }),
+      ],
+      cursor: "cursor-after-compact",
+    });
+
+    const loaded = await loadSnapshot(client, written.meta);
+    expect(written.meta.path).toBe("/liliatodo/snapshots/202601030900.jsonl");
+    expect(loaded.cursor).toBe("cursor-after-compact");
+    expect(loaded.entries[0].payload).toEqual({ title: "新" });
+  });
+});
+
 describe("shouldCompactSnapshot", () => {
   it("默认阈值 1000", () => {
     expect(DEFAULT_SNAPSHOT_OPLOG_THRESHOLD).toBe(1000);
@@ -168,15 +268,36 @@ class StubWebdavClient implements WebdavClient {
     }
     const prefix = `${path}/`;
     const stats: WebdavStat[] = [];
+    const childDirs = new Set<string>();
     for (const [filePath, file] of this.files) {
       if (!filePath.startsWith(prefix)) continue;
-      if (filePath.slice(prefix.length).includes("/")) continue;
+      const relative = filePath.slice(prefix.length);
+      const slashIndex = relative.indexOf("/");
+      if (slashIndex >= 0) {
+        childDirs.add(`${path}/${relative.slice(0, slashIndex)}`);
+        continue;
+      }
       stats.push({
         path: filePath,
         etag: file.etag,
         lastModified: null,
         size: file.body.length,
         isDirectory: false,
+      });
+    }
+    for (const collection of this.collections) {
+      if (!collection.startsWith(prefix) || collection === path) continue;
+      const relative = collection.slice(prefix.length);
+      if (relative.includes("/")) continue;
+      childDirs.add(collection);
+    }
+    for (const child of childDirs) {
+      stats.push({
+        path: child,
+        etag: null,
+        lastModified: null,
+        size: null,
+        isDirectory: true,
       });
     }
     return stats;
@@ -242,6 +363,26 @@ describe("listSnapshots / pickLatestSnapshot / writeSnapshot / loadSnapshot", ()
     expect(latest?.timestamp).toBe("202601020000");
     const loaded = await loadSnapshot(client, latest!);
     expect(loaded.entries).toEqual([e]);
+    expect(loaded.cursor).toBeNull();
+  });
+
+  it("写入 snapshot 时可保存 cursor 水位", async () => {
+    const client = new StubWebdavClient();
+    const layout = createWebdavLayout("/liliatodo");
+    const entry = makeEntity("task", "a", { title: "A" });
+    const meta = await writeSnapshot({
+      client,
+      layout,
+      timestamp: "202601010000",
+      entries: [entry],
+      cursor: "cursor-after",
+    });
+
+    await expect(loadSnapshot(client, meta)).resolves.toEqual({
+      entries: [entry],
+      meta,
+      cursor: "cursor-after",
+    });
   });
 
   it("snapshots 目录缺失返回空列表", async () => {
@@ -257,5 +398,31 @@ describe("listSnapshots / pickLatestSnapshot / writeSnapshot / loadSnapshot", ()
     await expect(
       loadSnapshot(client, { timestamp: "202601010000", path: "/liliatodo/snapshots/202601010000.jsonl" }),
     ).rejects.toThrow(/snapshot 文件不存在/);
+  });
+});
+
+describe("countOplogChunks", () => {
+  it("统计所有设备日期目录中的合法 oplog chunk", async () => {
+    const client = new StubWebdavClient();
+    const layout = createWebdavLayout("/liliatodo");
+    await client.ensureCollection(layout.oplog);
+    await client.ensureCollection(`${layout.oplog}/deviceA`);
+    await client.ensureCollection(`${layout.oplog}/deviceA/20260101`);
+    await client.ensureCollection(`${layout.oplog}/deviceB`);
+    await client.ensureCollection(`${layout.oplog}/deviceB/20260102`);
+    await client.put(`${layout.oplog}/deviceA/20260101/000000.jsonl`, "{}");
+    await client.put(`${layout.oplog}/deviceA/20260101/readme.txt`, "忽略");
+    await client.put(`${layout.oplog}/deviceB/20260102/000001.jsonl`, "{}");
+
+    const result = await countOplogChunks(client, layout);
+
+    expect(result.chunkCount).toBe(2);
+  });
+
+  it("oplog 目录缺失时返回 0", async () => {
+    const client = new StubWebdavClient();
+    const layout = createWebdavLayout("/liliatodo");
+
+    await expect(countOplogChunks(client, layout)).resolves.toEqual({ chunkCount: 0 });
   });
 });

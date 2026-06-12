@@ -22,6 +22,7 @@ import {
 } from "./merge";
 import {
   parseSnapshotFileName,
+  parseSeq,
   snapshotPath,
   type WebdavLayout,
 } from "./paths";
@@ -29,6 +30,11 @@ import type { SemanticConflict } from "./conflict";
 import type { WebdavClient } from "./types";
 
 export type SnapshotEntry = EntityWithUnknownPayload;
+
+interface SnapshotDocumentMetaLine {
+  readonly kind: "snapshot-meta";
+  readonly cursor?: string | null;
+}
 
 export interface SnapshotMeta {
   readonly timestamp: string;
@@ -49,11 +55,32 @@ export function serializeSnapshot(entries: readonly SnapshotEntry[]): string {
   return entries.map((entry) => JSON.stringify(entry)).join("\n") + "\n";
 }
 
+export function serializeSnapshotDocument(
+  entries: readonly SnapshotEntry[],
+  meta: { readonly cursor?: string | null } = {},
+): string {
+  const body = serializeSnapshot(entries);
+  if (!meta.cursor) {
+    return body;
+  }
+  return JSON.stringify({ kind: "snapshot-meta", cursor: meta.cursor } satisfies SnapshotDocumentMetaLine) + "\n" + body;
+}
+
 export function parseSnapshot(text: string): SnapshotEntry[] {
+  return parseSnapshotDocument(text).entries;
+}
+
+export interface ParseSnapshotDocumentResult {
+  readonly entries: SnapshotEntry[];
+  readonly cursor: string | null;
+}
+
+export function parseSnapshotDocument(text: string): ParseSnapshotDocumentResult {
   if (text.trim().length === 0) {
-    return [];
+    return { entries: [], cursor: null };
   }
   const out: SnapshotEntry[] = [];
+  let cursor: string | null = null;
   const lines = text.split(/\r?\n/);
   for (let i = 0; i < lines.length; i += 1) {
     const raw = lines[i].trim();
@@ -69,9 +96,18 @@ export function parseSnapshot(text: string): SnapshotEntry[] {
         `WebDAV 同步：snapshot 第 ${lineNo} 行 JSON 解析失败 - ${(error as Error).message}`,
       );
     }
+    if (isSnapshotMetaLine(parsed)) {
+      cursor = typeof parsed.cursor === "string" ? parsed.cursor : null;
+      continue;
+    }
     out.push(assertSnapshotEntry(parsed, lineNo));
   }
-  return out;
+  return { entries: out, cursor };
+}
+
+function isSnapshotMetaLine(value: unknown): value is SnapshotDocumentMetaLine {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    && (value as Record<string, unknown>).kind === "snapshot-meta";
 }
 
 function assertSnapshotEntry(value: unknown, line: number): SnapshotEntry {
@@ -113,6 +149,18 @@ export interface MergeOpsIntoSnapshotResult {
   readonly conflicts: readonly SemanticConflict[];
 }
 
+export interface BuildCompactedSnapshotOptions extends MergeOpsIntoSnapshotOptions {
+  readonly baseEntries: readonly SnapshotEntry[];
+  readonly ops: readonly Op[];
+  readonly cursor: string;
+}
+
+export interface BuildCompactedSnapshotResult {
+  readonly entries: readonly SnapshotEntry[];
+  readonly conflicts: readonly SemanticConflict[];
+  readonly cursor: string;
+}
+
 /**
  * 把一批 ops 按 entity 分组后逐组与 base 中对应 entity 合并；
  * 未在 base 中出现的 entity 视为新建（current=null）；
@@ -145,8 +193,58 @@ export function mergeOpsIntoSnapshot(
   };
 }
 
+export function buildCompactedSnapshot(
+  options: BuildCompactedSnapshotOptions,
+): BuildCompactedSnapshotResult {
+  const { baseEntries, ops, cursor, ...mergeOptions } = options;
+  const merged = mergeOpsIntoSnapshot(baseEntries, ops, mergeOptions);
+  return {
+    entries: merged.entries,
+    conflicts: merged.conflicts,
+    cursor,
+  };
+}
+
 export interface ListSnapshotsResult {
   readonly snapshots: readonly SnapshotMeta[];
+}
+
+export interface CountOplogChunksResult {
+  readonly chunkCount: number;
+}
+
+/**
+ * 统计远端 oplog chunk 数量，用于调度层判断是否需要在空闲时 compact。
+ * 目录不存在时按 0 处理；只统计可解析 seq 的 .jsonl chunk，忽略其它诊断文件。
+ */
+export async function countOplogChunks(
+  client: WebdavClient,
+  layout: WebdavLayout,
+): Promise<CountOplogChunksResult> {
+  const deviceStats = await client.list(layout.oplog).catch(() => []);
+  let chunkCount = 0;
+  for (const deviceStat of deviceStats) {
+    if (!deviceStat.isDirectory) {
+      continue;
+    }
+    const dayStats = await client.list(deviceStat.path).catch(() => []);
+    for (const dayStat of dayStats) {
+      if (!dayStat.isDirectory) {
+        continue;
+      }
+      const chunkStats = await client.list(dayStat.path).catch(() => []);
+      for (const chunkStat of chunkStats) {
+        if (chunkStat.isDirectory) {
+          continue;
+        }
+        const filename = chunkStat.path.slice(chunkStat.path.lastIndexOf("/") + 1);
+        if (parseSeq(filename) !== null) {
+          chunkCount += 1;
+        }
+      }
+    }
+  }
+  return { chunkCount };
 }
 
 /**
@@ -188,6 +286,7 @@ export async function pickLatestSnapshot(
 export interface LoadSnapshotResult {
   readonly entries: readonly SnapshotEntry[];
   readonly meta: SnapshotMeta;
+  readonly cursor: string | null;
 }
 
 /**
@@ -202,9 +301,11 @@ export async function loadSnapshot(
   if (result === null) {
     throw new Error(`WebDAV 同步：snapshot 文件不存在 ${meta.path}`);
   }
+  const parsed = parseSnapshotDocument(result.body);
   return {
-    entries: parseSnapshot(result.body),
+    entries: parsed.entries,
     meta,
+    cursor: parsed.cursor,
   };
 }
 
@@ -213,16 +314,45 @@ export interface WriteSnapshotOptions {
   readonly layout: WebdavLayout;
   readonly timestamp: string;
   readonly entries: readonly SnapshotEntry[];
+  readonly cursor?: string | null;
 }
 
 export async function writeSnapshot(
   options: WriteSnapshotOptions,
 ): Promise<SnapshotMeta> {
-  const { client, layout, timestamp, entries } = options;
+  const { client, layout, timestamp, entries, cursor } = options;
   await client.ensureCollection(layout.snapshots);
   const path = snapshotPath(layout, timestamp);
-  await client.put(path, serializeSnapshot(entries));
+  await client.put(path, serializeSnapshotDocument(entries, { cursor }));
   return { timestamp, path };
+}
+
+export interface WriteCompactedSnapshotOptions extends BuildCompactedSnapshotOptions {
+  readonly client: WebdavClient;
+  readonly layout: WebdavLayout;
+  readonly timestamp: string;
+}
+
+export interface WriteCompactedSnapshotResult extends BuildCompactedSnapshotResult {
+  readonly meta: SnapshotMeta;
+}
+
+export async function writeCompactedSnapshot(
+  options: WriteCompactedSnapshotOptions,
+): Promise<WriteCompactedSnapshotResult> {
+  const { client, layout, timestamp, ...compactOptions } = options;
+  const compacted = buildCompactedSnapshot(compactOptions);
+  const meta = await writeSnapshot({
+    client,
+    layout,
+    timestamp,
+    entries: compacted.entries,
+    cursor: compacted.cursor,
+  });
+  return {
+    ...compacted,
+    meta,
+  };
 }
 
 export const DEFAULT_SNAPSHOT_OPLOG_THRESHOLD = 1000;

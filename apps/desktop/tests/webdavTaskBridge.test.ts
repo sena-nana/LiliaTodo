@@ -5,10 +5,15 @@ import {
   entityToTaskList,
   entityToTaskCategory,
   entityToTask,
+  getTaskEntityBridge,
+  isSupportedTaskEntityType,
   localChangeToOp,
+  schemaVersionForTaskEntity,
   TASK_CATEGORY_ENTITY_TYPE,
   TASK_LIST_ENTITY_TYPE,
   TASK_ENTITY_TYPE,
+  TASK_ENTITY_BRIDGES,
+  TASK_SCHEMA_VERSION,
 } from "../src/sync/webdav/taskBridge";
 
 function baseChange(overrides: Partial<LocalChange> = {}): LocalChange {
@@ -25,6 +30,18 @@ function baseChange(overrides: Partial<LocalChange> = {}): LocalChange {
 }
 
 describe("LocalChange → Op 翻译", () => {
+  it("实体桥注册表覆盖现有同步实体", () => {
+    expect(TASK_ENTITY_BRIDGES.map((bridge) => bridge.entityType)).toEqual([
+      TASK_ENTITY_TYPE,
+      TASK_LIST_ENTITY_TYPE,
+      TASK_CATEGORY_ENTITY_TYPE,
+    ]);
+    expect(getTaskEntityBridge(TASK_ENTITY_TYPE)?.kind).toBe("task");
+    expect(isSupportedTaskEntityType(TASK_LIST_ENTITY_TYPE)).toBe(true);
+    expect(isSupportedTaskEntityType("calendar-event")).toBe(false);
+    expect(schemaVersionForTaskEntity(TASK_ENTITY_TYPE)).toBe(TASK_SCHEMA_VERSION);
+  });
+
   it("task.create 折算为 put，params 是 payload 浅拷贝", () => {
     const payload = {
       id: "t-1",
@@ -294,9 +311,12 @@ describe("Entity → Task 解码", () => {
     }> = [
       { payload: { startAt: "" } },
       { payload: { dueAt: "不是日期" } },
+      { payload: { dueAt: "2026-02-31T09:00:00.000Z" } },
       { payload: { completedAt: "not-a-date" } },
       { payload: { createdAt: "" } },
+      { payload: { createdAt: "2026-13-01T09:00:00.000Z" } },
       { payload: {}, entity: { updatedAt: "不是日期" } },
+      { payload: {}, entity: { updatedAt: "2026-04-31T09:00:00.000Z" } },
     ];
 
     for (const item of cases) {
@@ -385,7 +405,7 @@ describe("Entity → Task 解码", () => {
           reminders: [
             {
               id: "reminder-1",
-              triggerAt: "不是日期",
+              triggerAt: "2026-02-31T09:00:00.000Z",
               status: "pending",
               message: null,
             },

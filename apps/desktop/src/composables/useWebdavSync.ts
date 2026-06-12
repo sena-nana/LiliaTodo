@@ -5,7 +5,7 @@ import {
 } from "../sync/settingsSyncContext";
 import { WEBDAV_DEFAULT_ROOT, type WebdavSecrets } from "../sync/webdav";
 import type { WebdavRunReport, WebdavSecretsStore } from "../sync/webdav";
-import type { WebdavSyncController } from "../sync/defaultSettingsSyncRuntime";
+import type { WebdavAutoSyncStatus, WebdavSyncController } from "../sync/defaultSettingsSyncRuntime";
 
 export interface WebdavSecretsFormState {
   baseUrl: string;
@@ -43,6 +43,8 @@ export function useWebdavSync(options: UseWebdavSyncOptions = {}) {
   const syncError = ref<string | null>(null);
   const inspectReason = ref<string | null>(null);
   const hasSavedSecrets = ref(false);
+  const autoSyncStatus = ref<WebdavAutoSyncStatus | null>(controller?.getAutoSyncStatus() ?? null);
+  const autoSyncBusy = ref(false);
 
   const passwordPlaceholder = computed(() =>
     hasSavedSecrets.value ? "（已保存；留空则保持不变）" : "应用密码 / 第三方授权",
@@ -76,6 +78,7 @@ export function useWebdavSync(options: UseWebdavSyncOptions = {}) {
       initialLoading.value = false;
     }
     await refreshInspectReason();
+    refreshAutoSyncStatus();
   }
 
   async function handleSave() {
@@ -102,6 +105,9 @@ export function useWebdavSync(options: UseWebdavSyncOptions = {}) {
     formError.value = null;
     saveOk.value = null;
     try {
+      if (controller) {
+        autoSyncStatus.value = await controller.setAutoSyncEnabled(false);
+      }
       await secretsStore.clear();
       hasSavedSecrets.value = false;
       form.password = "";
@@ -124,8 +130,23 @@ export function useWebdavSync(options: UseWebdavSyncOptions = {}) {
       } else {
         syncError.value = displayError(result.error);
       }
+      refreshAutoSyncStatus();
     } finally {
       syncing.value = false;
+    }
+  }
+
+  async function handleAutoSyncToggle(enabled: boolean) {
+    if (!controller) return;
+    autoSyncBusy.value = true;
+    syncError.value = null;
+    try {
+      autoSyncStatus.value = await controller.setAutoSyncEnabled(enabled);
+    } catch (e) {
+      syncError.value = displayError(String(e));
+      refreshAutoSyncStatus();
+    } finally {
+      autoSyncBusy.value = false;
     }
   }
 
@@ -154,6 +175,10 @@ export function useWebdavSync(options: UseWebdavSyncOptions = {}) {
     inspectReason.value = status.kind === "disabled" ? status.reason : null;
   }
 
+  function refreshAutoSyncStatus() {
+    autoSyncStatus.value = controller?.getAutoSyncStatus() ?? null;
+  }
+
   return {
     secretsStore,
     controller,
@@ -166,11 +191,14 @@ export function useWebdavSync(options: UseWebdavSyncOptions = {}) {
     syncReport,
     syncError,
     inspectReason,
+    autoSyncStatus,
+    autoSyncBusy,
     hasSavedSecrets,
     passwordPlaceholder,
     handleSave,
     handleClear,
     handleSyncNow,
+    handleAutoSyncToggle,
   };
 }
 

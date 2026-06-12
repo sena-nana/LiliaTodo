@@ -25,6 +25,7 @@ interface FakeRepositoryState {
   appliedTasks: Array<{ task: Task; remoteVersion?: number }>;
   appliedLists: Array<{ list: TaskList; remoteVersion?: number }>;
   appliedCategories: Array<{ category: TaskCategory; remoteVersion?: number }>;
+  applicationOrder: string[];
   deletedIds: string[];
   deletedListIds: string[];
   deletedCategoryIds: string[];
@@ -58,21 +59,27 @@ function makeRepositoryStub(
       return state.syncState;
     },
     async applyRemoteTask(task, remoteVersion) {
+      state.applicationOrder.push(`task:${task.id}`);
       state.appliedTasks.push({ task, remoteVersion });
     },
     async deleteRemoteTask(id) {
+      state.applicationOrder.push(`delete-task:${id}`);
       state.deletedIds.push(id);
     },
     async applyRemoteList(list, remoteVersion) {
+      state.applicationOrder.push(`taskList:${list.id}`);
       state.appliedLists.push({ list, remoteVersion });
     },
     async deleteRemoteList(id) {
+      state.applicationOrder.push(`delete-taskList:${id}`);
       state.deletedListIds.push(id);
     },
     async applyRemoteCategory(category, remoteVersion) {
+      state.applicationOrder.push(`taskCategory:${category.id}`);
       state.appliedCategories.push({ category, remoteVersion });
     },
     async deleteRemoteCategory(id) {
+      state.applicationOrder.push(`delete-taskCategory:${id}`);
       state.deletedCategoryIds.push(id);
     },
     async saveSyncState(input) {
@@ -137,6 +144,7 @@ function freshState(overrides: Partial<FakeRepositoryState> = {}): FakeRepositor
     appliedTasks: [],
     appliedLists: [],
     appliedCategories: [],
+    applicationOrder: [],
     deletedIds: [],
     deletedListIds: [],
     deletedCategoryIds: [],
@@ -566,6 +574,71 @@ describe("WebDAV task 同步 runner", () => {
       expect(result.report.deletedTaskListCount).toBe(1);
       expect(result.report.message).toBe("已应用 1 个远端清单，已删除 1 个远端清单");
     }
+  });
+
+  it("同批拉取清单、分类和任务乱序到达时按依赖顺序应用", async () => {
+    const state = freshState();
+    const remoteOps: Op[] = [
+      {
+        op: "put",
+        target: { entityType: "task", entityId: "task-remote" },
+        params: {
+          title: "引用远端分类的任务",
+          status: "active",
+          priority: 1,
+          listId: "list-remote",
+          categoryId: "category-remote",
+          createdAt: "2026-05-19T09:02:00.000Z",
+        },
+        ts: "2026-05-19T10:02:00.000Z",
+        actor: "desk-b",
+        originDevice: "desk-b",
+      },
+      {
+        op: "put",
+        target: { entityType: "taskCategory", entityId: "category-remote" },
+        params: {
+          listId: "list-remote",
+          name: "远端分类",
+          order: 0,
+          createdAt: "2026-05-19T09:01:00.000Z",
+        },
+        ts: "2026-05-19T10:01:00.000Z",
+        actor: "desk-b",
+        originDevice: "desk-b",
+      },
+      {
+        op: "put",
+        target: { entityType: "taskList", entityId: "list-remote" },
+        params: {
+          name: "远端清单",
+          color: null,
+          archived: false,
+          order: 0,
+          createdAt: "2026-05-19T09:00:00.000Z",
+        },
+        ts: "2026-05-19T10:00:00.000Z",
+        actor: "desk-b",
+        originDevice: "desk-b",
+      },
+    ];
+    const provider = makeProviderStub({
+      pullResult: { ops: remoteOps, cursor: "cursor-order" },
+    });
+    const runner = createWebdavTaskSyncRunner({
+      provider,
+      repository: makeRepositoryStub(state),
+      deviceId: "desk-a",
+    });
+
+    const result = await runner.runOnce();
+
+    expect(result.ok).toBe(true);
+    expect(state.applicationOrder).toEqual([
+      "taskList:list-remote",
+      "taskCategory:category-remote",
+      "task:task-remote",
+    ]);
   });
 
   it("非 task entityType 的 remote ops 在 pull 阶段直接忽略", async () => {

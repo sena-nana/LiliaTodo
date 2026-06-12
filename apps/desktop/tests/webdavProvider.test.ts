@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { Op } from "../src/sync/types/op";
-import { createWebdavSyncProvider } from "../src/sync/webdav/provider";
+import { compactWebdavSnapshot, createWebdavSyncProvider } from "../src/sync/webdav/provider";
+import { createWebdavLayout } from "../src/sync/webdav/paths";
+import { writeSnapshot } from "../src/sync/webdav/snapshot";
 import {
   WebdavConflictError,
   type WebdavClient,
@@ -322,6 +324,116 @@ describe("BE-12 WebdavSyncProvider 端到端骨架", () => {
       "notification",
       "task",
     ]);
+  });
+
+  it("snapshot 优先读取最新 snapshot 文件", async () => {
+    const client = new InMemoryWebdavClient();
+    const layout = createWebdavLayout();
+    const provider = createWebdavSyncProvider({
+      client,
+      deviceId: "deviceA",
+      layout,
+      clock: () => new Date(),
+    });
+    await provider.pushEntity({
+      id: "old-task",
+      type: "task",
+      schemaVersion: 1,
+      payload: { title: "旧实体" },
+      updatedAt: "2026-05-19T10:00:00.000Z",
+      originDevice: "deviceA",
+    });
+    await writeSnapshot({
+      client,
+      layout,
+      timestamp: "202605201200",
+      cursor: "cursor-from-snapshot",
+      entries: [
+        {
+          id: "snap-task",
+          type: "task",
+          schemaVersion: 1,
+          payload: { title: "快照实体" },
+          updatedAt: "2026-05-20T12:00:00.000Z",
+          originDevice: "deviceB",
+        },
+      ],
+    });
+
+    const snap = await provider.snapshot();
+
+    expect(snap.entities).toEqual([
+      {
+        id: "snap-task",
+        type: "task",
+        schemaVersion: 1,
+        payload: { title: "快照实体" },
+        updatedAt: "2026-05-20T12:00:00.000Z",
+        originDevice: "deviceB",
+      },
+    ]);
+    expect(snap.cursor).toBe("cursor-from-snapshot");
+  });
+
+  it("显式 compact 从 snapshot cursor 之后拉取 oplog 并写入新水位", async () => {
+    const client = new InMemoryWebdavClient();
+    const layout = createWebdavLayout();
+    const writer = createWebdavSyncProvider({
+      client,
+      deviceId: "deviceB",
+      layout,
+      clock: () => new Date(Date.UTC(2026, 4, 19, 10, 0)),
+    });
+    const reader = createWebdavSyncProvider({
+      client,
+      deviceId: "reader",
+      layout,
+    });
+    await writer.push([
+      makeOp({
+        originDevice: "deviceB",
+        params: { title: "旧日志" },
+      }),
+    ]);
+    const initialPull = await reader.pull(null);
+    await writeSnapshot({
+      client,
+      layout,
+      timestamp: "202605191100",
+      cursor: initialPull.cursor,
+      entries: [
+        {
+          id: "t1",
+          type: "task",
+          schemaVersion: 1,
+          payload: { title: "快照内旧标题" },
+          updatedAt: "2026-05-19T10:00:00.000Z",
+          originDevice: "deviceB",
+        },
+      ],
+    });
+    await writer.push([
+      makeOp({
+        originDevice: "deviceB",
+        ts: "2026-05-19T12:00:00.000Z",
+        op: "patch",
+        params: { title: "增量新标题" },
+      }),
+    ]);
+
+    const compacted = await compactWebdavSnapshot({
+      client,
+      layout,
+      deviceId: "compactor",
+      clock: () => new Date(Date.UTC(2026, 4, 19, 12, 30)),
+    });
+
+    expect(compacted.meta.path).toBe("/liliatodo/snapshots/202605191230.jsonl");
+    expect(compacted.pulledOpsCount).toBe(1);
+    expect(compacted.entries[0].payload).toEqual({ title: "增量新标题" });
+    const latest = await reader.snapshot();
+    expect(latest.cursor).toBe(compacted.cursor);
+    expect(latest.entities[0].payload).toEqual({ title: "增量新标题" });
   });
 
   it("非法 deviceId 创建即抛错", () => {

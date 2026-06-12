@@ -22,8 +22,20 @@ export interface WebdavSyncController {
   inspect(): Promise<WebdavRuntimeResolution>;
   /** 执行一次 push+pull；凭据缺失或装配失败时返回 ok:false。 */
   runOnce(): Promise<WebdavRunOnceResult>;
+  getAutoSyncStatus(): WebdavAutoSyncStatus;
+  setAutoSyncEnabled(enabled: boolean): Promise<WebdavAutoSyncStatus>;
+  restoreAutoSync(): Promise<WebdavAutoSyncStatus>;
+  notifyLocalChange(): void;
   /** 订阅成功完成的同步报告；返回取消订阅函数。 */
   onRunCompleted(listener: WebdavRunCompletedListener): () => void;
+}
+
+export interface WebdavAutoSyncStatus {
+  enabled: boolean;
+  running: boolean;
+  intervalMs: number;
+  lastRunAt: string | null;
+  lastError: string | null;
 }
 
 export interface DefaultSettingsSyncRuntimeOptions {
@@ -50,6 +62,15 @@ function createWebdavController(
   factory: () => Promise<WebdavRuntimeResolution>,
 ): WebdavSyncController {
   const completedListeners = new Set<WebdavRunCompletedListener>();
+  const autoSyncStorageKey = 'liliatodo.webdavAutoSync';
+  const autoSyncIntervalMs = 5 * 60 * 1000;
+  const autoSyncIdleMs = 5 * 1000;
+  let autoSyncEnabled = loadAutoSyncEnabled(autoSyncStorageKey);
+  let autoSyncTimer: ReturnType<typeof setInterval> | null = null;
+  let autoSyncIdleTimer: ReturnType<typeof setTimeout> | null = null;
+  let autoSyncRunning = false;
+  let autoSyncLastRunAt: string | null = null;
+  let autoSyncLastError: string | null = null;
 
   function notifyRunCompleted(report: WebdavRunReport) {
     completedListeners.forEach((listener) => {
@@ -59,6 +80,81 @@ function createWebdavController(
         // UI 订阅者异常不应反向破坏同步结果。
       }
     });
+  }
+
+  function getAutoSyncStatus(): WebdavAutoSyncStatus {
+    return {
+      enabled: autoSyncEnabled,
+      running: autoSyncTimer !== null,
+      intervalMs: autoSyncIntervalMs,
+      lastRunAt: autoSyncLastRunAt,
+      lastError: autoSyncLastError,
+    };
+  }
+
+  async function runAutoSync() {
+    if (autoSyncRunning) return;
+    autoSyncRunning = true;
+    try {
+      const result = await runOnceInternal();
+      autoSyncLastRunAt = new Date().toISOString();
+      autoSyncLastError = result.ok ? null : result.error;
+    } catch (error) {
+      autoSyncLastRunAt = new Date().toISOString();
+      autoSyncLastError = error instanceof Error ? error.message : String(error);
+    } finally {
+      autoSyncRunning = false;
+    }
+  }
+
+  function stopAutoSyncTimer() {
+    if (autoSyncIdleTimer !== null) {
+      clearTimeout(autoSyncIdleTimer);
+      autoSyncIdleTimer = null;
+    }
+    if (autoSyncTimer !== null) {
+      clearInterval(autoSyncTimer);
+      autoSyncTimer = null;
+    }
+  }
+
+  function scheduleAutoSyncIdle() {
+    if (!autoSyncEnabled || autoSyncTimer === null) return;
+    if (autoSyncIdleTimer !== null) clearTimeout(autoSyncIdleTimer);
+    autoSyncIdleTimer = setTimeout(() => {
+      autoSyncIdleTimer = null;
+      void runAutoSync();
+    }, autoSyncIdleMs);
+  }
+
+  async function startAutoSyncTimer() {
+    if (autoSyncTimer === null) {
+      autoSyncTimer = setInterval(() => {
+        void runAutoSync();
+      }, autoSyncIntervalMs);
+    }
+    await runAutoSync();
+    return getAutoSyncStatus();
+  }
+
+  async function runOnceInternal() {
+    let resolution: WebdavRuntimeResolution;
+    try {
+      resolution = await factory();
+    } catch (error) {
+      return {
+        ok: false as const,
+        error: error instanceof Error
+          ? `WebDAV runtime 装配失败：${error.message}`
+          : 'WebDAV runtime 装配失败',
+      };
+    }
+    if (resolution.kind === 'disabled') {
+      return { ok: false as const, error: resolution.reason };
+    }
+    const result = await resolution.runner.runOnce();
+    if (result.ok) notifyRunCompleted(result.report);
+    return result;
   }
 
   return {
@@ -71,25 +167,28 @@ function createWebdavController(
       }));
     },
     async runOnce() {
-      let resolution: WebdavRuntimeResolution;
-      try {
-        resolution = await factory();
-      } catch (error) {
-        return {
-          ok: false,
-          error: error instanceof Error
-            ? `WebDAV runtime 装配失败：${error.message}`
-            : "WebDAV runtime 装配失败",
-        };
+      return runOnceInternal();
+    },
+    getAutoSyncStatus,
+    async setAutoSyncEnabled(enabled) {
+      autoSyncEnabled = enabled;
+      saveAutoSyncEnabled(autoSyncStorageKey, enabled);
+      if (!enabled) {
+        stopAutoSyncTimer();
+        return getAutoSyncStatus();
       }
-      if (resolution.kind === "disabled") {
-        return { ok: false, error: resolution.reason };
+      return startAutoSyncTimer();
+    },
+    async restoreAutoSync() {
+      autoSyncEnabled = loadAutoSyncEnabled(autoSyncStorageKey);
+      if (!autoSyncEnabled) {
+        stopAutoSyncTimer();
+        return getAutoSyncStatus();
       }
-      const result = await resolution.runner.runOnce();
-      if (result.ok) {
-        notifyRunCompleted(result.report);
-      }
-      return result;
+      return startAutoSyncTimer();
+    },
+    notifyLocalChange() {
+      scheduleAutoSyncIdle();
     },
     onRunCompleted(listener) {
       completedListeners.add(listener);
@@ -98,4 +197,24 @@ function createWebdavController(
       };
     },
   };
+}
+
+function loadAutoSyncEnabled(key: string) {
+  try {
+    return globalThis.localStorage?.getItem(key) === 'true';
+  } catch {
+    return false;
+  }
+}
+
+function saveAutoSyncEnabled(key: string, enabled: boolean) {
+  try {
+    if (enabled) {
+      globalThis.localStorage?.setItem(key, 'true');
+    } else {
+      globalThis.localStorage?.removeItem(key);
+    }
+  } catch {
+    // 设置持久化失败不应影响本轮用户操作。
+  }
 }

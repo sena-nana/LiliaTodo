@@ -116,11 +116,11 @@ function assertWebdavSecrets(value: unknown): WebdavSecrets {
     throw new Error("WebDAV 凭据：必须为对象");
   }
   const record = value as Record<string, unknown>;
-  const baseUrl = assertNonEmpty(record.baseUrl, "baseUrl");
-  const root = assertNonEmpty(record.root, "root");
-  const username = assertNonEmpty(record.username, "username");
+  const baseUrl = assertNonEmpty(record.baseUrl, "baseUrl").trim();
+  const root = assertNonEmpty(record.root, "root").trim();
+  const username = assertNonEmpty(record.username, "username").trim();
   const password = assertNonEmpty(record.password, "password");
-  const deviceId = assertNonEmpty(record.deviceId, "deviceId");
+  const deviceId = assertNonEmpty(record.deviceId, "deviceId").trim();
   return { baseUrl, root, username, password, deviceId };
 }
 

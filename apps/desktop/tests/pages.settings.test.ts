@@ -261,7 +261,60 @@ describe("pages.settings", () => {
     );
     expect(await screen.findByText("已保存到本机安全存储")).toBeInTheDocument();
   });
+  it("WebDAV 自动后台同步需要用户在设置页显式开启", async () => {
+    const repository = fakeRepository();
+    const controller = fakeWebdavController({ kind: "enabled" });
+    renderWithRepository(SyncSettings, repository, {
+      global: {
+        provide: {
+          [WebdavSyncControllerKey as symbol]: controller,
+          [WebdavSecretsStoreKey as symbol]: fakeSecretsStore({
+            baseUrl: "https://dav.jianguoyun.com/dav",
+            root: "/liliatodo",
+            username: "demo",
+            password: "secret",
+            deviceId: "desk-1",
+          }),
+        },
+      },
+    });
+    const checkbox = await screen.findByRole("checkbox", { name: "自动后台同步" });
+    expect(checkbox).not.toBeChecked();
+    await fireEvent.click(checkbox);
+    await waitFor(() => expect(controller.setAutoSyncEnabled).toHaveBeenCalledWith(true));
+    expect(await screen.findByText("运行中")).toBeInTheDocument();
+  });
+  it("WebDAV 清除凭据会同时关闭自动后台同步", async () => {
+    const repository = fakeRepository();
+    const controller = fakeWebdavController({ kind: "enabled" });
+    const secretsStore = fakeSecretsStore({
+      baseUrl: "https://dav.jianguoyun.com/dav",
+      root: "/liliatodo",
+      username: "demo",
+      password: "secret",
+      deviceId: "desk-1",
+    });
 
+    renderWithRepository(SyncSettings, repository, {
+      global: {
+        provide: {
+          [WebdavSyncControllerKey as symbol]: controller,
+          [WebdavSecretsStoreKey as symbol]: secretsStore,
+        },
+      },
+    });
+
+    const checkbox = await screen.findByRole("checkbox", { name: "自动后台同步" });
+    await fireEvent.click(checkbox);
+    await waitFor(() => expect(controller.setAutoSyncEnabled).toHaveBeenCalledWith(true));
+
+    await fireEvent.click(screen.getByRole("button", { name: "清除凭据" }));
+
+    await waitFor(() => expect(controller.setAutoSyncEnabled).toHaveBeenCalledWith(false));
+    await waitFor(() => expect(secretsStore.clear).toHaveBeenCalledTimes(1));
+    expect(checkbox).not.toBeChecked();
+    expect(screen.getByText("已停止")).toBeInTheDocument();
+  });
 
   it("WebDAV 首次保存缺少应用密码时提示错误且不写入凭据", async () => {
     const repository = fakeRepository();
