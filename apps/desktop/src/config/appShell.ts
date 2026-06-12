@@ -5,6 +5,7 @@ import {
   CheckCircle2,
   Clock,
   Search,
+  Database,
   Info,
   Inbox,
   LayoutGrid,
@@ -77,7 +78,7 @@ export const SIDEBAR_FOOTER_STATUS: SidebarFooterStatus = {
   icon: Sparkles,
 };
 
-export type SettingsTabKey = "sync" | "agent" | "appearance" | "about";
+export type SettingsTabKey = "sync" | "agent" | "data" | "appearance" | "about";
 
 export interface SettingsTab {
   key: SettingsTabKey;
@@ -100,6 +101,12 @@ export const SETTINGS_TABS: SettingsTab[] = [
     to: { path: "/settings", query: { tab: "agent" } },
   },
   {
+    key: "data",
+    label: "数据",
+    icon: Database,
+    to: { path: "/settings", query: { tab: "data" } },
+  },
+  {
     key: "appearance",
     label: "外观",
     icon: Palette,
@@ -118,6 +125,7 @@ export const DEFAULT_SETTINGS_TAB: SettingsTabKey = "sync";
 export const SETTINGS_SECTIONS: Record<SettingsTabKey, Component> = {
   sync: defineAsyncComponent(() => import("../pages/settings/SyncSettings.vue")),
   agent: defineAsyncComponent(() => import("../pages/settings/AgentSettings.vue")),
+  data: defineAsyncComponent(() => import("../pages/settings/DataSettings.vue")),
   appearance: defineAsyncComponent(() => import("../pages/settings/AppearanceSettings.vue")),
   about: defineAsyncComponent(() => import("../pages/settings/AboutSettings.vue")),
 };

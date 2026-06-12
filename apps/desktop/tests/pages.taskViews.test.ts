@@ -25,6 +25,20 @@ describe("pages.taskViews", () => {
     expect(await sectionByHeading("不重要不紧急")).toHaveTextContent("不重要不紧急任务");
   });
 
+  it("全局四象限视图不会把不存在的截止日期判为紧急", async () => {
+    const repository = fakeRepository({
+      lists: [taskListFixture()],
+      activeTasks: [
+        task({ id: "bad-date", title: "坏日期任务", priority: 0, dueAt: "2026-02-31T00:00:00.000Z" }),
+      ],
+    });
+
+    await renderAppAt("/tasks/quadrant", repository);
+
+    expect(await sectionByHeading("不重要但紧急")).not.toHaveTextContent("坏日期任务");
+    expect(await sectionByHeading("不重要不紧急")).toHaveTextContent("坏日期任务");
+  });
+
 
   it("全局时间线视图显示全部 active 任务并按时间排序", async () => {
     const repository = fakeRepository({
@@ -74,10 +88,11 @@ describe("pages.taskViews", () => {
     await renderAppAt("/tasks/deleted", repository);
 
     await fireEvent.click(await screen.findByRole("button", { name: "恢复 可恢复任务" }));
+    await waitFor(() => expect(repository.restoreTask).toHaveBeenCalledWith("deleted-1"));
+
     await fireEvent.click(await screen.findByRole("button", { name: "彻底删除 可清理任务" }));
 
-    await waitFor(() => expect(repository.restoreTask).toHaveBeenCalledWith("deleted-1"));
-    expect(repository.purgeTask).toHaveBeenCalledWith("deleted-2");
+    await waitFor(() => expect(repository.purgeTask).toHaveBeenCalledWith("deleted-2"));
   });
 
 

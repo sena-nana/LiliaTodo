@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue';
 import { ArrowDown, ArrowUp, Check, Plus, Save, Trash2, X } from 'lucide-vue-next';
 import type { Task, TaskCategory, TaskChecklistItem, TaskList, TaskPriority, TaskReminder, TaskResource, TaskResourceType, UpdateTaskInput } from '../domain/tasks';
 import { taskHasDueReminder } from '../domain/tasks';
+import { parseStrictDateTime } from '../domain/dateTime';
 import { formatDisplayError } from '../utils/errors';
 import { buildEditableContextMenuItems, useContextMenu } from './contextMenu';
 
@@ -215,8 +216,8 @@ function taskToDraft(task: Task): Draft {
 }
 
 function isoToDateTimeInput(value: string | null) {
-  if (!value) return '';
-  const date = new Date(value);
+  const date = parseStrictDateTime(value);
+  if (!date) return '';
   const offsetDate = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
   return offsetDate.toISOString().slice(0, 16);
 }

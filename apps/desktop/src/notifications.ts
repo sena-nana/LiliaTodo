@@ -9,6 +9,7 @@ import {
 import { listen } from "@tauri-apps/api/event";
 import type { AgentReminderDueEvent } from "./agent/autoTriggers";
 import type { TaskRepository } from "./data/taskRepository";
+import { parseStrictDateTimeMs } from "./domain/dateTime";
 
 const REMINDER_TICK_EVENT = "liliatodo:reminder-tick";
 const REMINDER_ACTION_TYPE = "liliatodo-reminder";
@@ -37,7 +38,7 @@ export async function notifyDueReminders(
   for (const task of tasks) {
     if (task.lastReminderNotifiedAt) continue;
     const dueReminder = task.reminders.find((reminder) =>
-      reminder.status === "pending" && new Date(reminder.triggerAt).getTime() <= now.getTime(),
+      reminder.status === "pending" && isDueReminderTime(reminder.triggerAt, now),
     );
     if (!dueReminder) continue;
     await sendNotification({
@@ -109,6 +110,11 @@ async function handleReminderAction(repository: TaskRepository, notification: Op
   } else {
     window.dispatchEvent(new CustomEvent(OPEN_TASK_EVENT, { detail: { taskId } }));
   }
+}
+
+function isDueReminderTime(triggerAt: string, now: Date) {
+  const time = parseStrictDateTimeMs(triggerAt);
+  return time !== null && time <= now.getTime();
 }
 
 function notificationId(taskId: string, reminderId: string) {

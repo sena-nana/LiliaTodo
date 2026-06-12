@@ -123,6 +123,7 @@ describe("页面 MVP 行为", () => {
     await fireEvent.update(screen.getByLabelText("筛选清单"), "project");
     await fireEvent.update(screen.getByLabelText("筛选分类"), "category-1");
     await fireEvent.update(screen.getByLabelText("筛选优先级"), "2");
+    await fireEvent.update(screen.getByLabelText("筛选计划状态"), "scheduled");
     await fireEvent.update(screen.getByLabelText("筛选开始时间"), "2026-06-01T00:00");
     await fireEvent.update(screen.getByLabelText("筛选结束时间"), "2026-06-30T23:59");
     await fireEvent.update(screen.getByLabelText("筛选提醒状态"), "due");
@@ -136,12 +137,135 @@ describe("页面 MVP 行为", () => {
         categoryId: "category-1",
         statuses: ["completed"],
         priorities: [2],
+        timeMode: "scheduled",
         timeFrom: expect.any(String),
         timeTo: expect.any(String),
         reminderStatus: "due",
         includeDeleted: true,
       })),
     );
+  });
+
+
+  it("搜索页支持保存、应用和删除自定义筛选视图", async () => {
+    const repository = fakeRepository({
+      lists: [
+        taskListFixture(),
+        taskListFixture({ id: "project", name: "项目", order: 1 }),
+      ],
+      categories: {
+        project: [taskCategoryFixture({ id: "category-1", listId: "project", name: "工作" })],
+      },
+      searchResults: [task({ id: "search-1", title: "搜索结果", listId: "project", categoryId: "category-1" })],
+    });
+
+    window.localStorage.clear();
+    await renderAppAt("/search", repository);
+
+    await screen.findByText("搜索结果");
+    await fireEvent.update(screen.getByLabelText("搜索任务"), "报告");
+    await fireEvent.update(screen.getByLabelText("筛选状态"), "completed");
+    await fireEvent.update(screen.getByLabelText("筛选标签"), "客户");
+    await fireEvent.update(screen.getByLabelText("筛选清单"), "project");
+    await fireEvent.update(screen.getByLabelText("筛选分类"), "category-1");
+    await fireEvent.update(screen.getByLabelText("筛选计划状态"), "unscheduled");
+    await fireEvent.update(screen.getByLabelText("视图名称"), "客户复盘");
+    await fireEvent.click(screen.getByRole("button", { name: "保存视图" }));
+
+    expect(screen.getByRole("option", { name: "客户复盘" })).toBeInTheDocument();
+    expect(window.localStorage.getItem("liliatodo.savedTaskViews.v1")).toContain("客户复盘");
+
+    await fireEvent.update(screen.getByLabelText("搜索任务"), "临时搜索");
+    await fireEvent.update(screen.getByLabelText("筛选状态"), "active");
+    await fireEvent.update(screen.getByLabelText("已保存视图"), screen.getByRole("option", { name: "客户复盘" }).getAttribute("value") ?? "");
+    await fireEvent.click(screen.getByRole("button", { name: "应用视图" }));
+
+    await waitFor(() =>
+      expect(repository.searchTasks).toHaveBeenLastCalledWith(expect.objectContaining({
+        text: "报告",
+        tags: ["客户"],
+        listId: "project",
+        categoryId: "category-1",
+        statuses: ["completed"],
+        timeMode: "unscheduled",
+      })),
+    );
+
+    await fireEvent.update(screen.getByLabelText("已保存视图"), screen.getByRole("option", { name: "内置：无计划任务" }).getAttribute("value") ?? "");
+    await fireEvent.click(screen.getByRole("button", { name: "应用视图" }));
+
+    await waitFor(() =>
+      expect(repository.searchTasks).toHaveBeenLastCalledWith(expect.objectContaining({
+        statuses: ["active"],
+        timeMode: "unscheduled",
+      })),
+    );
+
+    await fireEvent.update(screen.getByLabelText("已保存视图"), screen.getByRole("option", { name: "客户复盘" }).getAttribute("value") ?? "");
+    await fireEvent.click(screen.getByRole("button", { name: "删除视图" }));
+
+    expect(screen.queryByRole("option", { name: "客户复盘" })).toBeNull();
+  });
+
+
+  it("搜索页应用内置本周高优先级视图时提交本周范围", async () => {
+    const expectedRange = currentLocalWeekIsoRange();
+    const repository = fakeRepository({
+      searchResults: [task({ id: "weekly-high", title: "本周重点", priority: 2 })],
+    });
+
+    await renderAppAt("/search", repository);
+
+    await screen.findByText("本周重点");
+    await fireEvent.update(screen.getByLabelText("已保存视图"), screen.getByRole("option", { name: "内置：本周高优先级" }).getAttribute("value") ?? "");
+    await fireEvent.click(screen.getByRole("button", { name: "应用视图" }));
+
+    await waitFor(() =>
+      expect(repository.searchTasks).toHaveBeenLastCalledWith(expect.objectContaining({
+        statuses: ["active"],
+        priorities: [2],
+        timeMode: "scheduled",
+        timeFrom: expectedRange.start,
+        timeTo: expectedRange.end,
+      })),
+    );
+  });
+
+  it("搜索页应用非法时间视图时显示中文错误且不提交查询", async () => {
+    const repository = fakeRepository({
+      searchResults: [task({ id: "search-1", title: "搜索结果" })],
+    });
+    window.localStorage.setItem("liliatodo.savedTaskViews.v1", JSON.stringify([
+      {
+        id: "view-invalid-time",
+        name: "非法时间视图",
+        builtIn: false,
+        createdAt: "2026-06-12T00:00:00.000Z",
+        query: {
+          keyword: "",
+          status: "all",
+          tagText: "",
+          listId: "",
+          categoryId: "",
+          priority: "all",
+          timeMode: "scheduled",
+          timeFrom: "bad-time",
+          timeTo: "",
+          reminderStatus: "all",
+          includeDeleted: false,
+        },
+      },
+    ]));
+
+    await renderAppAt("/search", repository);
+
+    await screen.findByText("搜索结果");
+    const initialCalls = vi.mocked(repository.searchTasks).mock.calls.length;
+    await fireEvent.update(screen.getByLabelText("已保存视图"), "view-invalid-time");
+    await fireEvent.click(screen.getByRole("button", { name: "应用视图" }));
+
+    expect(await screen.findByText("错误：筛选开始时间不合法")).toBeInTheDocument();
+    expect(repository.searchTasks).toHaveBeenCalledTimes(initialCalls);
   });
 
 
@@ -303,6 +427,7 @@ describe("页面 MVP 行为", () => {
       });
     }
   });
+
 
 
   it("App 启动时安装 Agent 自动触发并把提醒到期回调接回 controller", async () => {
@@ -697,3 +822,22 @@ describe("页面 MVP 行为", () => {
     expect(await screen.findByText("Error: reminder unavailable")).toBeInTheDocument();
   });
 });
+
+function currentLocalWeekIsoRange() {
+  const start = new Date();
+  start.setHours(0, 0, 0, 0);
+  const mondayOffset = (start.getDay() + 6) % 7;
+  start.setDate(start.getDate() - mondayOffset);
+  const end = new Date(start);
+  end.setDate(start.getDate() + 6);
+  end.setHours(23, 59, 0, 0);
+  return {
+    start: new Date(toLocalDateTimeInput(start)).toISOString(),
+    end: new Date(toLocalDateTimeInput(end)).toISOString(),
+  };
+}
+
+function toLocalDateTimeInput(date: Date) {
+  const offsetDate = new Date(date.getTime() - date.getTimezoneOffset() * 60 * 1000);
+  return offsetDate.toISOString().slice(0, 16);
+}

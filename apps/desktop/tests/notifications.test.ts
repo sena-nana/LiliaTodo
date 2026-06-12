@@ -129,4 +129,31 @@ describe("系统通知提醒", () => {
       lastReminderNotifiedAt: expect.any(String),
     });
   });
+
+  it("不存在日期的提醒不会发送系统通知", async () => {
+    const repository = fakeTaskRepository({
+      dueReminders: [
+        taskFixture({
+          id: "task-bad",
+          title: "坏日期提醒",
+          reminders: [
+            {
+              id: "reminder-bad",
+              triggerAt: "2026-02-31T08:00:00.000Z",
+              status: "pending",
+              message: null,
+            },
+          ],
+        }),
+      ],
+    });
+    const onReminderDue = vi.fn();
+
+    const count = await notifyDueReminders(repository, { onReminderDue });
+
+    expect(count).toBe(1);
+    expect(mocks.sendNotification).not.toHaveBeenCalled();
+    expect(onReminderDue).not.toHaveBeenCalled();
+    expect(repository.updateTask).not.toHaveBeenCalled();
+  });
 });

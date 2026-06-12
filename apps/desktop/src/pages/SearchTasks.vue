@@ -12,7 +12,15 @@ import { useTaskBulkActions } from "../composables/useTaskBulkActions";
 import { useTaskDetailDrawer } from "../composables/useTaskDetailDrawer";
 import { useTaskRepository } from "../data/TaskRepositoryContext";
 import { formatDisplayError } from "../utils/errors";
-import type { Task, TaskPriority, TaskSearchReminderStatus, TaskStatus } from "../domain/tasks";
+import type { Task, TaskPriority, TaskSearchReminderStatus, TaskSearchTimeMode, TaskStatus } from "../domain/tasks";
+import {
+  builtInSavedTaskViews,
+  createSavedTaskView,
+  loadSavedTaskViews,
+  saveTaskViews,
+  type SavedTaskView,
+  type SavedTaskViewQuery,
+} from "../domain/savedTaskViews";
 
 const repository = useTaskRepository();
 const route = useRoute();
@@ -23,10 +31,14 @@ const tagText = ref("");
 const listId = ref("");
 const categoryId = ref("");
 const priority = ref<TaskPriority | "all">("all");
+const timeMode = ref<TaskSearchTimeMode>("all");
 const timeFrom = ref("");
 const timeTo = ref("");
 const reminderStatus = ref<TaskSearchReminderStatus | "all">("all");
 const includeDeleted = ref(false);
+const selectedViewId = ref("");
+const newViewName = ref("");
+const savedViews = ref<SavedTaskView[]>([]);
 const tasks = ref<Task[]>([]);
 const loading = ref(true);
 const error = ref<string | null>(null);
@@ -52,6 +64,11 @@ const {
 });
 
 const title = computed(() => `搜索结果 ${tasks.value.length} 条`);
+const allSavedViews = computed(() => [
+  ...builtInSavedTaskViews(),
+  ...savedViews.value,
+]);
+const selectedView = computed(() => allSavedViews.value.find((view) => view.id === selectedViewId.value) ?? null);
 const filteredCategories = computed(() =>
   categories.value.filter((category) => !listId.value || category.listId === listId.value),
 );
@@ -65,6 +82,7 @@ const { applyBulk } = useTaskBulkActions({
 });
 
 onMounted(() => {
+  savedViews.value = loadSavedTaskViews(window.localStorage);
   void load();
 });
 
@@ -106,6 +124,8 @@ async function load() {
     if (categoryId.value && !nextCategories.some((category) => category.id === categoryId.value)) {
       categoryId.value = "";
     }
+    const fromIso = parseSearchDateTime(timeFrom.value, "筛选开始时间");
+    const toIso = parseSearchDateTime(timeTo.value, "筛选结束时间");
     tasks.value = await repository.searchTasks({
       text: keyword.value,
       tags: tagText.value.split(",").map((tag) => tag.trim()).filter(Boolean),
@@ -113,8 +133,9 @@ async function load() {
       categoryId: categoryId.value || null,
       statuses: status.value === "all" ? undefined : [status.value],
       priorities: priority.value === "all" ? undefined : [priority.value],
-      timeFrom: timeFrom.value ? new Date(timeFrom.value).toISOString() : null,
-      timeTo: timeTo.value ? new Date(timeTo.value).toISOString() : null,
+      timeMode: timeMode.value === "all" ? null : timeMode.value,
+      timeFrom: fromIso,
+      timeTo: toIso,
       reminderStatus: reminderStatus.value === "all" ? null : reminderStatus.value,
       includeDeleted: includeDeleted.value,
     });
@@ -126,11 +147,81 @@ async function load() {
   }
 }
 
+async function saveCurrentView() {
+  error.value = null;
+  try {
+    const nextView = createSavedTaskView(newViewName.value, currentSavedQuery());
+    savedViews.value = [
+      ...savedViews.value.filter((view) => view.name !== nextView.name),
+      nextView,
+    ];
+    saveTaskViews(window.localStorage, savedViews.value);
+    selectedViewId.value = nextView.id;
+    newViewName.value = "";
+  } catch (e) {
+    error.value = String(e);
+  }
+}
+
+async function applySavedView() {
+  if (!selectedView.value) return;
+  applySavedQuery(selectedView.value.query);
+  selection.clear();
+  await load();
+}
+
+function deleteSavedView() {
+  const view = selectedView.value;
+  if (!view || view.builtIn) return;
+  savedViews.value = savedViews.value.filter((item) => item.id !== view.id);
+  selectedViewId.value = "";
+  saveTaskViews(window.localStorage, savedViews.value);
+}
+
+function currentSavedQuery(): SavedTaskViewQuery {
+  return {
+    keyword: keyword.value,
+    status: status.value,
+    tagText: tagText.value,
+    listId: listId.value,
+    categoryId: categoryId.value,
+    priority: priority.value,
+    timeMode: timeMode.value,
+    timeFrom: timeFrom.value,
+    timeTo: timeTo.value,
+    reminderStatus: reminderStatus.value,
+    includeDeleted: includeDeleted.value,
+  };
+}
+
+function applySavedQuery(query: SavedTaskViewQuery) {
+  keyword.value = query.keyword;
+  status.value = query.status;
+  tagText.value = query.tagText;
+  listId.value = query.listId;
+  categoryId.value = query.categoryId;
+  priority.value = query.priority;
+  timeMode.value = query.timeMode;
+  timeFrom.value = query.timeFrom;
+  timeTo.value = query.timeTo;
+  reminderStatus.value = query.reminderStatus;
+  includeDeleted.value = query.includeDeleted;
+}
+
 async function openTaskFromRoute() {
   const taskId = Array.isArray(route.query.taskId) ? route.query.taskId[0] : route.query.taskId;
   if (!taskId || selectedTask.value?.id === taskId) return;
   const task = tasks.value.find((item) => item.id === taskId) ?? await repository.findTaskById(taskId);
   if (task) await openTask(task);
+}
+
+function parseSearchDateTime(value: string, label: string) {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    throw new Error(`${label}不合法`);
+  }
+  return date.toISOString();
 }
 
 </script>
@@ -163,6 +254,11 @@ async function openTaskFromRoute() {
           <option :value="2">P2</option>
           <option :value="3">P3</option>
         </select>
+        <select v-model="timeMode" aria-label="筛选计划状态" @change="load">
+          <option value="all">全部计划</option>
+          <option value="scheduled">已有时间</option>
+          <option value="unscheduled">无计划</option>
+        </select>
         <input v-model="timeFrom" type="datetime-local" aria-label="筛选开始时间" @change="load" />
         <input v-model="timeTo" type="datetime-local" aria-label="筛选结束时间" @change="load" />
         <select v-model="reminderStatus" aria-label="筛选提醒状态" @change="load">
@@ -181,6 +277,18 @@ async function openTaskFromRoute() {
       <div class="task-toolbar__right">
         <span>{{ title }}</span>
       </div>
+    </section>
+    <section class="saved-view-toolbar" aria-label="智能视图">
+      <select v-model="selectedViewId" aria-label="已保存视图">
+        <option value="">选择视图</option>
+        <option v-for="view in allSavedViews" :key="view.id" :value="view.id">
+          {{ view.builtIn ? "内置：" : "" }}{{ view.name }}
+        </option>
+      </select>
+      <button type="button" :disabled="!selectedViewId" @click="applySavedView">应用视图</button>
+      <button type="button" class="ghost danger" :disabled="!selectedView || selectedView.builtIn" @click="deleteSavedView">删除视图</button>
+      <input v-model="newViewName" aria-label="视图名称" placeholder="保存当前筛选为视图" />
+      <button type="button" class="primary" @click="saveCurrentView">保存视图</button>
     </section>
     <TaskBulkToolbar
       v-if="selection.selectedCount.value > 0"
@@ -291,5 +399,39 @@ async function openTaskFromRoute() {
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--bg-elev);
+}
+
+.saved-view-toolbar {
+  min-height: 42px;
+  padding: 6px 10px;
+  margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-elev);
+}
+
+.saved-view-toolbar select {
+  min-width: 180px;
+}
+
+.saved-view-toolbar input {
+  min-width: 220px;
+  flex: 1;
+}
+
+@media (max-width: 900px) {
+  .saved-view-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .saved-view-toolbar select,
+  .saved-view-toolbar input,
+  .saved-view-toolbar button {
+    width: 100%;
+  }
 }
 </style>

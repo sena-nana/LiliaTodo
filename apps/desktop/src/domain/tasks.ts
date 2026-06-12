@@ -1,3 +1,5 @@
+import { normalizeStrictDateTimeToIso, parseStrictDateTimeMs } from './dateTime';
+
 export const DEFAULT_TASK_LIST_ID = 'inbox';
 export const DEFAULT_TASK_LIST_NAME = '收件箱';
 
@@ -7,6 +9,7 @@ export type TaskResourceType = 'person' | 'tool' | 'space' | 'budget' | 'materia
 export type TaskReminderStatus = 'pending' | 'fired' | 'dismissed';
 export type TaskRecurrenceUnit = 'day' | 'week' | 'month';
 export type TaskSearchReminderStatus = 'none' | 'pending' | 'due' | 'fired' | 'dismissed';
+export type TaskSearchTimeMode = 'all' | 'scheduled' | 'unscheduled';
 
 export interface TaskRecurrence {
   enabled: boolean;
@@ -129,6 +132,7 @@ export interface TaskSearchQuery {
   priorities?: TaskPriority[];
   timeFrom?: string | null;
   timeTo?: string | null;
+  timeMode?: TaskSearchTimeMode | null;
   reminderStatus?: TaskSearchReminderStatus | null;
   includeDeleted?: boolean;
 }
@@ -386,8 +390,8 @@ export function groupTodayTasks(tasks: Task[], now = new Date()): TodayTaskGroup
 
   for (const task of sortTasks(tasks)) {
     if (task.status === 'completed' && task.completedAt) {
-      const completedAt = new Date(task.completedAt);
-      if (completedAt >= start && completedAt <= end) {
+      const completedAt = parseStrictDateTimeMs(task.completedAt);
+      if (completedAt !== null && completedAt >= start.getTime() && completedAt <= end.getTime()) {
         completedToday.push(task);
       }
       continue;
@@ -395,11 +399,11 @@ export function groupTodayTasks(tasks: Task[], now = new Date()): TodayTaskGroup
 
     if (task.status !== 'active') continue;
 
-    const dueAt = task.dueAt ? new Date(task.dueAt) : null;
-    const startAt = task.startAt ? new Date(task.startAt) : null;
-    if (dueAt && dueAt < start) {
+    const dueAt = parseStrictDateTimeMs(task.dueAt);
+    const startAt = parseStrictDateTimeMs(task.startAt);
+    if (dueAt !== null && dueAt < start.getTime()) {
       overdue.push(task);
-    } else if ((dueAt && dueAt <= end) || (startAt && startAt >= start && startAt <= end)) {
+    } else if ((dueAt !== null && dueAt <= end.getTime()) || (startAt !== null && startAt >= start.getTime() && startAt <= end.getTime())) {
       dueToday.push(task);
     }
   }
@@ -428,7 +432,10 @@ export function sortTasks(tasks: Task[]) {
 export function taskHasDueReminder(task: Task, now = new Date()) {
   const time = now.getTime();
   return (task.reminders ?? []).some(
-    (reminder) => reminder.status === 'pending' && new Date(reminder.triggerAt).getTime() <= time,
+    (reminder) => {
+      const triggerTime = parseStrictDateTimeMs(reminder.triggerAt);
+      return reminder.status === 'pending' && triggerTime !== null && triggerTime <= time;
+    },
   );
 }
 
@@ -449,11 +456,11 @@ function normalizeListId(value: string | null | undefined) {
 
 function normalizeNullableIso(value: string | null | undefined, field: string) {
   if (!value) return null;
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
+  const normalized = normalizeStrictDateTimeToIso(value);
+  if (!normalized) {
     throw new Error(`${field}必须是有效的 ISO 日期`);
   }
-  return date.toISOString();
+  return normalized;
 }
 
 function normalizeRequiredIso(value: string | null | undefined, field: string) {
