@@ -5,6 +5,33 @@ import type {
   WebdavRuntimeResolution,
 } from "../src/sync/webdav";
 
+
+it('WebDAV 自动同步会在启动恢复已授权状态', async () => {
+  localStorage.setItem('liliatodo.webdavAutoSync', 'true');
+  const runOnce = vi.fn<() => Promise<WebdavRunOnceResult>>().mockResolvedValue({ ok: true, report: emptyReport('恢复同步完成') });
+  const runtime = createDefaultSettingsSyncRuntime({ webdavRuntimeFactory: async () => enabledResolution(runOnce) });
+  expect(await runtime.webdav!.restoreAutoSync()).toMatchObject({ enabled: true, running: true, lastError: null });
+  expect(runOnce).toHaveBeenCalledTimes(1);
+  await runtime.webdav!.setAutoSyncEnabled(false);
+});
+
+it('WebDAV 自动同步开启后本地变更走 idle 防抖', async () => {
+  vi.useFakeTimers();
+  localStorage.removeItem('liliatodo.webdavAutoSync');
+  const runOnce = vi.fn<() => Promise<WebdavRunOnceResult>>().mockResolvedValue({ ok: true, report: emptyReport('本地变更同步完成') });
+  const runtime = createDefaultSettingsSyncRuntime({ webdavRuntimeFactory: async () => enabledResolution(runOnce) });
+  runtime.webdav!.notifyLocalChange();
+  await vi.advanceTimersByTimeAsync(6000);
+  expect(runOnce).not.toHaveBeenCalled();
+  await runtime.webdav!.setAutoSyncEnabled(true);
+  runOnce.mockClear();
+  runtime.webdav!.notifyLocalChange();
+  runtime.webdav!.notifyLocalChange();
+  await vi.advanceTimersByTimeAsync(5000);
+  expect(runOnce).toHaveBeenCalledTimes(1);
+  await runtime.webdav!.setAutoSyncEnabled(false);
+  vi.useRealTimers();
+});
 describe("默认设置页 WebDAV 同步装配", () => {
   it("未注入 WebDAV factory 时 webdav 为 null", () => {
     const runtime = createDefaultSettingsSyncRuntime();
@@ -133,3 +160,32 @@ describe("默认设置页 WebDAV 同步装配", () => {
     expect(result).toEqual({ ok: false, error: "尚未配置 WebDAV 凭据" });
   });
 });
+
+function emptyReport(message: string) {
+  return {
+    pushedOpsCount: 0,
+    pushedTaskChangeCount: 0,
+    pushedTaskListChangeCount: 0,
+    markedSyncedCount: 0,
+    markedTaskChangeSyncedCount: 0,
+    markedTaskListChangeSyncedCount: 0,
+    pulledOpsCount: 0,
+    appliedTaskCount: 0,
+    deletedTaskCount: 0,
+    appliedTaskListCount: 0,
+    deletedTaskListCount: 0,
+    serverCursor: null,
+    message,
+  };
+}
+
+function enabledResolution(runOnce: () => Promise<WebdavRunOnceResult>): WebdavRuntimeResolution {
+  return {
+    kind: 'enabled',
+    runner: { runOnce },
+    secrets: { baseUrl: 'https://dav.jianguoyun.com/dav', root: '/liliatodo', username: 'u', password: 'p', deviceId: 'desk-a' },
+    layout: {} as never,
+    provider: {} as never,
+    client: {} as never,
+  };
+}

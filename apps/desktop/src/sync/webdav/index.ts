@@ -24,25 +24,39 @@ export {
 } from "./paths";
 export {
   DEFAULT_SNAPSHOT_OPLOG_THRESHOLD,
+  buildCompactedSnapshot,
+  countOplogChunks,
   listSnapshots,
   loadSnapshot,
   mergeOpsIntoSnapshot,
   parseSnapshot,
+  parseSnapshotDocument,
   pickLatestSnapshot,
+  serializeSnapshotDocument,
   serializeSnapshot,
   shouldCompactSnapshot,
+  writeCompactedSnapshot,
   writeSnapshot,
+  type BuildCompactedSnapshotOptions,
+  type BuildCompactedSnapshotResult,
+  type CountOplogChunksResult,
   type ListSnapshotsResult,
   type LoadSnapshotResult,
   type MergeOpsIntoSnapshotOptions,
   type MergeOpsIntoSnapshotResult,
+  type ParseSnapshotDocumentResult,
   type ShouldCompactSnapshotInput,
   type SnapshotEntry,
   type SnapshotMeta,
+  type WriteCompactedSnapshotOptions,
+  type WriteCompactedSnapshotResult,
   type WriteSnapshotOptions,
 } from "./snapshot";
 export {
+  compactWebdavSnapshot,
   createWebdavSyncProvider,
+  type CompactWebdavSnapshotOptions,
+  type CompactWebdavSnapshotResult,
   type CreateWebdavSyncProviderOptions,
   type SyncProvider,
   type SyncPullResult,
@@ -118,6 +132,10 @@ export {
   type HttpResponse,
 } from "./httpClient";
 export {
+  buildWebdavRuntimeConfig,
+  type WebdavRuntimeConfig,
+} from "./config";
+export {
   createTauriHttpFetcher,
   type CreateTauriHttpFetcherOptions,
 } from "./tauriHttpFetcher";
@@ -130,10 +148,17 @@ export {
 } from "./secretsStore";
 export {
   entityToTask,
+  getTaskEntityBridge,
+  isSupportedTaskEntityType,
   localChangeToOp,
+  schemaVersionForTaskEntity,
+  TASK_ENTITY_BRIDGES,
   TASK_ENTITY_TYPE,
   TASK_SCHEMA_VERSION,
+  type EntityBridge,
   type LocalChangeToOpOptions,
+  type TaskEntityBridge,
+  type TaskEntityBridgeKind,
 } from "./taskBridge";
 export {
   createWebdavTaskSyncRunner,
@@ -143,7 +168,9 @@ export {
   type WebdavTaskSyncRunner,
 } from "./taskSyncRunner";
 export {
+  createSnapshotCompactingRunner,
   createWebdavRuntime,
+  type CreateSnapshotCompactingRunnerOptions,
   type CreateWebdavRuntimeOptions,
   type WebdavRuntimeResolution,
 } from "./runtime";

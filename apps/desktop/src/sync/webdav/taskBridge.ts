@@ -11,6 +11,7 @@ import type {
   TaskResource,
   TaskStatus,
 } from '../../domain/tasks';
+import { hasValidDatePart } from '../../domain/dateTime';
 
 export const TASK_ENTITY_TYPE = 'task';
 export const TASK_LIST_ENTITY_TYPE = 'taskList';
@@ -18,6 +19,21 @@ export const TASK_CATEGORY_ENTITY_TYPE = 'taskCategory';
 export const TASK_SCHEMA_VERSION = 4;
 export const TASK_LIST_SCHEMA_VERSION = 1;
 export const TASK_CATEGORY_SCHEMA_VERSION = 1;
+
+export type TaskEntityBridgeKind = 'task' | 'taskList' | 'taskCategory';
+
+export interface EntityBridge<TKind extends TaskEntityBridgeKind, TLocal> {
+  readonly kind: TKind;
+  readonly entityType: string;
+  readonly schemaVersion: number;
+  localChangeToOp(change: LocalChange, options: LocalChangeToOpOptions): Op;
+  entityToLocal(entity: Entity<unknown>): TLocal;
+}
+
+export type TaskEntityBridge =
+  | EntityBridge<'task', Task>
+  | EntityBridge<'taskList', TaskList>
+  | EntityBridge<'taskCategory', TaskCategory>;
 
 export interface LocalChangeToOpOptions {
   readonly deviceId: string;
@@ -137,6 +153,42 @@ export function entityToTaskCategory(entity: Entity<unknown>): TaskCategory {
   };
 }
 
+export const TASK_ENTITY_BRIDGES: readonly TaskEntityBridge[] = [
+  {
+    kind: 'task',
+    entityType: TASK_ENTITY_TYPE,
+    schemaVersion: TASK_SCHEMA_VERSION,
+    localChangeToOp,
+    entityToLocal: entityToTask,
+  },
+  {
+    kind: 'taskList',
+    entityType: TASK_LIST_ENTITY_TYPE,
+    schemaVersion: TASK_LIST_SCHEMA_VERSION,
+    localChangeToOp,
+    entityToLocal: entityToTaskList,
+  },
+  {
+    kind: 'taskCategory',
+    entityType: TASK_CATEGORY_ENTITY_TYPE,
+    schemaVersion: TASK_CATEGORY_SCHEMA_VERSION,
+    localChangeToOp,
+    entityToLocal: entityToTaskCategory,
+  },
+];
+
+export function getTaskEntityBridge(entityType: string): TaskEntityBridge | null {
+  return TASK_ENTITY_BRIDGES.find((bridge) => bridge.entityType === entityType) ?? null;
+}
+
+export function isSupportedTaskEntityType(entityType: string): boolean {
+  return getTaskEntityBridge(entityType) !== null;
+}
+
+export function schemaVersionForTaskEntity(entityType: string): number {
+  return getTaskEntityBridge(entityType)?.schemaVersion ?? TASK_SCHEMA_VERSION;
+}
+
 function unwrapTaskCreatePayload(raw: unknown): Record<string, unknown> {
   if (!isPlainObject(raw)) {
     throw new Error('WebDAV 同步：task.create payload 必须为对象');
@@ -247,7 +299,7 @@ function asString(value: unknown, field: string): string {
 function asRequiredIsoString(value: unknown, field: string): string {
   const text = asString(value, field);
   const date = new Date(text);
-  if (!ISO_DATE_TIME_PATTERN.test(text) || Number.isNaN(date.getTime())) {
+  if (!ISO_DATE_TIME_PATTERN.test(text) || Number.isNaN(date.getTime()) || !hasValidDatePart(text)) {
     throw new Error(`WebDAV 同步：${field} 必须是有效的 ISO 日期`);
   }
   return date.toISOString();

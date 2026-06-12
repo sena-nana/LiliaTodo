@@ -7,13 +7,16 @@
 // 不抛错，避免冷启动直接崩页。
 
 import type { TaskRepository } from "../../data/taskRepository";
+import { buildWebdavRuntimeConfig } from "./config";
 import {
   createWebdavHttpClient,
   type HttpFetcher,
 } from "./httpClient";
-import { createWebdavLayout, WEBDAV_DEFAULT_ROOT, type WebdavLayout } from "./paths";
+import type { WebdavLayout } from "./paths";
 import {
+  compactWebdavSnapshot,
   createWebdavSyncProvider,
+  type CompactWebdavSnapshotResult,
   type SyncProvider,
 } from "./provider";
 import type {
@@ -22,9 +25,15 @@ import type {
 } from "./secretsStore";
 import {
   createWebdavTaskSyncRunner,
+  type WebdavRunOnceResult,
   type WebdavTaskSyncRunner,
 } from "./taskSyncRunner";
-import type { WebdavClient, WebdavConfig } from "./types";
+import {
+  countOplogChunks,
+  shouldCompactSnapshot,
+  type CountOplogChunksResult,
+} from "./snapshot";
+import type { WebdavClient } from "./types";
 
 export type WebdavRuntimeResolution =
   | {
@@ -46,6 +55,65 @@ export interface CreateWebdavRuntimeOptions {
   readonly httpFetcher: HttpFetcher;
   readonly now?: () => Date;
   readonly userAgent?: string;
+  readonly snapshotCompactThreshold?: number;
+  readonly countOplogChunks?: (
+    client: WebdavClient,
+    layout: WebdavLayout,
+  ) => Promise<CountOplogChunksResult>;
+  readonly compactSnapshot?: (options: {
+    readonly client: WebdavClient;
+    readonly deviceId: string;
+    readonly layout: WebdavLayout;
+    readonly clock?: () => Date;
+  }) => Promise<CompactWebdavSnapshotResult>;
+}
+
+export interface CreateSnapshotCompactingRunnerOptions {
+  readonly runner: WebdavTaskSyncRunner;
+  readonly client: WebdavClient;
+  readonly layout: WebdavLayout;
+  readonly deviceId: string;
+  readonly clock?: () => Date;
+  readonly threshold?: number;
+  readonly countOplogChunks?: (
+    client: WebdavClient,
+    layout: WebdavLayout,
+  ) => Promise<CountOplogChunksResult>;
+  readonly compactSnapshot?: (options: {
+    readonly client: WebdavClient;
+    readonly deviceId: string;
+    readonly layout: WebdavLayout;
+    readonly clock?: () => Date;
+  }) => Promise<CompactWebdavSnapshotResult>;
+}
+
+export function createSnapshotCompactingRunner({
+  runner,
+  client,
+  layout,
+  deviceId,
+  clock,
+  threshold,
+  countOplogChunks: countChunks = countOplogChunks,
+  compactSnapshot = compactWebdavSnapshot,
+}: CreateSnapshotCompactingRunnerOptions): WebdavTaskSyncRunner {
+  return {
+    async runOnce(): Promise<WebdavRunOnceResult> {
+      const result = await runner.runOnce();
+      if (!result.ok) {
+        return result;
+      }
+      try {
+        const { chunkCount } = await countChunks(client, layout);
+        if (shouldCompactSnapshot({ oplogChunkCount: chunkCount, threshold })) {
+          await compactSnapshot({ client, layout, deviceId, clock });
+        }
+      } catch {
+        // Snapshot compact 是同步后的维护任务，失败不应反向把主同步标成失败。
+      }
+      return result;
+    },
+  };
 }
 
 /**
@@ -69,8 +137,7 @@ export async function createWebdavRuntime(
     return { kind: "disabled", reason: "尚未配置 WebDAV 凭据" };
   }
 
-  const config = secretsToConfig(secrets);
-  const layout = createWebdavLayout(secrets.root || WEBDAV_DEFAULT_ROOT);
+  const { config, layout } = buildWebdavRuntimeConfig(secrets);
   const client = createWebdavHttpClient({
     config,
     fetcher: options.httpFetcher,
@@ -82,24 +149,22 @@ export async function createWebdavRuntime(
     layout,
     clock: options.now,
   });
-  const runner = createWebdavTaskSyncRunner({
+  const baseRunner = createWebdavTaskSyncRunner({
     provider,
     repository: options.repository,
     deviceId: secrets.deviceId,
     now: options.now,
   });
+  const runner = createSnapshotCompactingRunner({
+    runner: baseRunner,
+    client,
+    layout,
+    deviceId: secrets.deviceId,
+    clock: options.now,
+    threshold: options.snapshotCompactThreshold,
+    countOplogChunks: options.countOplogChunks,
+    compactSnapshot: options.compactSnapshot,
+  });
 
   return { kind: "enabled", runner, secrets, layout, provider, client };
-}
-
-function secretsToConfig(secrets: WebdavSecrets): WebdavConfig {
-  return {
-    baseUrl: secrets.baseUrl,
-    root: secrets.root,
-    credentials: {
-      kind: "basic",
-      username: secrets.username,
-      password: secrets.password,
-    },
-  };
 }

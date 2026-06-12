@@ -2,6 +2,7 @@
 import { Loader2, ShieldCheck } from "lucide-vue-next";
 import { useWebdavSync } from "../composables/useWebdavSync";
 import { buildEditableContextMenuItems, useContextMenu } from "./contextMenu";
+import WebdavAutoSyncStatus from "./WebdavAutoSyncStatus.vue";
 import WebdavCredentialsForm from "./WebdavCredentialsForm.vue";
 import WebdavSyncStatus from "./WebdavSyncStatus.vue";
 
@@ -42,9 +43,16 @@ const webdav = useWebdavSync();
         :syncing="webdav.syncing.value"
         :has-saved-secrets="webdav.hasSavedSecrets.value"
         :inspect-reason="webdav.formError.value ? null : webdav.inspectReason.value"
-        :sync-error="webdav.syncError.value"
         :sync-report="webdav.syncReport.value"
+        :sync-error="webdav.syncError.value"
         @sync-now="webdav.handleSyncNow"
+      />
+      <WebdavAutoSyncStatus
+        v-if="webdav.controller"
+        :status="webdav.autoSyncStatus.value"
+        :busy="webdav.autoSyncBusy.value"
+        :has-saved-secrets="webdav.hasSavedSecrets.value"
+        @toggle="webdav.handleAutoSyncToggle"
       />
     </template>
   </div>

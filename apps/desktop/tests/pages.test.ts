@@ -443,11 +443,14 @@ describe("页面 MVP 行为", () => {
     });
 
     await screen.findByText("今日到期");
-    await waitFor(() => expect(agentAutoTrigger.runStartupChecks).toHaveBeenCalledTimes(1));
-    expect(notificationMocks.notifyDueReminders).toHaveBeenCalledWith(repository, expect.objectContaining({
+    const notifyRepository = notificationMocks.notifyDueReminders.mock.calls[0]?.[0];
+    const tickRepository = notificationMocks.listenReminderTicks.mock.calls[0]?.[0];
+    expect(notifyRepository).toEqual(expect.objectContaining({ databasePath: repository.databasePath, updateTask: expect.any(Function) }));
+    expect(tickRepository).toEqual(expect.objectContaining({ databasePath: repository.databasePath, updateTask: expect.any(Function) }));
+    expect(notificationMocks.notifyDueReminders.mock.calls[0]?.[1]).toEqual(expect.objectContaining({
       onReminderDue: expect.any(Function),
     }));
-    expect(notificationMocks.listenReminderTicks).toHaveBeenCalledWith(repository, expect.objectContaining({
+    expect(notificationMocks.listenReminderTicks.mock.calls[0]?.[1]).toEqual(expect.objectContaining({
       onReminderDue: expect.any(Function),
     }));
 

@@ -39,6 +39,26 @@ describe("WebDAV 凭据 in-memory store", () => {
     expect(await store.load()).toEqual(next);
   });
 
+  it("保存时规范化凭据外层空格但保留密码原文", async () => {
+    const store = createInMemoryWebdavSecretsStore();
+
+    await store.save(makeSecrets({
+      baseUrl: " https://dav.jianguoyun.com/dav ",
+      root: " /todo-sync/ ",
+      username: " user@example.com ",
+      password: " app secret ",
+      deviceId: " desk-a ",
+    }));
+
+    expect(await store.load()).toEqual(expect.objectContaining({
+      baseUrl: "https://dav.jianguoyun.com/dav",
+      root: "/todo-sync/",
+      username: "user@example.com",
+      password: " app secret ",
+      deviceId: "desk-a",
+    }));
+  });
+
   it("save 时缺字段直接抛错，避免存入脏数据", async () => {
     const store = createInMemoryWebdavSecretsStore();
     await expect(
