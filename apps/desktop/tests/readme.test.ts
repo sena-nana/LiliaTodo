@@ -16,6 +16,7 @@ describe("桌面端 README 文档", () => {
     expect(content).toContain("Tauri 2 + Vue 3 + TypeScript");
     expect(content).toContain("WebDAV（坚果云优先）");
     expect(content).toContain("前端优先工具");
+    expect(content).toContain("Agent 收件箱");
     expect(content).toContain("本地数据");
     expect(content).toContain("共享契约");
     expect(content).toContain("WebDAV 同步（坚果云优先）");
@@ -31,6 +32,8 @@ describe("桌面端 README 文档", () => {
     expect(content).toContain("sync_state");
     expect(content).toContain("sync_runs");
     expect(content).toContain("task_sync_versions");
+    expect(content).toContain("agent_pending_actions");
+    expect(content).toContain("agent_audit_records");
     expect(content).toContain("TaskRepository.getSyncState()");
     expect(content).toContain("TaskRepository.recordSyncRun()");
     expect(content).toContain("baseVersion");
@@ -45,16 +48,25 @@ describe("桌面端 README 文档", () => {
     expect(content).toContain("WebdavSettingsCard");
     expect(content).toContain("@tauri-apps/plugin-store");
     expect(content).toContain("https://dav.jianguoyun.com/dav");
+    expect(content).toContain("自动后台同步");
+    expect(content).toContain("5 分钟周期");
+    expect(content).toContain("5 秒 idle 防抖");
   });
 
-  it("记录手动验收路径和当前限制", () => {
+  it("记录日历、Agent 与当前限制", () => {
     const content = readme();
 
     expect(content).toContain("docs/local-sync-acceptance.md");
     expect(content).toContain("npm run tauri dev");
+    expect(content).toContain("日 / 周 / 月视图");
+    expect(content).toContain("拖拽改期");
+    expect(content).toContain("Agent runtime 可手动启动、停止和触发扫描");
+    expect(content).toContain("runner 建议会进入待确认队列");
+    expect(content).toContain("自动触发默认开启但受边界约束");
     expect(content).toContain("登录是纯前端跳转占位");
     expect(content).toContain("由独立服务端项目承接");
-    expect(content).toContain("WebDAV 同步当前只支持手动触发");
+    expect(content).toContain("WebDAV 自动同步只在用户显式授权后运行");
+    expect(content).toContain("自动触发不会直接落库执行");
     expect(content).toContain("尚未实现 Android 端");
   });
 
