@@ -53,7 +53,7 @@ describe("UI 精简", () => {
 
   it("日历页面不再显示页标题和副标题", async () => {
     renderWithRepository(Calendar);
-    expect(await screen.findByText("未来 7 天暂无已安排任务。")).toBeInTheDocument();
+    expect(await screen.findByText("当前范围暂无已安排任务。")).toBeInTheDocument();
 
     expect(screen.queryByRole("heading", { level: 1, name: "日历" })).toBeNull();
     expect(screen.queryByText("未来 7 天")).toBeNull();

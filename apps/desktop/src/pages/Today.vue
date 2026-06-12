@@ -7,6 +7,13 @@ import { useTaskListActions } from "../composables/useTaskListActions";
 import { useGlobalShortcuts } from "../composables/useGlobalShortcuts";
 import type { TodayTaskGroups } from "../domain/tasks";
 import { taskHasDueReminder } from "../domain/tasks";
+import {
+  applyTemplateToCreateInput,
+  createTaskTemplate,
+  loadTaskTemplates,
+  saveTaskTemplates,
+  type TaskTemplate,
+} from "../domain/taskTemplates";
 import { buildEditableContextMenuItems, useContextMenu } from "../components/contextMenu";
 import { AsyncTaskDetailDrawer } from "../components/AsyncTaskDetailDrawer";
 import PageStateBlock from "../components/PageStateBlock.vue";
@@ -27,6 +34,12 @@ const quickAddInput = ref<HTMLInputElement | null>(null);
 const destination = ref<"today" | "inbox">("today");
 const dueAtInput = ref("");
 const estimateInput = ref("");
+const selectedTemplateId = ref("");
+const templateName = ref("");
+const templateTags = ref("");
+const templateChecklist = ref("");
+const templateReminderOffset = ref("");
+const templates = ref<TaskTemplate[]>([]);
 const loading = ref(true);
 const error = ref<string | null>(null);
 const allVisibleTasks = computed(() => [
@@ -58,16 +71,12 @@ const { newTitle: title, quickAddSaving, createTask: onQuickAdd } = useTaskListA
   reload: load,
   listId: () => "inbox",
   buildCreateInput: (taskTitle) => ({
-    title: taskTitle,
-    dueAt:
-      destination.value === "today"
-        ? dueAtInputToIso(dueAtInput.value) ?? defaultTodayDueAt()
-        : null,
-    estimateMin: estimateInputToNumber(estimateInput.value),
+    ...buildCreateInputFromTemplate(taskTitle),
   }),
   reset: () => {
     dueAtInput.value = "";
     estimateInput.value = "";
+    selectedTemplateId.value = "";
   },
   setError: (value) => {
     error.value = value;
@@ -75,6 +84,7 @@ const { newTitle: title, quickAddSaving, createTask: onQuickAdd } = useTaskListA
 });
 
 onMounted(() => {
+  templates.value = loadTaskTemplates(window.localStorage);
   void load();
 });
 
@@ -94,6 +104,19 @@ useGlobalShortcuts({
   },
 });
 
+function buildCreateInputFromTemplate(taskTitle: string) {
+  const base = {
+    title: taskTitle,
+    dueAt:
+      destination.value === "today"
+        ? dueAtInputToIso(dueAtInput.value) ?? defaultTodayDueAt()
+        : null,
+    estimateMin: estimateInputToNumber(estimateInput.value),
+  };
+  const template = templates.value.find((item) => item.id === selectedTemplateId.value);
+  return template ? applyTemplateToCreateInput(template, base) : base;
+}
+
 async function load() {
   loading.value = true;
   error.value = null;
@@ -108,7 +131,11 @@ async function load() {
 
 function dueAtInputToIso(value: string) {
   if (!value) return null;
-  return new Date(value).toISOString();
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    throw new Error("任务截止时间不合法");
+  }
+  return date.toISOString();
 }
 
 function estimateInputToNumber(value: string) {
@@ -120,6 +147,52 @@ function defaultTodayDueAt() {
   const due = new Date();
   due.setHours(12, 0, 0, 0);
   return due.toISOString();
+}
+
+function applyTemplate() {
+  const template = templates.value.find((item) => item.id === selectedTemplateId.value);
+  if (!template) return;
+  title.value = template.title;
+  estimateInput.value = template.estimateMin ? String(template.estimateMin) : "";
+}
+
+function saveTemplate() {
+  error.value = null;
+  try {
+    const nextTemplate = createTaskTemplate({
+      name: templateName.value,
+      title: title.value,
+      estimateMin: estimateInputToNumber(estimateInput.value),
+      tags: parseTemplateTags(templateTags.value),
+      checklist: parseTemplateChecklist(templateChecklist.value),
+      reminderOffsetMin: estimateInputToNumber(templateReminderOffset.value),
+    });
+    templates.value = [
+      ...templates.value.filter((item) => item.name !== nextTemplate.name),
+      nextTemplate,
+    ];
+    saveTaskTemplates(window.localStorage, templates.value);
+    selectedTemplateId.value = nextTemplate.id;
+    templateName.value = "";
+    templateTags.value = "";
+    templateChecklist.value = "";
+    templateReminderOffset.value = "";
+  } catch (e) {
+    error.value = String(e);
+  }
+}
+
+function parseTemplateTags(value: string) {
+  return value.split(/[,，]/).map((tag) => tag.trim()).filter(Boolean);
+}
+
+function parseTemplateChecklist(value: string) {
+  return value.split(/[|｜\n]/).map((title) => title.trim()).filter(Boolean).map((title, index) => ({
+    id: `check-${index}`,
+    title,
+    done: false,
+    order: index,
+  }));
 }
 
 function formatDateTime(value: string | null) {
@@ -174,6 +247,22 @@ function formatDateTime(value: string | null) {
           <Plus :size="16" aria-hidden="true" />
           {{ destination === "today" ? "添加到今日" : "添加任务" }}
         </button>
+      </div>
+      <div class="template-row">
+        <label class="sr-only" for="task-template">任务模板</label>
+        <select id="task-template" v-model="selectedTemplateId" aria-label="任务模板" @change="applyTemplate">
+          <option value="">选择模板</option>
+          <option v-for="template in templates" :key="template.id" :value="template.id">{{ template.name }}</option>
+        </select>
+        <label class="sr-only" for="task-template-name">模板名称</label>
+        <input id="task-template-name" v-model="templateName" aria-label="模板名称" placeholder="保存为模板" />
+        <label class="sr-only" for="task-template-tags">模板标签</label>
+        <input id="task-template-tags" v-model="templateTags" aria-label="模板标签" placeholder="标签，逗号分隔" />
+        <label class="sr-only" for="task-template-checklist">模板检查项</label>
+        <input id="task-template-checklist" v-model="templateChecklist" aria-label="模板检查项" placeholder="检查项，用 | 分隔" />
+        <label class="sr-only" for="task-template-reminder">提醒提前分钟</label>
+        <input id="task-template-reminder" v-model="templateReminderOffset" aria-label="提醒提前分钟" class="template-row__number" type="number" min="0" step="1" placeholder="提前 min" />
+        <button type="button" @click="saveTemplate">保存模板</button>
       </div>
     </form>
 
@@ -253,3 +342,26 @@ function formatDateTime(value: string | null) {
     />
   </section>
 </template>
+
+<style scoped>
+.template-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.template-row select {
+  min-width: 160px;
+}
+
+.template-row input {
+  flex: 1;
+  min-width: 160px;
+}
+
+.template-row .template-row__number {
+  flex: 0 0 112px;
+  min-width: 112px;
+}
+</style>

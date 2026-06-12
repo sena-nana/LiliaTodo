@@ -15,6 +15,7 @@ import { useLatestAsyncRun } from "../composables/useLatestAsyncRun";
 import { useTaskRepository } from "../data/TaskRepositoryContext";
 import { formatDisplayError } from "../utils/errors";
 import type { Task } from "../domain/tasks";
+import { parseStrictDateTimeMs } from "../domain/dateTime";
 
 type TaskViewMode = "all" | "quadrant" | "timeline" | "completed" | "archived" | "deleted";
 
@@ -226,8 +227,8 @@ async function onTaskDrop(target: Task) {
 
 function isTaskUrgent(task: Task) {
   if (!task.dueAt) return false;
-  const dueTime = new Date(task.dueAt).getTime();
-  if (Number.isNaN(dueTime)) return false;
+  const dueTime = parseStrictDateTimeMs(task.dueAt);
+  if (dueTime === null) return false;
   const urgentUntil = now.value.getTime() + 24 * 60 * 60 * 1000;
   return dueTime <= urgentUntil;
 }

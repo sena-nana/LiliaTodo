@@ -1,6 +1,6 @@
 import { fireEvent, screen, waitFor, within } from "@testing-library/vue";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { deferred, drawerRole, renderAppAt, renderWithRepository, resetPageTestMocks } from "./pageTestUtils";
+import { deferred, drawerRole, renderWithRepository, resetPageTestMocks } from "./pageTestUtils";
 import Inbox from "../src/pages/Inbox.vue";
 import type { TaskRepository } from "../src/data/taskRepository";
 import { TASK_LISTS_CHANGED_EVENT } from "../src/data/taskListEvents";
@@ -207,6 +207,34 @@ describe("pages.inbox", () => {
   });
 
 
+  it("打开含不存在日期的任务详情时不会崩溃", async () => {
+    const repository = fakeRepository({
+      inbox: [
+        task({
+          id: "inbox-1",
+          title: "坏日期任务",
+          startAt: "2026-02-31T09:00:00.000Z",
+          dueAt: "2026-02-31T10:00:00.000Z",
+          reminders: [
+            { id: "reminder-1", triggerAt: "2026-02-31T08:00:00.000Z", status: "pending", message: null },
+          ],
+        }),
+      ],
+    });
+
+    renderWithRepository(Inbox, repository);
+
+    const row = (await screen.findByText("坏日期任务")).closest("li");
+    expect(row).not.toBeNull();
+    await fireEvent.click(within(row as HTMLElement).getByRole("button", { name: "编辑 坏日期任务" }));
+
+    const drawer = await screen.findByRole(drawerRole, { name: "任务详情" });
+    expect(within(drawer).getByLabelText("开始时间")).toHaveValue("");
+    expect(within(drawer).getByLabelText("截止时间")).toHaveValue("");
+    expect(within(drawer).getByText("坏日期任务")).toBeInTheDocument();
+  });
+
+
   it("清空资源数量后保存为 null", async () => {
     const repository = fakeRepository({
       inbox: [
@@ -298,7 +326,7 @@ describe("pages.inbox", () => {
         task({ id: "moved-1", title: "迁移任务", listId: "inbox" }),
       ]);
 
-    await renderAppAt("/inbox", repository);
+    renderWithRepository(Inbox, repository);
 
     expect(await screen.findByText("收件箱暂无任务。可在今日页添加任务并选择收件箱。")).toBeInTheDocument();
     window.dispatchEvent(new CustomEvent(TASK_LISTS_CHANGED_EVENT));
@@ -317,7 +345,7 @@ describe("pages.inbox", () => {
         task({ id: "moved-1", title: "迁移任务", listId: "inbox" }),
       ]);
 
-    await renderAppAt("/inbox", repository);
+    renderWithRepository(Inbox, repository);
     await waitFor(() => expect(repository.listInbox).toHaveBeenCalledTimes(1));
 
     window.dispatchEvent(new CustomEvent(TASK_LISTS_CHANGED_EVENT));

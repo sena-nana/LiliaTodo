@@ -124,8 +124,8 @@ export function createTaskRepositoryTasks(
     const statuses = query.statuses?.length ? new Set(query.statuses) : null;
     const priorities = query.priorities?.length ? new Set(query.priorities) : null;
     const tags = query.tags?.length ? new Set(query.tags.map((tag) => tag.trim()).filter(Boolean)) : null;
-    const fromTime = query.timeFrom ? new Date(query.timeFrom).getTime() : null;
-    const toTime = query.timeTo ? new Date(query.timeTo).getTime() : null;
+    const fromTime = parseSearchTime(query.timeFrom, "筛选开始时间");
+    const toTime = parseSearchTime(query.timeTo, "筛选结束时间");
 
     return tasks.filter((task) => {
       if (!query.includeDeleted && task.deletedAt) return false;
@@ -138,6 +138,8 @@ export function createTaskRepositoryTasks(
       if (query.categoryId && task.categoryId !== query.categoryId) return false;
       if (statuses && !statuses.has(task.status)) return false;
       if (priorities && !priorities.has(task.priority)) return false;
+      if (query.timeMode === "scheduled" && !task.startAt && !task.dueAt) return false;
+      if (query.timeMode === "unscheduled" && (task.startAt || task.dueAt)) return false;
       if (fromTime != null || toTime != null) {
         const target = task.startAt ?? task.dueAt ?? task.completedAt ?? task.createdAt;
         const time = new Date(target).getTime();
@@ -146,15 +148,23 @@ export function createTaskRepositoryTasks(
       }
       if (query.reminderStatus) {
         const hasReminders = task.reminders.length > 0;
-        const nowTime = now().getTime();
         if (query.reminderStatus === "none" && hasReminders) return false;
         if (query.reminderStatus === "pending" && !task.reminders.some((item) => item.status === "pending")) return false;
-        if (query.reminderStatus === "due" && !task.reminders.some((item) => item.status === "pending" && new Date(item.triggerAt).getTime() <= nowTime)) return false;
+        if (query.reminderStatus === "due" && !taskHasDueReminder(task, now())) return false;
         if (query.reminderStatus === "fired" && !task.reminders.some((item) => item.status === "fired")) return false;
         if (query.reminderStatus === "dismissed" && !task.reminders.some((item) => item.status === "dismissed")) return false;
       }
       return true;
     });
+  }
+
+  function parseSearchTime(value: string | null | undefined, label: string) {
+    if (!value) return null;
+    const time = new Date(value).getTime();
+    if (Number.isNaN(time)) {
+      throw new Error(`${label}不合法`);
+    }
+    return time;
   }
 
   async function ensureCategoryExists(db: SqlDatabase, categoryId: string | null | undefined) {
@@ -465,7 +475,7 @@ export function createTaskRepositoryTasks(
       return repository().updateTask(taskId, {
         reminders: task.reminders.map((reminder) =>
           reminder.id === reminderId
-            ? { ...reminder, triggerAt: new Date(until).toISOString(), status: "pending" }
+            ? { ...reminder, triggerAt: until, status: "pending" }
             : reminder,
         ),
         lastReminderNotifiedAt: null,
@@ -506,6 +516,9 @@ export function createTaskRepositoryTasks(
           tags = excluded.tags,
           list_id = excluded.list_id,
           category_id = excluded.category_id,
+          recurrence = excluded.recurrence,
+          deleted_at = excluded.deleted_at,
+          last_reminder_notified_at = excluded.last_reminder_notified_at,
           created_at = excluded.created_at,
           updated_at = excluded.updated_at,
           completed_at = excluded.completed_at`,

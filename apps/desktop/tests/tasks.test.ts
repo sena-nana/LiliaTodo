@@ -5,6 +5,7 @@ import {
   mapTaskRow,
   normalizeCreateTaskInput,
   normalizeUpdateTaskInput,
+  taskHasDueReminder,
   type TaskCategoryRow,
   type TaskListRow,
   type TaskRow,
@@ -18,6 +19,7 @@ import {
   type SyncRunRow,
   type SyncStateRow,
 } from "../src/data/taskRepository";
+import { shiftIso } from "../src/data/taskRepositoryUtils";
 
 describe("任务领域", () => {
   it("规范化创建输入并拒绝空白标题", () => {
@@ -72,6 +74,42 @@ describe("任务领域", () => {
         ],
       }),
     ).toThrow("提醒时间必须是有效的 ISO 日期");
+    expect(() =>
+      normalizeUpdateTaskInput({
+        reminders: [
+          { id: "reminder-1", triggerAt: "2026-02-31T09:00:00.000Z", status: "pending", message: null },
+        ],
+      }),
+    ).toThrow("提醒时间必须是有效的 ISO 日期");
+  });
+
+  it("判断到期提醒时忽略不存在的提醒日期", () => {
+    const task = {
+      ...mapTaskRow(taskRow()),
+      reminders: [
+        { id: "reminder-1", triggerAt: "2026-02-31T09:00:00.000Z", status: "pending", message: null },
+      ],
+    };
+
+    expect(taskHasDueReminder(task, new Date("2026-03-01T10:00:00.000Z"))).toBe(false);
+  });
+
+  it("规范化任务时间时拒绝不存在的日期", () => {
+    expect(() => normalizeCreateTaskInput({
+      title: "坏日期",
+      dueAt: "2026-02-31",
+    })).toThrow("任务截止时间必须是有效的 ISO 日期");
+    expect(() => normalizeUpdateTaskInput({
+      startAt: "2026-02-31T10:00:00.000Z",
+    })).toThrow("任务开始时间必须是有效的 ISO 日期");
+  });
+
+  it("月重复推进到短月份时夹紧到目标月最后一天", () => {
+    expect(shiftIso("2026-01-31T10:30:00.000Z", {
+      enabled: true,
+      unit: "month",
+      interval: 1,
+    })).toBe("2026-02-28T10:30:00.000Z");
   });
 
   it("将 SQLite 行映射为任务对象", () => {
@@ -145,6 +183,19 @@ describe("任务领域", () => {
     expect(groups.dueToday.map((item) => item.id)).toEqual(["today"]);
     expect(groups.completedToday.map((item) => item.id)).toEqual(["done"]);
   });
+
+  it("今日分组忽略不存在的任务日期", () => {
+    const groups = groupTodayTasks(
+      [
+        task({ id: "bad-due", dueAt: "2026-02-31T04:00:00.000Z" }),
+        task({ id: "bad-start", startAt: "2026-02-31T05:00:00.000Z" }),
+        task({ id: "bad-done", status: "completed", completedAt: "2026-02-31T06:00:00.000Z" }),
+      ],
+      new Date("2026-03-01T12:00:00.000Z"),
+    );
+
+    expect(groups).toEqual({ overdue: [], dueToday: [], completedToday: [] });
+  });
 });
 
 describe("TaskRepository 仓储", () => {
@@ -205,6 +256,63 @@ describe("TaskRepository 仓储", () => {
     expect(query?.sql).toContain("WHERE status = 'active'");
     expect(query?.sql).toContain("ORDER BY child_order ASC, COALESCE(start_at, due_at, created_at) ASC, priority DESC");
     expect(query?.params).toBeUndefined();
+  });
+
+  it("搜索任务支持按计划状态筛选", async () => {
+    const db = new RecordingDatabase({
+      taskRows: [
+        taskRow({ id: "scheduled", title: "已有时间", start_at: "2026-06-12T01:00:00.000Z" }),
+        taskRow({ id: "due", title: "有截止", due_at: "2026-06-12T10:00:00.000Z" }),
+        taskRow({ id: "unscheduled", title: "无计划", start_at: null, due_at: null }),
+      ],
+    });
+    const repository = createTaskRepository(() => Promise.resolve(db));
+
+    await expect(repository.searchTasks({ timeMode: "scheduled" })).resolves.toEqual([
+      expect.objectContaining({ id: "scheduled" }),
+      expect.objectContaining({ id: "due" }),
+    ]);
+    await expect(repository.searchTasks({ timeMode: "unscheduled" })).resolves.toEqual([
+      expect.objectContaining({ id: "unscheduled" }),
+    ]);
+  });
+
+  it("搜索任务遇到非法时间筛选时显示中文错误", async () => {
+    const db = new RecordingDatabase({
+      taskRows: [taskRow({ id: "task-1", title: "任务" })],
+    });
+    const repository = createTaskRepository(() => Promise.resolve(db));
+
+    await expect(repository.searchTasks({ timeFrom: "bad-time" })).rejects.toThrow("筛选开始时间不合法");
+    await expect(repository.searchTasks({ timeTo: "bad-time" })).rejects.toThrow("筛选结束时间不合法");
+  });
+
+  it("搜索提醒已到时忽略不存在的提醒日期", async () => {
+    const db = new RecordingDatabase({
+      taskRows: [
+        taskRow({
+          id: "bad-reminder",
+          title: "坏提醒",
+          reminders: JSON.stringify([
+            { id: "reminder-bad", triggerAt: "2026-02-31T09:00:00.000Z", status: "pending", message: null },
+          ]),
+        }),
+        taskRow({
+          id: "due-reminder",
+          title: "已到提醒",
+          reminders: JSON.stringify([
+            { id: "reminder-due", triggerAt: "2026-03-01T09:00:00.000Z", status: "pending", message: null },
+          ]),
+        }),
+      ],
+    });
+    const repository = createTaskRepository(() => Promise.resolve(db), {
+      now: () => new Date("2026-03-01T10:00:00.000Z"),
+    });
+
+    await expect(repository.searchTasks({ reminderStatus: "due" })).resolves.toEqual([
+      expect.objectContaining({ id: "due-reminder" }),
+    ]);
   });
 
   it("创建规范化 active 任务行并记录本地变更", async () => {
@@ -532,6 +640,41 @@ describe("TaskRepository 仓储", () => {
     ]);
     expect(db.calls.some((call) => call.sql.includes("INSERT INTO local_changes")))
       .toBe(false);
+  });
+
+  it("远端任务冲突更新会覆盖重复规则、删除状态和提醒通知状态", async () => {
+    const db = new RecordingDatabase();
+    const repository = createTaskRepository(() => Promise.resolve(db));
+
+    await repository.applyRemoteTask({
+      id: "task-remote",
+      title: "远端重复任务",
+      notes: null,
+      status: "active",
+      priority: 1,
+      startAt: null,
+      dueAt: "2026-05-17T02:30:00.000Z",
+      estimateMin: null,
+      resources: [],
+      reminders: [],
+      checklist: [],
+      parentId: null,
+      childOrder: 0,
+      tags: [],
+      listId: "inbox",
+      categoryId: null,
+      recurrence: { enabled: true, unit: "week", interval: 1 },
+      deletedAt: "2026-05-18T02:30:00.000Z",
+      lastReminderNotifiedAt: "2026-05-17T02:00:00.000Z",
+      createdAt: "2026-05-16T10:00:00.000Z",
+      updatedAt: "2026-05-16T11:00:00.000Z",
+      completedAt: null,
+    });
+
+    const upsertSql = db.calls.find((call) => call.sql.includes("ON CONFLICT(id) DO UPDATE SET"))?.sql ?? "";
+    expect(upsertSql).toContain("recurrence = excluded.recurrence");
+    expect(upsertSql).toContain("deleted_at = excluded.deleted_at");
+    expect(upsertSql).toContain("last_reminder_notified_at = excluded.last_reminder_notified_at");
   });
 
   it("在任务 UI 模型外存储拉取的远端任务版本", async () => {
