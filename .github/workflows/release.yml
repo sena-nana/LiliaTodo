@@ -54,6 +54,8 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ steps.release_ref.outputs.ref || github.ref }}
+          # Agent runtime 通过 third_party/MutsukiCore 的 Cargo path dependency 提供。
+          submodules: recursive
 
       - name: Set up Node.js
         uses: actions/setup-node@v6
@@ -94,6 +96,8 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ needs.verify.outputs.ref || github.ref }}
+          # 发布构建也需要拉取 Agent runtime submodule。
+          submodules: recursive
 
       - name: Set up Node.js
         uses: actions/setup-node@v6

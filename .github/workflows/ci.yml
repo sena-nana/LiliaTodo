@@ -25,6 +25,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+        with:
+          # Agent runtime 通过 third_party/MutsukiCore 的 Cargo path dependency 提供。
+          submodules: recursive
 
       - name: Set up Node.js
         uses: actions/setup-node@v6
@@ -62,6 +65,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+        with:
+          # 保持 fresh clone 与本地含 submodule 的工作区一致。
+          submodules: recursive
 
       - name: Set up Node.js
         uses: actions/setup-node@v6
