@@ -2317,6 +2317,7 @@ dependencies = [
  "mutsuki-runtime-contracts",
  "mutsuki-runtime-core",
  "mutsuki-runtime-host",
+ "raw-window-handle",
  "serde",
  "serde_json",
  "tauri",
@@ -2326,6 +2327,7 @@ dependencies = [
  "tauri-plugin-opener",
  "tauri-plugin-sql",
  "tauri-plugin-store",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

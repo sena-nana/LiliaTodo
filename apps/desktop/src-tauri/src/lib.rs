@@ -2,7 +2,7 @@ use tauri::{
     menu::{MenuBuilder, MenuItem, MenuItemBuilder},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     utils::config::Color,
-    AppHandle, Manager, Theme, WebviewUrl, WebviewWindow, WebviewWindowBuilder, WindowEvent, Wry,
+    AppHandle, Manager, Theme, WebviewWindow, WindowEvent, Wry,
 };
 
 const MAIN_WINDOW_LABEL: &str = "main";
@@ -16,10 +16,11 @@ const CLOSE_WIDGET_TEXT: &str = "关闭小组件";
 const BG_LIGHT: Color = Color(0xFF, 0xFF, 0xFF, 0xFF);
 const BG_DARK: Color = Color(0x18, 0x18, 0x18, 0xFF);
 
-mod window_state;
-mod agent_runtime_state;
 mod agent_codex_runner;
+mod agent_runtime_state;
 mod notification_scheduler;
+mod widget_window;
+mod window_state;
 
 #[derive(Debug, PartialEq, Eq)]
 enum WidgetTrayCommand {
@@ -76,8 +77,7 @@ fn greet(name: &str) -> String {
 }
 
 fn build_tray(app: &AppHandle) -> tauri::Result<()> {
-    let widget_item =
-        MenuItemBuilder::with_id(MENU_ID_WIDGET, SHOW_WIDGET_TEXT).build(app)?;
+    let widget_item = MenuItemBuilder::with_id(MENU_ID_WIDGET, SHOW_WIDGET_TEXT).build(app)?;
     let quit_item = MenuItemBuilder::with_id(MENU_ID_QUIT, "退出").build(app)?;
     let menu = MenuBuilder::new(app)
         .item(&widget_item)
@@ -96,35 +96,22 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
         .show_menu_on_left_click(false)
         .on_menu_event(move |app, event| match event.id().as_ref() {
             MENU_ID_WIDGET => {
-                if let Some(win) = app.get_webview_window("widget") {
-                    let is_visible = win.is_visible().unwrap_or(false);
-                    match widget_tray_command(is_visible) {
-                        WidgetTrayCommand::Hide => {
-                            let _ = win.hide();
-                            sync_widget_menu_text(&menu_state, false);
+                let widget = app.get_webview_window(widget_window::WIDGET_WINDOW_LABEL);
+                let is_visible = widget
+                    .as_ref()
+                    .and_then(|window| window.is_visible().ok())
+                    .unwrap_or(false);
+                match widget_tray_command(is_visible) {
+                    WidgetTrayCommand::Hide => {
+                        if let Some(window) = widget {
+                            let _ = window.hide();
                         }
-                        WidgetTrayCommand::Show => {
-                            let _ = win.show();
-                            let _ = win.set_focus();
-                            sync_widget_menu_text(&menu_state, true);
-                        }
+                        sync_widget_menu_text(&menu_state, false);
                     }
-                } else {
-                    let _ = WebviewWindowBuilder::new(
-                        app,
-                        "widget",
-                        WebviewUrl::App("/widget".into()),
-                    )
-                    .title("LiliaTodo 小组件")
-                    .decorations(false)
-                    .transparent(true)
-                    .always_on_top(true)
-                    .skip_taskbar(true)
-                    .resizable(false)
-                    .inner_size(360.0, 560.0)
-                    .visible(true)
-                    .build();
-                    sync_widget_menu_text(&menu_state, true);
+                    WidgetTrayCommand::Show => {
+                        let _ = widget_window::show_widget_window(app);
+                        sync_widget_menu_text(&menu_state, true);
+                    }
                 }
             }
             MENU_ID_QUIT => app.exit(0),
@@ -173,6 +160,24 @@ mod tests {
     fn 小组件不可见时点击托盘项会请求显示小组件() {
         assert_eq!(widget_tray_command(false), WidgetTrayCommand::Show);
     }
+
+    #[test]
+    fn 小组件配置默认不创建且不可抢焦点() {
+        let config: serde_json::Value =
+            serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
+        let widget_window = config["app"]["windows"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|window| window["label"].as_str() == Some("widget"))
+            .unwrap();
+
+        assert_eq!(widget_window["create"].as_bool(), Some(false));
+        assert_eq!(widget_window["visible"].as_bool(), Some(false));
+        assert_eq!(widget_window["skipTaskbar"].as_bool(), Some(true));
+        assert_eq!(widget_window["focus"].as_bool(), Some(false));
+        assert_eq!(widget_window["focusable"].as_bool(), Some(false));
+    }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -185,16 +190,16 @@ pub fn run() {
         .plugin(tauri_plugin_store::Builder::default().build())
         .on_window_event(|window, event| {
             if window.label() == MAIN_WINDOW_LABEL
-                && matches!(event, WindowEvent::CloseRequested { .. } | WindowEvent::Destroyed)
+                && matches!(
+                    event,
+                    WindowEvent::CloseRequested { .. } | WindowEvent::Destroyed
+                )
             {
                 if let Some(webview_window) = window.get_webview_window(MAIN_WINDOW_LABEL) {
-                    window_state::persist_main_window_state(
-                        &window.app_handle(),
-                        &webview_window,
-                    );
+                    window_state::persist_main_window_state(&window.app_handle(), &webview_window);
                 }
             }
-            if window.label() == "widget" {
+            if window.label() == widget_window::WIDGET_WINDOW_LABEL {
                 match event {
                     WindowEvent::Destroyed => {
                         sync_widget_menu_from_app(window.app_handle(), false);
