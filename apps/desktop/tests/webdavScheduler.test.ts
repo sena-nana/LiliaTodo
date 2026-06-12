@@ -296,6 +296,7 @@ describe("BE-12 sprint-2 WebdavSyncScheduler", () => {
 
     const report = await scheduler.triggerNow("manual");
     expect(report.reason).toBe("manual");
+    expect(report.idleWindow).toBe(false);
     expect(report.pushedCount).toBe(2);
     expect(report.error).toBeNull();
     expect(harness.onPushed).toHaveBeenCalledWith(harness.pendingOps);

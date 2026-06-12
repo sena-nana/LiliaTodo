@@ -14,6 +14,7 @@
 
 import type { Op } from "../types/op";
 import type { Entity } from "../types/entity";
+import { decodeCursor } from "./cursor";
 import {
   groupOpsByEntity,
   mergeOpsForEntity,
@@ -213,6 +214,10 @@ export interface CountOplogChunksResult {
   readonly chunkCount: number;
 }
 
+export interface CleanupCoveredOplogChunksResult {
+  readonly deletedPaths: readonly string[];
+}
+
 /**
  * 统计远端 oplog chunk 数量，用于调度层判断是否需要在空闲时 compact。
  * 目录不存在时按 0 处理；只统计可解析 seq 的 .jsonl chunk，忽略其它诊断文件。
@@ -245,6 +250,49 @@ export async function countOplogChunks(
     }
   }
   return { chunkCount };
+}
+
+export async function cleanupCoveredOplogChunks(
+  client: WebdavClient,
+  layout: WebdavLayout,
+  cursor: string | null | undefined,
+): Promise<CleanupCoveredOplogChunksResult> {
+  const positions = decodeCursor(cursor);
+  const deletedPaths: string[] = [];
+  for (const [deviceId, position] of Object.entries(positions)) {
+    if (!isSafeDeviceId(deviceId)) {
+      continue;
+    }
+    const devicePath = `${layout.oplog}/${deviceId}`;
+    const dayStats = await client.list(devicePath).catch(() => []);
+    for (const dayStat of dayStats) {
+      if (!dayStat.isDirectory) {
+        continue;
+      }
+      const day = dayStat.path.slice(dayStat.path.lastIndexOf("/") + 1);
+      if (!/^\d{8}$/.test(day) || day > position.lastDay) {
+        continue;
+      }
+      const chunkStats = await client.list(dayStat.path).catch(() => []);
+      for (const chunkStat of chunkStats) {
+        if (chunkStat.isDirectory) {
+          continue;
+        }
+        const filename = chunkStat.path.slice(chunkStat.path.lastIndexOf("/") + 1);
+        const seq = parseSeq(filename);
+        if (seq === null || (day === position.lastDay && seq > position.lastSeq)) {
+          continue;
+        }
+        await client.delete(chunkStat.path);
+        deletedPaths.push(chunkStat.path);
+      }
+    }
+  }
+  return { deletedPaths };
+}
+
+function isSafeDeviceId(deviceId: string): boolean {
+  return /^[A-Za-z0-9_\-]+$/.test(deviceId);
 }
 
 /**

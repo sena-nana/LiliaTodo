@@ -719,6 +719,106 @@ describe("WebDAV task 同步 runner", () => {
     expect(state.syncRuns[0].message).toBe("远端 423 Locked");
   });
 
+  it("provider.pull 抛错时记录 failed run、lastError，不滚动 cursor", async () => {
+    const state = freshState({
+      syncState: {
+        serverCursor: "cursor-before",
+        lastSyncedAt: null,
+        lastError: null,
+        updatedAt: null,
+      },
+    });
+    const provider: SyncProvider = {
+      async push(ops) {
+        return { acceptedCount: ops.length, chunkPath: null };
+      },
+      async pull() {
+        throw new Error("拉取失败");
+      },
+      async snapshot() {
+        return { entities: [], cursor: "{}" };
+      },
+      async pushEntity() {},
+      async getEntity() {
+        return null;
+      },
+    };
+    const runner = createWebdavTaskSyncRunner({
+      provider,
+      repository: makeRepositoryStub(state),
+      deviceId: "desk-a",
+    });
+
+    const result = await runner.runOnce();
+
+    expect(result).toEqual({ ok: false, error: "拉取失败" });
+    expect(state.savedStates).toEqual([
+      {
+        serverCursor: null,
+        lastSyncedAt: null,
+        lastError: "拉取失败",
+      },
+    ]);
+    expect(state.syncRuns[0]).toMatchObject({
+      status: "failed",
+      serverCursor: null,
+      message: "拉取失败",
+    });
+  });
+
+  it("应用远端变更失败时记录 failed run、lastError，不保存 pull 返回的新 cursor", async () => {
+    const state = freshState();
+    const repository = makeRepositoryStub(state);
+    const repositoryWithBadApply: typeof repository = {
+      ...repository,
+      async applyRemoteTask() {
+        throw new Error("应用远端任务失败");
+      },
+    };
+    const provider = makeProviderStub({
+      pullResult: {
+        ops: [
+          {
+            op: "put",
+            target: { entityType: "task", entityId: "t-remote" },
+            params: {
+              id: "t-remote",
+              title: "远端任务",
+              status: "active",
+              priority: 1,
+              createdAt: "2026-05-19T09:00:00.000Z",
+            },
+            ts: "2026-05-19T10:00:00.000Z",
+            actor: "desk-b",
+            originDevice: "desk-b",
+          },
+        ],
+        cursor: "cursor-after-remote",
+      },
+    });
+    const runner = createWebdavTaskSyncRunner({
+      provider,
+      repository: repositoryWithBadApply,
+      deviceId: "desk-a",
+    });
+
+    const result = await runner.runOnce();
+
+    expect(result).toEqual({ ok: false, error: "应用远端任务失败" });
+    expect(state.savedStates).toEqual([
+      {
+        serverCursor: null,
+        lastSyncedAt: null,
+        lastError: "应用远端任务失败",
+      },
+    ]);
+    expect(state.syncRuns[0]).toMatchObject({
+      status: "failed",
+      serverCursor: null,
+      message: "应用远端任务失败",
+    });
+  });
+
   it("recordSyncRun 写失败不影响主结果（best-effort）", async () => {
     const state = freshState();
     const repository = makeRepositoryStub(state);

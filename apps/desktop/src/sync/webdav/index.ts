@@ -25,6 +25,7 @@ export {
 export {
   DEFAULT_SNAPSHOT_OPLOG_THRESHOLD,
   buildCompactedSnapshot,
+  cleanupCoveredOplogChunks,
   countOplogChunks,
   listSnapshots,
   loadSnapshot,
@@ -39,6 +40,7 @@ export {
   writeSnapshot,
   type BuildCompactedSnapshotOptions,
   type BuildCompactedSnapshotResult,
+  type CleanupCoveredOplogChunksResult,
   type CountOplogChunksResult,
   type ListSnapshotsResult,
   type LoadSnapshotResult,

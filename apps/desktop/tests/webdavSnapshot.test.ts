@@ -4,6 +4,7 @@ import { createWebdavLayout } from "../src/sync/webdav/paths";
 import {
   DEFAULT_SNAPSHOT_OPLOG_THRESHOLD,
   buildCompactedSnapshot,
+  cleanupCoveredOplogChunks,
   countOplogChunks,
   listSnapshots,
   loadSnapshot,
@@ -337,6 +338,34 @@ class StubWebdavClient implements WebdavClient {
   }
 }
 
+async function listChunkPaths(client: StubWebdavClient, layout = createWebdavLayout("/liliatodo")): Promise<string[]> {
+  const paths: string[] = [];
+  const devices = await client.list(layout.oplog);
+  for (const device of devices) {
+    if (!device.isDirectory) continue;
+    const days = await client.list(device.path);
+    for (const day of days) {
+      if (!day.isDirectory) continue;
+      const chunks = await client.list(day.path);
+      for (const chunk of chunks) {
+        if (!chunk.isDirectory) paths.push(chunk.path);
+      }
+    }
+  }
+  return paths.sort();
+}
+
+async function ensureOplogDay(
+  client: StubWebdavClient,
+  layout: ReturnType<typeof createWebdavLayout>,
+  deviceId: string,
+  day: string,
+): Promise<void> {
+  await client.ensureCollection(layout.oplog);
+  await client.ensureCollection(`${layout.oplog}/${deviceId}`);
+  await client.ensureCollection(`${layout.oplog}/${deviceId}/${day}`);
+}
+
 describe("listSnapshots / pickLatestSnapshot / writeSnapshot / loadSnapshot", () => {
   it("写后能列出并选最新", async () => {
     const client = new StubWebdavClient();
@@ -424,5 +453,59 @@ describe("countOplogChunks", () => {
     const layout = createWebdavLayout("/liliatodo");
 
     await expect(countOplogChunks(client, layout)).resolves.toEqual({ chunkCount: 0 });
+  });
+});
+
+describe("cleanupCoveredOplogChunks", () => {
+  it("只删除 cursor 覆盖的 oplog chunk，保留后续 chunk、未知设备和非法文件", async () => {
+    const client = new StubWebdavClient();
+    const layout = createWebdavLayout("/liliatodo");
+    await ensureOplogDay(client, layout, "deviceA", "20260101");
+    await ensureOplogDay(client, layout, "deviceA", "20260102");
+    await ensureOplogDay(client, layout, "deviceB", "20260102");
+    await ensureOplogDay(client, layout, "deviceB", "20260103");
+    await ensureOplogDay(client, layout, "deviceC", "20260101");
+    await client.put(`${layout.oplog}/deviceA/20260101/000000.jsonl`, "{}");
+    await client.put(`${layout.oplog}/deviceA/20260102/000001.jsonl`, "{}");
+    await client.put(`${layout.oplog}/deviceA/20260102/000002.jsonl`, "{}");
+    await client.put(`${layout.oplog}/deviceA/20260102/readme.txt`, "忽略");
+    await client.put(`${layout.oplog}/deviceB/20260102/000003.jsonl`, "{}");
+    await client.put(`${layout.oplog}/deviceB/20260103/000000.jsonl`, "{}");
+    await client.put(`${layout.oplog}/deviceC/20260101/000000.jsonl`, "{}");
+
+    const result = await cleanupCoveredOplogChunks(
+      client,
+      layout,
+      JSON.stringify({
+        deviceA: { lastDay: "20260102", lastSeq: 1 },
+        deviceB: { lastDay: "20260102", lastSeq: 3 },
+      }),
+    );
+
+    expect(result.deletedPaths.sort()).toEqual([
+      "/liliatodo/oplog/deviceA/20260101/000000.jsonl",
+      "/liliatodo/oplog/deviceA/20260102/000001.jsonl",
+      "/liliatodo/oplog/deviceB/20260102/000003.jsonl",
+    ]);
+    await expect(listChunkPaths(client, layout)).resolves.toEqual([
+      "/liliatodo/oplog/deviceA/20260102/000002.jsonl",
+      "/liliatodo/oplog/deviceA/20260102/readme.txt",
+      "/liliatodo/oplog/deviceB/20260103/000000.jsonl",
+      "/liliatodo/oplog/deviceC/20260101/000000.jsonl",
+    ]);
+  });
+
+  it("cursor 非法时不删除任何 oplog", async () => {
+    const client = new StubWebdavClient();
+    const layout = createWebdavLayout("/liliatodo");
+    await ensureOplogDay(client, layout, "deviceA", "20260101");
+    await client.put(`${layout.oplog}/deviceA/20260101/000000.jsonl`, "{}");
+
+    await expect(cleanupCoveredOplogChunks(client, layout, "bad-json")).resolves.toEqual({
+      deletedPaths: [],
+    });
+    await expect(listChunkPaths(client, layout)).resolves.toEqual([
+      "/liliatodo/oplog/deviceA/20260101/000000.jsonl",
+    ]);
   });
 });

@@ -175,14 +175,16 @@ describe("createSnapshotCompactingRunner", () => {
     expect(compactCalls).toEqual([]);
   });
 
-  it("同步成功且 oplog 达阈值时执行 compact", async () => {
+  it("同步成功且 oplog 达阈值时先标记待 compact，下一次 idle 窗口再执行", async () => {
     const compactCalls: unknown[] = [];
+    let idle = false;
     const runner = createSnapshotCompactingRunner({
       runner: fixedRunner({ ok: true, report: emptyRunReport("同步完成") }),
       client: {} as WebdavClient,
       layout: { snapshots: "/liliatodo/snapshots" } as never,
       deviceId: "desk-a",
       threshold: 3,
+      isIdleWindow: () => idle,
       countOplogChunks: async () => ({ chunkCount: 3 }),
       compactSnapshot: async (options) => {
         compactCalls.push(options);
@@ -190,13 +192,24 @@ describe("createSnapshotCompactingRunner", () => {
       },
     });
 
+    await expect(runner.runOnce()).resolves.toEqual({ ok: true, report: emptyRunReport("同步完成") });
+    expect(compactCalls).toEqual([]);
+
+    await expect(runner.runOnce()).resolves.toEqual({ ok: true, report: emptyRunReport("同步完成") });
+    expect(compactCalls).toEqual([]);
+
+    idle = true;
     const result = await runner.runOnce();
 
     expect(result.ok).toBe(true);
     expect(compactCalls).toHaveLength(1);
   });
 
-  it("compact 失败不影响本次同步成功结果", async () => {
+  it("compact 失败不影响本次同步成功结果，后续 idle 窗口继续重试", async () => {
+    const compact = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("snapshot 写入失败"))
+      .mockResolvedValueOnce(compactResult());
     const runner = createSnapshotCompactingRunner({
       runner: fixedRunner({ ok: true, report: emptyRunReport("同步完成") }),
       client: {} as WebdavClient,
@@ -204,12 +217,15 @@ describe("createSnapshotCompactingRunner", () => {
       deviceId: "desk-a",
       threshold: 1,
       countOplogChunks: async () => ({ chunkCount: 1 }),
-      compactSnapshot: async () => {
-        throw new Error("snapshot 写入失败");
-      },
+      compactSnapshot: compact,
     });
 
     await expect(runner.runOnce()).resolves.toEqual({ ok: true, report: emptyRunReport("同步完成") });
+    expect(compact).not.toHaveBeenCalled();
+    await expect(runner.runOnce()).resolves.toEqual({ ok: true, report: emptyRunReport("同步完成") });
+    expect(compact).toHaveBeenCalledTimes(1);
+    await expect(runner.runOnce()).resolves.toEqual({ ok: true, report: emptyRunReport("同步完成") });
+    expect(compact).toHaveBeenCalledTimes(2);
   });
 
   it("同步失败时不统计 oplog 也不 compact", async () => {
@@ -267,5 +283,6 @@ function compactResult() {
     entries: [],
     cursor: "cursor-after",
     pulledOpsCount: 0,
+    cleanedOplogChunkCount: 0,
   };
 }

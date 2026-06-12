@@ -22,6 +22,7 @@ class InMemoryWebdavClient implements WebdavClient {
   private readonly files = new Map<string, FakeFile>();
   private readonly collections = new Set<string>();
   private etagSeq = 0;
+  onDelete?: (path: string) => void;
 
   async ensureCollection(path: string): Promise<void> {
     const normalized = trimTrailingSlash(path);
@@ -125,6 +126,7 @@ class InMemoryWebdavClient implements WebdavClient {
   }
 
   async delete(path: string): Promise<void> {
+    this.onDelete?.(path);
     this.files.delete(path);
   }
 
@@ -430,10 +432,76 @@ describe("BE-12 WebdavSyncProvider 端到端骨架", () => {
 
     expect(compacted.meta.path).toBe("/liliatodo/snapshots/202605191230.jsonl");
     expect(compacted.pulledOpsCount).toBe(1);
+    expect(compacted.cleanedOplogChunkCount).toBe(2);
     expect(compacted.entries[0].payload).toEqual({ title: "增量新标题" });
     const latest = await reader.snapshot();
     expect(latest.cursor).toBe(compacted.cursor);
     expect(latest.entities[0].payload).toEqual({ title: "增量新标题" });
+    expect(await client.stat("/liliatodo/oplog/deviceB/20260519/000000.jsonl")).toBeNull();
+    expect(await client.stat("/liliatodo/oplog/deviceB/20260519/000001.jsonl")).toBeNull();
+  });
+
+  it("compact 删除失败时不继续误删 cursor 之后的新 chunk", async () => {
+    const client = new InMemoryWebdavClient();
+    const layout = createWebdavLayout();
+    const writer = createWebdavSyncProvider({
+      client,
+      deviceId: "deviceB",
+      layout,
+      clock: () => new Date(Date.UTC(2026, 4, 19, 10, 0)),
+    });
+    await writer.push([
+      makeOp({
+        originDevice: "deviceB",
+        params: { title: "旧日志" },
+      }),
+    ]);
+    const reader = createWebdavSyncProvider({
+      client,
+      deviceId: "reader",
+      layout,
+    });
+    const initialPull = await reader.pull(null);
+    await writeSnapshot({
+      client,
+      layout,
+      timestamp: "202605191100",
+      cursor: initialPull.cursor,
+      entries: [
+        {
+          id: "t1",
+          type: "task",
+          schemaVersion: 1,
+          payload: { title: "快照内旧标题" },
+          updatedAt: "2026-05-19T10:00:00.000Z",
+          originDevice: "deviceB",
+        },
+      ],
+    });
+    await writer.push([
+      makeOp({
+        originDevice: "deviceB",
+        ts: "2026-05-19T12:00:00.000Z",
+        op: "patch",
+        params: { title: "增量新标题" },
+      }),
+    ]);
+    client.onDelete = (path) => {
+      if (path.endsWith("/000000.jsonl")) {
+        void client.put("/liliatodo/oplog/deviceB/20260519/000002.jsonl", "{}");
+        throw new Error("删除失败");
+      }
+    };
+
+    await expect(
+      compactWebdavSnapshot({
+        client,
+        layout,
+        deviceId: "compactor",
+        clock: () => new Date(Date.UTC(2026, 4, 19, 12, 30)),
+      }),
+    ).rejects.toThrow("删除失败");
+    expect(await client.stat("/liliatodo/oplog/deviceB/20260519/000002.jsonl")).not.toBeNull();
   });
 
   it("非法 deviceId 创建即抛错", () => {

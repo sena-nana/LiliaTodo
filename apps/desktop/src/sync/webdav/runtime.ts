@@ -56,6 +56,7 @@ export interface CreateWebdavRuntimeOptions {
   readonly now?: () => Date;
   readonly userAgent?: string;
   readonly snapshotCompactThreshold?: number;
+  readonly isIdleWindow?: () => boolean;
   readonly countOplogChunks?: (
     client: WebdavClient,
     layout: WebdavLayout,
@@ -75,6 +76,7 @@ export interface CreateSnapshotCompactingRunnerOptions {
   readonly deviceId: string;
   readonly clock?: () => Date;
   readonly threshold?: number;
+  readonly isIdleWindow?: () => boolean;
   readonly countOplogChunks?: (
     client: WebdavClient,
     layout: WebdavLayout,
@@ -94,9 +96,12 @@ export function createSnapshotCompactingRunner({
   deviceId,
   clock,
   threshold,
+  isIdleWindow = () => true,
   countOplogChunks: countChunks = countOplogChunks,
   compactSnapshot = compactWebdavSnapshot,
 }: CreateSnapshotCompactingRunnerOptions): WebdavTaskSyncRunner {
+  let compactPending = false;
+
   return {
     async runOnce(): Promise<WebdavRunOnceResult> {
       const result = await runner.runOnce();
@@ -104,9 +109,14 @@ export function createSnapshotCompactingRunner({
         return result;
       }
       try {
-        const { chunkCount } = await countChunks(client, layout);
-        if (shouldCompactSnapshot({ oplogChunkCount: chunkCount, threshold })) {
+        if (!compactPending) {
+          const { chunkCount } = await countChunks(client, layout);
+          compactPending = shouldCompactSnapshot({ oplogChunkCount: chunkCount, threshold });
+          return result;
+        }
+        if (isIdleWindow()) {
           await compactSnapshot({ client, layout, deviceId, clock });
+          compactPending = false;
         }
       } catch {
         // Snapshot compact 是同步后的维护任务，失败不应反向把主同步标成失败。
@@ -162,6 +172,7 @@ export async function createWebdavRuntime(
     deviceId: secrets.deviceId,
     clock: options.now,
     threshold: options.snapshotCompactThreshold,
+    isIdleWindow: options.isIdleWindow,
     countOplogChunks: options.countOplogChunks,
     compactSnapshot: options.compactSnapshot,
   });

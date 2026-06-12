@@ -28,6 +28,7 @@ export interface SyncRunReport {
   readonly pulledCount: number;
   readonly cursor: string | null;
   readonly error: string | null;
+  readonly idleWindow: boolean;
 }
 
 export type TimerHandle = unknown;
@@ -154,6 +155,7 @@ export function createWebdavSyncScheduler(
         pulledCount,
         cursor,
         error,
+        idleWindow: reason === "idle",
       } satisfies SyncRunReport;
     })();
 
