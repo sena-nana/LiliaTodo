@@ -6,6 +6,13 @@ import { fakeTaskRepository as fakeRepository, taskCategoryFixture, taskListFixt
 
 afterEach(resetPageTestMocks);
 
+it('Agent 收件箱显示只读复盘报告', async () => {
+  const repository = fakeRepository({ agentInbox: { pendingActions: [], audits: [] } });
+  renderWithRepository(AgentInbox, repository);
+  expect(await screen.findByRole('heading', { name: '复盘报告' })).toBeInTheDocument();
+  expect(repository.updateTask).not.toHaveBeenCalled();
+});
+
 describe("pages.agent", () => {
   it("Agent 收件箱页面显示未配置 backend 时的禁用状态", async () => {
     renderWithRepository(AgentInbox, fakeRepository());
