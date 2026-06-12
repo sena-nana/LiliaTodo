@@ -148,6 +148,8 @@ describe("pages.today", () => {
 
   it("套用带提醒偏移的模板会生成提醒", async () => {
     const repository = fakeRepository();
+    const dueAtInput = "2026-06-12T10:00";
+    const expectedTriggerAt = new Date(new Date(dueAtInput).getTime() - 30 * 60_000).toISOString();
     const template = createTaskTemplate({
       name: "提醒模板",
       title: "准备会议",
@@ -160,14 +162,14 @@ describe("pages.today", () => {
     renderWithRepository(Today, repository);
 
     await screen.findByText("今日到期");
-    await fireEvent.update(screen.getByLabelText("任务截止时间"), "2026-06-12T10:00");
+    await fireEvent.update(screen.getByLabelText("任务截止时间"), dueAtInput);
     await fireEvent.update(screen.getByLabelText("任务模板"), template.id);
     await fireEvent.click(screen.getByRole("button", { name: "添加到今日" }));
 
     expect(repository.createTask).toHaveBeenCalledWith(expect.objectContaining({
       title: "准备会议",
       reminders: [expect.objectContaining({
-        triggerAt: "2026-06-12T01:30:00.000Z",
+        triggerAt: expectedTriggerAt,
         status: "pending",
       })],
     }));
