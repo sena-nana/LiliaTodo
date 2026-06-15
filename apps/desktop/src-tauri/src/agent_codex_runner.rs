@@ -7,10 +7,10 @@ use std::{
     time::{Duration, Instant},
 };
 
-use mutsuki_runtime_contracts::ScalarValue;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
+use crate::agent_protocol::ScalarValue;
 use crate::agent_runtime_state::{
     current_disabled_reason, record_backend_event, runtime_is_running, AgentRuntimeState,
 };

@@ -67,6 +67,7 @@ npm install
 ## Agent 收件箱
 
 - Agent 收件箱展示 runtime 状态、工具目录、待确认操作、执行批次、最近处理结果与运行事件。
+- Agent runtime 使用 Momo 内置轻量协议表达 lifecycle、运行事件、标量属性和错误结构；Codex app-server 只作为策略 / 模型建议后端。
 - Agent runtime 可手动启动、停止和触发扫描；runner 建议会进入待确认队列，不会绕过用户确认直接改任务。
 - 自动触发默认开启但受边界约束：任务写入、提醒到期、每日首次启动会构造 trigger envelope；同一任务在节流窗口内合并，Agent 自身确认 / 撤销写入不反向触发扫描，runtime 未运行或未配置 backend 时只记录诊断，不生成待确认操作。
 
@@ -85,7 +86,7 @@ npm install
 - 登录是纯前端跳转占位；真实账号体系由独立服务端项目承接。
 - 当前桌面端没有独立后端协作服务；多端协同通过 WebDAV 同步链路完成。
 - WebDAV 自动同步只在用户显式授权后运行；当前没有网络恢复重试或跨进程后台守护。
-- Agent 执行能力仅限本地任务工具和用户确认队列；自动触发不会直接落库执行，未配置 backend 或 runtime 未运行时只保留诊断。
+- Agent 执行能力仅限本地任务工具和用户确认队列；自动触发不会直接落库执行，未配置 Codex app-server backend 或 runtime 未运行时只保留诊断。
 - 尚未实现 Android 端。
 - 小组件窗口已在 `tauri.conf.json` 声明 `transparent / alwaysOnTop / decorations:false`，但还没有 Win32 扩展样式桥接来管理 `WS_EX_TOOLWINDOW / NOACTIVATE` 等。
 - Rust 端仍保留 `greet` 命令作为 Tauri invoke 冒烟测试，但主页面不再展示该调试入口。

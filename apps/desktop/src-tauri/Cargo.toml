@@ -27,7 +27,4 @@ tauri-plugin-sql = { version = "2.4.0", features = ["sqlite"] }
 tauri-plugin-http = "2"
 tauri-plugin-notification = "2"
 tauri-plugin-store = "2"
-mutsuki-runtime-contracts = { path = "../../../third_party/MutsukiCore/crates/mutsuki-runtime-contracts" }
-mutsuki-runtime-core = { path = "../../../third_party/MutsukiCore/crates/mutsuki-runtime-core" }
-mutsuki-runtime-host = { path = "../../../third_party/MutsukiCore/crates/mutsuki-runtime-host" }
 windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging"] }

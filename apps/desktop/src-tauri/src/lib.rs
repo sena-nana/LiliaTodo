@@ -17,6 +17,7 @@ const BG_LIGHT: Color = Color(0xFF, 0xFF, 0xFF, 0xFF);
 const BG_DARK: Color = Color(0x18, 0x18, 0x18, 0xFF);
 
 mod agent_codex_runner;
+mod agent_protocol;
 mod agent_runtime_state;
 mod notification_scheduler;
 mod widget_window;
