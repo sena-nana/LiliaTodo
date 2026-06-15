@@ -15,6 +15,7 @@ export async function executeAgentAction(
     | "updateTask"
     | "setStatus"
     | "deleteTask"
+    | "batchUpdateTasks"
     | "createList"
     | "createCategory"
     | "findTaskById"
@@ -61,6 +62,11 @@ export async function executeAgentAction(
         childOrder: action.childOrder,
       });
       return { before, after, reversible: true };
+    }
+    case "task.batchUpdate": {
+      const before = await Promise.all(action.operation.taskIds.map((taskId) => repository.findTaskById(taskId)));
+      const after = await repository.batchUpdateTasks(action.operation);
+      return { before, after, reversible: false };
     }
     case "taskList.create": {
       const list = await repository.createList(action.input);

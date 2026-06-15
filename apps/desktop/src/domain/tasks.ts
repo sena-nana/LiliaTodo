@@ -139,6 +139,7 @@ export interface TaskSearchQuery {
 
 export type BatchTaskOperation =
   | { type: 'complete'; taskIds: string[] }
+  | { type: 'patch'; taskIds: string[]; patch: UpdateTaskInput }
   | { type: 'reschedule'; taskIds: string[]; startAt?: string | null; dueAt?: string | null }
   | { type: 'move'; taskIds: string[]; listId: string; categoryId?: string | null }
   | { type: 'tag'; taskIds: string[]; tags: string[]; mode?: 'replace' | 'merge' }

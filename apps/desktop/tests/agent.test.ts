@@ -14,6 +14,7 @@ describe("Todo Agent 基础能力", () => {
       "task.delete",
       "task.move",
       "task.reparent",
+      "task.batchUpdate",
       "taskList.create",
       "taskCategory.create",
     ]);
@@ -34,6 +35,21 @@ describe("Todo Agent 基础能力", () => {
       requiresConfirmation: true,
       reversible: false,
       affectedTaskIds: ["task-1"],
+    });
+
+    const batchDraft = createAgentActionDraft(
+      { type: "task.batchUpdate", operation: { type: "patch", taskIds: ["task-1", "task-2"], patch: { estimateMin: 30 } } },
+      {
+        trigger: "manual_scan",
+        envelopeId: "envelope-2",
+        summary: "复盘建议",
+        taskIds: ["task-1", "task-2"],
+      },
+    );
+    expect(batchDraft.summary).toBe("批量更新 2 个任务：估时");
+    expect(batchDraft.dryRun).toMatchObject({
+      reversible: false,
+      affectedTaskIds: ["task-1", "task-2"],
     });
   });
 

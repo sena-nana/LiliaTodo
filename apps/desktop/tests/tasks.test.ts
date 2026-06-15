@@ -1150,6 +1150,64 @@ describe("TaskRepository 仓储", () => {
     });
   });
 
+  it("确认 Agent 批量操作草稿会复用批量任务更新并写入审计", async () => {
+    const ids = ["batch-1", "audit-1"];
+    const db = new RecordingDatabase({
+      taskRows: [
+        taskRow({ id: "task-1", title: "任务一", estimate_min: null }),
+        taskRow({ id: "task-2", title: "任务二", estimate_min: null }),
+      ],
+      agentPendingActions: [
+        agentPendingActionRow({
+          action_type: "task.batchUpdate",
+          summary: "批量更新 2 个任务：估时",
+          risk: "medium",
+          source: JSON.stringify({
+            trigger: "manual_scan",
+            envelopeId: "review-fill-estimate",
+            summary: "复盘建议：补齐下周估时",
+            taskIds: ["task-1", "task-2"],
+          }),
+          payload: JSON.stringify({
+            type: "task.batchUpdate",
+            operation: { type: "patch", taskIds: ["task-1", "task-2"], patch: { estimateMin: 30 } },
+          }),
+          dry_run: JSON.stringify({
+            reversible: false,
+            requiresConfirmation: true,
+            affectedTaskIds: ["task-1", "task-2"],
+            impact: "将影响 2 个任务，确认后写入本地任务库并进入同步链路。",
+          }),
+        }),
+      ],
+    });
+    const repository = createTaskRepository(() => Promise.resolve(db), {
+      now: () => new Date("2026-05-16T12:00:00.000Z"),
+      id: () => ids.shift() ?? "id",
+      changeId: () => "change-id",
+    });
+
+    const audit = await repository.approveAgentPendingAction("agent-action-1");
+
+    expect(db.paramsForAllSql("UPDATE tasks SET").filter((params) => params?.includes(30)).length).toBe(2);
+    expect(db.paramsForSql("INSERT INTO agent_audit_records")?.slice(0, 7)).toEqual([
+      "audit-1",
+      "batch-1",
+      "agent-action-1",
+      "task.batchUpdate",
+      JSON.stringify({
+        type: "task.batchUpdate",
+        operation: { type: "patch", taskIds: ["task-1", "task-2"], patch: { estimateMin: 30 } },
+      }),
+      "批量更新 2 个任务：估时",
+      "applied",
+    ]);
+    expect(audit).toMatchObject({
+      actionType: "task.batchUpdate",
+      reversible: false,
+    });
+  });
+
   it("撤销 Agent 审计批次会按 before 生成反向任务更新", async () => {
     const db = new RecordingDatabase({
       taskRows: [
@@ -1418,7 +1476,11 @@ class RecordingDatabase implements SqlDatabase {
   }
 }
 
-function agentPendingActionRow() {
+function agentPendingActionRow(overrides: Partial<ReturnType<typeof baseAgentPendingActionRow>> = {}) {
+  return { ...baseAgentPendingActionRow(), ...overrides };
+}
+
+function baseAgentPendingActionRow() {
   return {
     id: "agent-action-1",
     action_type: "task.update",

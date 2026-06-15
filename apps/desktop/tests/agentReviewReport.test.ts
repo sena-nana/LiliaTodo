@@ -60,6 +60,48 @@ describe('Agent 复盘报告', () => {
     expect(report.nextWeekSuggestions.map((suggestion) => suggestion.id)).not.toContain('clear-overdue');
   });
 
+  it('为复盘建议生成搜索入口和批量操作草稿', () => {
+    const report = buildAgentReviewReport([
+      taskFixture({ id: 'overdue', title: '逾期任务', startAt: '2026-06-10T09:00:00.000Z', dueAt: '2026-06-10T10:00:00.000Z', estimateMin: 60 }),
+      taskFixture({ id: 'missing-start', title: '只有截止', dueAt: '2026-06-12T18:00:00.000Z', estimateMin: 30 }),
+      taskFixture({ id: 'missing-estimate', title: '下周缺估时', startAt: '2026-06-15T09:00:00.000Z', estimateMin: null }),
+      taskFixture({ id: 'load-a', title: '下周低优先级大任务', startAt: '2026-06-16T09:00:00.000Z', priority: 0, estimateMin: 100 }),
+      taskFixture({ id: 'load-b', title: '下周普通任务', startAt: '2026-06-16T10:00:00.000Z', priority: 1, estimateMin: 80 }),
+      taskFixture({ id: 'load-c', title: '下周重点任务', startAt: '2026-06-16T11:00:00.000Z', priority: 3, estimateMin: 80 }),
+    ], { now: new Date('2026-06-12T12:00:00.000Z'), dailyCapacityMin: 120 });
+
+    const clearOverdue = report.nextWeekSuggestions.find((suggestion) => suggestion.id === 'clear-overdue');
+    expect(clearOverdue).toMatchObject({
+      actionKind: 'search',
+      actionLabel: '查看任务',
+      targetTaskIds: ['overdue'],
+      searchQuery: {
+        status: 'active',
+        timeMode: 'scheduled',
+        timeTo: '2026-06-12T12:00:00.000Z',
+      },
+    });
+
+    const scheduleStart = report.nextWeekSuggestions.find((suggestion) => suggestion.id === 'schedule-start');
+    expect(scheduleStart?.draftOperations?.[0]).toMatchObject({
+      type: 'patch',
+      taskIds: ['missing-start'],
+      patch: { startAt: expect.any(String) },
+    });
+    expect(new Date(String(scheduleStart?.draftOperations?.[0].type === 'patch' ? scheduleStart.draftOperations[0].patch.startAt : '')).getHours()).toBe(9);
+
+    const spreadLoad = report.nextWeekSuggestions.find((suggestion) => suggestion.id === 'spread-load');
+    expect(spreadLoad?.actionKind).toBe('draft');
+    expect(spreadLoad?.targetTaskIds).toContain('load-a');
+
+    const fillEstimate = report.nextWeekSuggestions.find((suggestion) => suggestion.id === 'fill-estimate');
+    expect(fillEstimate?.draftOperations?.[0]).toMatchObject({
+      type: 'patch',
+      taskIds: ['missing-estimate'],
+      patch: { estimateMin: 30 },
+    });
+  });
+
   it('非法时间任务不会计入逾期、计划或容量统计', () => {
     const report = buildAgentReviewReport([
       taskFixture({ id: 'bad-due', title: '坏截止', dueAt: 'bad-time', estimateMin: 600 }),

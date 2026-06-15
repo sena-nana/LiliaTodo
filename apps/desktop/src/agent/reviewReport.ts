@@ -1,4 +1,5 @@
 import type { Task } from '../domain/tasks';
+import type { BatchTaskOperation, TaskPriority, TaskSearchTimeMode, TaskStatus } from '../domain/tasks';
 
 export interface AgentReviewDailyItem {
   date: string;
@@ -22,7 +23,29 @@ export interface AgentReviewSuggestion {
   title: string;
   detail: string;
   priority: number;
+  targetTaskIds: string[];
+  actionKind: 'search' | 'draft' | 'none';
+  actionLabel: string | null;
+  searchQuery?: AgentReviewSuggestionSearchQuery;
+  draftOperations?: BatchTaskOperation[];
 }
+
+export interface AgentReviewSuggestionSearchQuery {
+  keyword?: string;
+  status?: TaskStatus | 'all';
+  tagText?: string;
+  listId?: string;
+  categoryId?: string;
+  priority?: TaskPriority | 'all';
+  timeMode?: TaskSearchTimeMode;
+  timeFrom?: string;
+  timeTo?: string;
+  reminderStatus?: string;
+  includeDeleted?: boolean;
+}
+
+type AgentReviewSuggestionInput = Omit<AgentReviewSuggestion, 'targetTaskIds' | 'actionKind' | 'actionLabel'> &
+  Partial<Pick<AgentReviewSuggestion, 'targetTaskIds' | 'actionKind' | 'actionLabel'>>;
 
 export interface AgentReviewReport {
   generatedAt: string;
@@ -149,37 +172,174 @@ function buildNextWeekSuggestions(tasks: Task[], now: Date, start: Date, end: Da
   const activeTasks = tasks.filter((task) => task.status === 'active' && !task.deletedAt);
   const nextWeekTasks = activeTasks.filter((task) => plannedInRange(task, start, end));
   const suggestions: AgentReviewSuggestion[] = [];
-  const overdue = activeTasks.filter((task) => {
+  const overdueTasks = activeTasks.filter((task) => {
     const dueAt = parseTaskTime(task.dueAt);
     return dueAt !== null && dueAt.getTime() < now.getTime();
-  }).length;
-  const missingStart = activeTasks.filter((task) => parseTaskTime(task.dueAt) !== null && parseTaskTime(task.startAt) === null).length;
-  const overloaded = overloadedDays(nextWeekTasks, capacity).length;
-  const missingEstimate = nextWeekTasks.filter((task) => task.estimateMin == null).length;
+  });
+  const missingStartTasks = activeTasks.filter((task) => parseTaskTime(task.dueAt) !== null && parseTaskTime(task.startAt) === null);
+  const overloaded = overloadedDays(nextWeekTasks, capacity);
+  const missingEstimateTasks = nextWeekTasks.filter((task) => task.estimateMin == null);
   const highPriority = nextWeekTasks.filter((task) => task.priority >= 2).length;
-  if (overdue > 0) suggestions.push({ id: 'clear-overdue', title: '先清理逾期任务', detail: '下周计划前先处理 ' + String(overdue) + ' 个逾期任务，避免继续挤占新计划。', priority: 5 });
-  if (missingStart > 0) suggestions.push({ id: 'schedule-start', title: '给截止任务补开始时间', detail: '为 ' + String(missingStart) + ' 个只有截止时间的任务补开始时间，减少截止日前集中爆发。', priority: 4 });
-  if (overloaded > 0) suggestions.push({ id: 'spread-load', title: '摊平下周负载', detail: '下周有 ' + String(overloaded) + ' 天超过默认容量，优先移动低优先级或大估时任务。', priority: 3 });
-  if (missingEstimate > 0) suggestions.push({ id: 'fill-estimate', title: '补齐下周估时', detail: String(missingEstimate) + ' 个下周任务缺少估时，建议先补齐再排容量。', priority: 2 });
-  if (highPriority > 0) suggestions.push({ id: 'protect-focus', title: '保护高优先级任务', detail: '下周已有 ' + String(highPriority) + ' 个高优先级任务，建议保留连续时间块。', priority: 1 });
-  if (suggestions.length === 0 && reasons.length === 0) suggestions.push({ id: 'keep-cadence', title: '维持当前节奏', detail: '当前没有明显延期原因，下周按已有计划推进即可。', priority: 0 });
+  if (overdueTasks.length > 0) suggestions.push(suggestion({
+    id: 'clear-overdue',
+    title: '先清理逾期任务',
+    detail: '下周计划前先处理 ' + String(overdueTasks.length) + ' 个逾期任务，避免继续挤占新计划。',
+    priority: 5,
+    targetTaskIds: overdueTasks.map((task) => task.id),
+    actionKind: 'search',
+    actionLabel: '查看任务',
+    searchQuery: {
+      status: 'active',
+      timeMode: 'scheduled',
+      timeTo: now.toISOString(),
+      includeDeleted: false,
+    },
+  }));
+  const startOperations = buildMissingStartOperations(missingStartTasks);
+  if (missingStartTasks.length > 0) suggestions.push(suggestion({
+    id: 'schedule-start',
+    title: '给截止任务补开始时间',
+    detail: '为 ' + String(missingStartTasks.length) + ' 个只有截止时间的任务补开始时间，减少截止日前集中爆发。',
+    priority: 4,
+    targetTaskIds: missingStartTasks.map((task) => task.id),
+    actionKind: startOperations.length > 0 ? 'draft' : 'none',
+    actionLabel: startOperations.length > 0 ? '生成草稿' : null,
+    draftOperations: startOperations,
+  }));
+  const spreadOperations = buildSpreadLoadOperations(nextWeekTasks, start, end, capacity);
+  if (overloaded.length > 0) suggestions.push(suggestion({
+    id: 'spread-load',
+    title: '摊平下周负载',
+    detail: '下周有 ' + String(overloaded.length) + ' 天超过默认容量，优先移动低优先级或大估时任务。',
+    priority: 3,
+    targetTaskIds: [...new Set(spreadOperations.flatMap((operation) => operation.taskIds))],
+    actionKind: spreadOperations.length > 0 ? 'draft' : 'none',
+    actionLabel: spreadOperations.length > 0 ? '生成草稿' : null,
+    draftOperations: spreadOperations,
+  }));
+  const estimateOperation = buildMissingEstimateOperation(missingEstimateTasks);
+  if (missingEstimateTasks.length > 0) suggestions.push(suggestion({
+    id: 'fill-estimate',
+    title: '补齐下周估时',
+    detail: String(missingEstimateTasks.length) + ' 个下周任务缺少估时，建议先补齐再排容量。',
+    priority: 2,
+    targetTaskIds: missingEstimateTasks.map((task) => task.id),
+    actionKind: 'draft',
+    actionLabel: '生成草稿',
+    draftOperations: [estimateOperation],
+  }));
+  if (highPriority > 0) suggestions.push(suggestion({
+    id: 'protect-focus',
+    title: '保护高优先级任务',
+    detail: '下周已有 ' + String(highPriority) + ' 个高优先级任务，建议保留连续时间块。',
+    priority: 1,
+    targetTaskIds: nextWeekTasks.filter((task) => task.priority >= 2).map((task) => task.id),
+  }));
+  if (suggestions.length === 0 && reasons.length === 0) suggestions.push(suggestion({
+    id: 'keep-cadence',
+    title: '维持当前节奏',
+    detail: '当前没有明显延期原因，下周按已有计划推进即可。',
+    priority: 0,
+  }));
   return suggestions.sort((a, b) => b.priority - a.priority).slice(0, 4);
 }
 
+function suggestion(input: AgentReviewSuggestionInput): AgentReviewSuggestion {
+  return {
+    targetTaskIds: [],
+    actionKind: 'none',
+    actionLabel: null,
+    ...input,
+  };
+}
+
 function overloadedDays(tasks: Task[], capacity: number) {
-  const loads = new Map<string, { date: Date; estimateMin: number; taskTitles: string[] }>();
+  const loads = new Map<string, { date: Date; estimateMin: number; taskTitles: string[]; tasks: Task[] }>();
   for (const task of tasks) {
     const time = task.startAt ?? task.dueAt;
     if (!time) continue;
     const date = new Date(time);
     if (Number.isNaN(date.getTime())) continue;
     const key = dateKey(date);
-    const load = loads.get(key) ?? { date: startOfDay(date), estimateMin: 0, taskTitles: [] };
+    const load = loads.get(key) ?? { date: startOfDay(date), estimateMin: 0, taskTitles: [], tasks: [] };
     load.estimateMin += task.estimateMin ?? fallbackEstimateMin;
     load.taskTitles.push(task.title);
+    load.tasks.push(task);
     loads.set(key, load);
   }
   return [...loads.values()].filter((load) => load.estimateMin > capacity).sort((a, b) => a.date.getTime() - b.date.getTime());
+}
+
+function buildMissingStartOperations(tasks: Task[]): BatchTaskOperation[] {
+  const groups = new Map<string, string[]>();
+  for (const task of tasks) {
+    const dueAt = parseTaskTime(task.dueAt);
+    if (!dueAt) continue;
+    const startAt = new Date(dueAt);
+    startAt.setHours(9, 0, 0, 0);
+    const key = startAt.toISOString();
+    groups.set(key, [...(groups.get(key) ?? []), task.id]);
+  }
+  return [...groups.entries()].map(([startAt, taskIds]) => ({ type: 'patch', taskIds, patch: { startAt } }));
+}
+
+function buildMissingEstimateOperation(tasks: Task[]): BatchTaskOperation {
+  return {
+    type: 'patch',
+    taskIds: tasks.map((task) => task.id),
+    patch: { estimateMin: fallbackEstimateMin },
+  };
+}
+
+function buildSpreadLoadOperations(tasks: Task[], start: Date, end: Date, capacity: number): BatchTaskOperation[] {
+  const loads = buildDailyLoads(tasks, start, end);
+  const moves: Array<{ task: Task; startAt: string }> = [];
+  for (const source of loads) {
+    while (source.estimateMin > capacity) {
+      const candidate = [...source.tasks]
+        .filter((task) => !moves.some((move) => move.task.id === task.id))
+        .sort((a, b) => a.priority - b.priority || (b.estimateMin ?? fallbackEstimateMin) - (a.estimateMin ?? fallbackEstimateMin))[0];
+      if (!candidate) break;
+      const estimate = candidate.estimateMin ?? fallbackEstimateMin;
+      const target = loads
+        .filter((day) => day.date.getTime() > source.date.getTime())
+        .sort((a, b) => a.estimateMin - b.estimateMin)[0];
+      if (!target || target.estimateMin >= source.estimateMin) break;
+      source.estimateMin -= estimate;
+      source.tasks = source.tasks.filter((task) => task.id !== candidate.id);
+      target.estimateMin += estimate;
+      target.tasks.push(candidate);
+      moves.push({ task: candidate, startAt: moveTaskTimeToDay(candidate, target.date) });
+    }
+  }
+  const groups = new Map<string, string[]>();
+  for (const move of moves) {
+    groups.set(move.startAt, [...(groups.get(move.startAt) ?? []), move.task.id]);
+  }
+  return [...groups.entries()].map(([startAt, taskIds]) => ({ type: 'patch', taskIds, patch: { startAt } }));
+}
+
+function buildDailyLoads(tasks: Task[], start: Date, end: Date) {
+  const days: Array<{ date: Date; estimateMin: number; tasks: Task[] }> = [];
+  for (let cursor = startOfDay(start); cursor.getTime() <= end.getTime(); cursor = addDays(cursor, 1)) {
+    days.push({ date: cursor, estimateMin: 0, tasks: [] });
+  }
+  for (const task of tasks) {
+    const time = parseTaskTime(task.startAt) ?? parseTaskTime(task.dueAt);
+    if (!time) continue;
+    const day = days.find((item) => dateKey(item.date) === dateKey(time));
+    if (!day) continue;
+    day.estimateMin += task.estimateMin ?? fallbackEstimateMin;
+    day.tasks.push(task);
+  }
+  return days;
+}
+
+function moveTaskTimeToDay(task: Task, day: Date) {
+  const source = parseTaskTime(task.startAt) ?? parseTaskTime(task.dueAt);
+  const next = startOfDay(day);
+  next.setHours(source?.getHours() ?? 9, source?.getMinutes() ?? 0, 0, 0);
+  return next.toISOString();
 }
 
 function reason(id: string, title: string, tasks: Task[], detail: string): AgentReviewReason {

@@ -17,6 +17,7 @@ import {
   builtInSavedTaskViews,
   createSavedTaskView,
   loadSavedTaskViews,
+  normalizeSavedTaskViewQuery,
   saveTaskViews,
   type SavedTaskView,
   type SavedTaskViewQuery,
@@ -72,6 +73,19 @@ const selectedView = computed(() => allSavedViews.value.find((view) => view.id =
 const filteredCategories = computed(() =>
   categories.value.filter((category) => !listId.value || category.listId === listId.value),
 );
+const routeQueryFields = [
+  "keyword",
+  "status",
+  "tagText",
+  "listId",
+  "categoryId",
+  "priority",
+  "timeMode",
+  "timeFrom",
+  "timeTo",
+  "reminderStatus",
+  "includeDeleted",
+] as const;
 const { applyBulk } = useTaskBulkActions({
   repository,
   selection,
@@ -83,11 +97,18 @@ const { applyBulk } = useTaskBulkActions({
 
 onMounted(() => {
   savedViews.value = loadSavedTaskViews(window.localStorage);
+  applySavedQuery(queryFromRoute());
   void load();
 });
 
 watch(() => route.query.taskId, () => {
   void openTaskFromRoute();
+});
+
+watch(() => routeSearchQueryKey(), () => {
+  applySavedQuery(queryFromRoute());
+  selection.clear();
+  void load();
 });
 
 useGlobalShortcuts({
@@ -206,6 +227,52 @@ function applySavedQuery(query: SavedTaskViewQuery) {
   timeTo.value = query.timeTo;
   reminderStatus.value = query.reminderStatus;
   includeDeleted.value = query.includeDeleted;
+}
+
+function queryFromRoute(): SavedTaskViewQuery {
+  const query = Object.fromEntries(
+    routeQueryFields.map((key) => [key, singleQueryValue(route.query[key])]),
+  );
+  return normalizeSavedTaskViewQuery({
+    ...query,
+    status: parseStatusQueryValue(query.status),
+    priority: parsePriorityQueryValue(query.priority),
+    timeMode: parseTimeModeQueryValue(query.timeMode),
+    reminderStatus: parseReminderStatusQueryValue(query.reminderStatus),
+    includeDeleted: parseBooleanQueryValue(query.includeDeleted),
+  });
+}
+
+function routeSearchQueryKey() {
+  return routeQueryFields.map((key) => `${key}:${singleQueryValue(route.query[key])}`).join("|");
+}
+
+function singleQueryValue(value: unknown) {
+  if (Array.isArray(value)) return value[0] == null ? "" : String(value[0]);
+  return value == null ? "" : String(value);
+}
+
+function parsePriorityQueryValue(value: string) {
+  if (value === "0" || value === "1" || value === "2" || value === "3") return Number(value) as SavedTaskViewQuery["priority"];
+  return value === "all" ? "all" : undefined;
+}
+
+function parseBooleanQueryValue(value: string) {
+  return value === "1" || value === "true";
+}
+
+function parseStatusQueryValue(value: string): SavedTaskViewQuery["status"] | undefined {
+  return value === "active" || value === "completed" || value === "archived" || value === "all" ? value : undefined;
+}
+
+function parseTimeModeQueryValue(value: string): SavedTaskViewQuery["timeMode"] | undefined {
+  return value === "scheduled" || value === "unscheduled" || value === "all" ? value : undefined;
+}
+
+function parseReminderStatusQueryValue(value: string): SavedTaskViewQuery["reminderStatus"] | undefined {
+  return value === "none" || value === "pending" || value === "due" || value === "fired" || value === "dismissed" || value === "all"
+    ? value
+    : undefined;
 }
 
 async function openTaskFromRoute() {
