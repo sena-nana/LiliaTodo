@@ -1,10 +1,11 @@
 use std::{
     collections::BTreeMap,
+    ffi::OsString,
     process::Command,
     sync::{Mutex, MutexGuard},
 };
 
-use mutsuki_runtime_contracts::{
+use crate::agent_protocol::{
     AgentId, AgentPhase, RuntimeError, RuntimeEvent, RuntimeEventKind, ScalarValue,
 };
 use serde::Serialize;
@@ -204,8 +205,10 @@ pub fn current_disabled_reason(state: &tauri::State<'_, AgentRuntimeState>) -> O
 }
 
 pub fn probe_codex_backend(mut command: Command) -> BackendProbeResult {
+    let program = command.get_program().to_owned();
+    let base_args: Vec<OsString> = command.get_args().map(OsString::from).collect();
     match command.arg("--version").output() {
-        Ok(output) if output.status.success() => BackendProbeResult::Ready,
+        Ok(output) if output.status.success() => {}
         Ok(output) => {
             let stderr = String::from_utf8_lossy(&output.stderr).trim().to_owned();
             let reason = if stderr.is_empty() {
@@ -213,10 +216,33 @@ pub fn probe_codex_backend(mut command: Command) -> BackendProbeResult {
             } else {
                 format!("Codex backend 探测失败：{stderr}")
             };
-            BackendProbeResult::Unavailable(reason)
+            return BackendProbeResult::Unavailable(reason);
         }
         Err(error) => {
-            BackendProbeResult::Unavailable(format!("缺少 Codex CLI 或无法启动：{error}"))
+            return BackendProbeResult::Unavailable(format!("缺少 Codex CLI 或无法启动：{error}"));
+        }
+    }
+
+    let mut app_server_command = Command::new(program);
+    app_server_command.args(base_args);
+    match app_server_command.arg("app-server").arg("--help").output() {
+        Ok(output) if output.status.success() => BackendProbeResult::Ready,
+        Ok(output) => {
+            let stderr = String::from_utf8_lossy(&output.stderr).trim().to_owned();
+            let stdout = String::from_utf8_lossy(&output.stdout).trim().to_owned();
+            let detail = if !stderr.is_empty() { stderr } else { stdout };
+            if detail.is_empty() {
+                BackendProbeResult::Unavailable(
+                    "Codex backend 探测失败：codex app-server --help 返回非 0 状态。".into(),
+                )
+            } else {
+                BackendProbeResult::Unavailable(format!(
+                    "Codex backend 探测失败：app-server 不可用：{detail}"
+                ))
+            }
+        }
+        Err(error) => {
+            BackendProbeResult::Unavailable(format!("Codex app-server 无法启动：{error}"))
         }
     }
 }
@@ -353,6 +379,26 @@ mod tests {
     }
 
     #[test]
+    fn backend_探测要求_cli_和_app_server_都可用() {
+        let ready = probe_codex_backend(fake_codex_probe_command("probe-ready", true, true));
+        assert_eq!(ready, BackendProbeResult::Ready);
+
+        let missing_app_server =
+            probe_codex_backend(fake_codex_probe_command("probe-no-app-server", true, false));
+        assert!(matches!(
+            missing_app_server,
+            BackendProbeResult::Unavailable(reason) if reason.contains("app-server 不可用")
+        ));
+
+        let missing_cli =
+            probe_codex_backend(fake_codex_probe_command("probe-no-cli", false, false));
+        assert!(matches!(
+            missing_cli,
+            BackendProbeResult::Unavailable(reason) if reason.contains("codex --version")
+        ));
+    }
+
+    #[test]
     fn 停止_runtime_会同步清理_backend_运行状态() {
         let mut store = AgentRuntimeStateStore::default();
         store.start_runtime(BackendProbeResult::Ready);
@@ -374,5 +420,56 @@ mod tests {
                 .map(|event| event.name.as_str()),
             Some("runtime.stop")
         );
+    }
+
+    #[test]
+    fn 本地_runtime_event_json_字段兼容前端_shape() {
+        let mut store = AgentRuntimeStateStore::default();
+        let mut attributes = BTreeMap::new();
+        attributes.insert("source".into(), ScalarValue::String("runtime".into()));
+        attributes.insert("suggestion_count".into(), ScalarValue::Int(1));
+        store.push_backend("codex.runner.scan.completed", attributes);
+
+        let value = serde_json::to_value(store.events_snapshot().events.last().unwrap()).unwrap();
+
+        assert_eq!(value["kind"], "backend");
+        assert_eq!(value["name"], "codex.runner.scan.completed");
+        assert_eq!(value["agent_id"], DEFAULT_AGENT_ID);
+        assert_eq!(value["attributes"]["source"], "runtime");
+        assert_eq!(value["attributes"]["suggestion_count"], 1);
+        assert!(value["error"].is_null());
+    }
+
+    fn fake_codex_probe_command(name: &str, version_ok: bool, app_server_ok: bool) -> Command {
+        let path = std::env::temp_dir().join(format!(
+            "momo-fake-codex-probe-{}-{name}.ps1",
+            std::process::id()
+        ));
+        let version_exit = if version_ok { 0 } else { 2 };
+        let app_server_exit = if app_server_ok { 0 } else { 3 };
+        let script = format!(
+            r#"
+$joined = $args -join " "
+if ($joined -eq "--version") {{
+  [Console]::Out.WriteLine("codex 0.128.0")
+  exit {version_exit}
+}}
+if ($joined -eq "app-server --help") {{
+  [Console]::Out.WriteLine("Usage: codex app-server")
+  exit {app_server_exit}
+}}
+[Console]::Error.WriteLine("unexpected args: $joined")
+exit 9
+"#
+        );
+        std::fs::write(&path, script).expect("写入 fake Codex 探测脚本");
+        let mut command = Command::new("powershell.exe");
+        command
+            .arg("-NoProfile")
+            .arg("-ExecutionPolicy")
+            .arg("Bypass")
+            .arg("-File")
+            .arg(path);
+        command
     }
 }

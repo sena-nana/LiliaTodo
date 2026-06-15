@@ -5,10 +5,10 @@
 ## 关键决策
 
 - Agent 目标：做主动执行闭环，优先补 Agent 特色，不只做聊天式建议。
-- 运行核心：通过 Git submodule 引入远程 MutsukiCore 仓库，实际依赖范围限定为 Rust crates，并锁定到明确 commit。
-- 嵌入方式：Tauri Rust 嵌入 `mutsuki-runtime-contracts` / `mutsuki-runtime-core` / `mutsuki-runtime-host`；前端通过 Tauri command 和事件订阅消费 Agent 状态。
-- 模型后端：复用 Lilia 风格 Node runner + Codex app-server 适配子集，作为 Mutsuki 的 `StrategyBackend` / capability backend。
-- 职责边界：`mutsuki-runtime-core` 是 Agent lifecycle、routing、resource、event 的运行核心；Codex app-server 是策略 / 模型后端，二者不能混为一层。
+- 运行核心：Momo 内置轻量 Agent runtime 协议，只覆盖当前收件箱需要的 lifecycle、event、标量属性、错误结构和 runner 状态。
+- 嵌入方式：Tauri Rust 持有 Momo 自有 Agent runtime state；前端通过 Tauri command 和事件订阅消费 Agent 状态。
+- 模型后端：复用 Lilia 风格 Codex app-server 适配子集，作为 Todo 建议生成后端。
+- 职责边界：Momo 内置 Agent 协议负责本地 lifecycle、事件缓冲和前端契约；Codex app-server 只负责策略 / 模型建议，二者不能混为一层。
 - UI 入口：新增 Agent 收件箱，用于查看运行状态、建议操作、待确认队列、执行历史、审计记录和撤销入口。
 - 自动触发：第一版目标只覆盖低频关键事件，包括任务创建 / 更新、逾期、提醒到期、每日首次启动；当前已接入真实自动触发链路，写入仍必须进入确认队列。
 - 上下文范围：第一版只读取本地任务库、清单、分类、时间、提醒、标签、估时和完成状态。
@@ -30,21 +30,20 @@
 
 ## P0 Agent 闭环主线
 
-- [x] P0-01 接入 MutsukiCore Rust crates 子仓库
-  - 目标：让 Momo 可以稳定复用 MutsukiCore 的 Rust Agent runtime kernel。
-  - 当前状态：Momo 已通过 `.gitmodules` 引入远程仓库 `https://github.com/sena-nana/MutsukiCore.git`，子模块路径为 `third_party/MutsukiCore`，当前锁定到远程可获取的 commit `bab974dab8f3f36f6c4180d8a8c078fa77e6c566`。
-  - 实现要点：在 Momo 中以 Git submodule 引入 MutsukiCore，依赖面只使用 Rust crates；`apps/desktop/src-tauri/Cargo.toml` 使用锁定 commit 对应的子模块 path dependency；不要依赖父目录或开发机上的本地 `MutsukiCore` checkout。
-  - 验收标准：新环境 clone 后可初始化 submodule；`cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml` 能解析 runtime crates；未把 Python reference 或业务语义引入 Tauri 主 crate。
-  - 升级流程：执行 `git -C third_party/MutsukiCore fetch origin`，再 `git -C third_party/MutsukiCore checkout <remote-commit>`，回到 Momo 提交 `third_party/MutsukiCore` 的 gitlink 变更；不使用 `C:\Files\workspace\MutsukiCore` 之类本地路径作为集成来源。
+- [x] P0-01 内置 Momo Agent 轻协议
+  - 目标：让 Momo 不依赖外部 runtime 子仓库，也能稳定表达 Agent lifecycle、运行事件和 runner 诊断。
+  - 当前状态：Tauri Rust 层使用本仓库内置协议类型，覆盖 `AgentPhase`、`RuntimeEventKind`、`ScalarValue`、`RuntimeError` 和 `RuntimeEvent`，并保持前端 `agentRuntime.ts` 字段兼容。
+  - 实现要点：协议类型放在 Momo 桌面端 Rust 模块内；不引入外部 Agent runtime crates；Codex app-server 仍通过 runner 桥生成结构化 Todo 建议。
+  - 验收标准：新环境 clone 后不需要初始化 Agent 子模块；`cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml` 不解析外部 runtime crates；runtime event JSON 与前端 `RuntimeEventShape` 兼容。
 
 - [x] P0-02 建立 Tauri Agent runtime state
-  - 目标：在 Tauri Rust 层持有 Mutsuki `AgentRuntime`、Agent spec、运行状态和事件缓冲。
+  - 目标：在 Tauri Rust 层持有 Momo Agent 运行状态和事件缓冲。
   - 当前状态：Tauri Rust 端目前主要负责窗口、托盘、插件初始化和 `greet` smoke command，没有 Agent 状态。
   - 实现要点：新增 Agent 模块管理 runtime lifecycle；注册 Momo Todo source；把任务事件封装为 runtime envelope；对前端暴露启动、停止、触发扫描、读取状态、读取事件等 command。
   - 验收标准：应用启动后 Agent runtime 可初始化；未配置 Codex backend 时也能返回清晰 disabled 状态；runtime event sequence 可通过 Tauri command 读取。
 
 - [x] P0-03 复用 Lilia 风格 Codex app-server runner 桥
-  - 目标：让 Mutsuki strategy backend 可以调用 Codex app-server 生成 Todo 操作建议。
+  - 目标：让 Momo Agent runner 可以调用 Codex app-server 生成 Todo 操作建议。
   - 当前状态：Tauri command 会拉起 `codex app-server --stdio`，发送本地任务上下文快照，读取 JSONL 协议事件，并把合法 Todo 建议规范化为结构化 action；缺少 Codex CLI、JSONL 非法或建议 JSON 非法时返回中文 disabled 诊断。
   - 实现要点：移植最小 Node runner / Codex app-server 适配子集；Tauri Rust 负责拉起 runner、写入任务上下文、读取 JSONL 事件；runner 输出结构化建议，不直接写任务库。
   - 验收标准：缺少 Codex CLI 或版本不满足时给出中文诊断；一次 Agent 触发能返回结构化建议事件；Codex app-server 被明确标记为策略 / 模型后端，而不是 runtime 核心。
@@ -115,7 +114,7 @@
 - [ ] 暂不做远程账号体系和服务端推送。
 - [ ] 暂不读取任意外部文件、邮件、网页或第三方日历作为 Agent 默认上下文。
 - [ ] 暂不允许 Agent 无确认直接删除、批量完成、批量改期或做其他破坏性写入。
-- [ ] 暂不把旧 NanoBot Python reference 层作为 Momo runtime 事实源。
+- [ ] 暂不把外部 Python reference 层作为 Momo runtime 事实源。
 - [ ] 暂不恢复旧后端内存 router 或把业务调度搬到 Rust core。
 
 ## 首批 Agent 工具范围
@@ -134,6 +133,6 @@
 - [ ] 待办文件路径为 `plans/成熟Todo软件功能补全待办.md`。
 - [ ] 文档为中文 Markdown checkbox；英文只用于技术名、协议名、字段名、路径和类型名。
 - [ ] 每个 P0 项都包含“目标 / 当前状态 / 实现要点 / 验收标准”。
-- [ ] 文档明确说明 `mutsuki-runtime-core` 是运行核心，Codex app-server 是策略 / 模型后端。
+- [ ] 文档明确说明 Momo 内置 Agent 轻协议是本地 runtime 契约，Codex app-server 是策略 / 模型后端。
 - [ ] 文档明确说明 Agent 写入必须经过确认队列，并支持审计和撤销。
 - [ ] 文档没有要求本轮修改代码、改协议或执行 submodule 添加。
