@@ -92,6 +92,7 @@ describe("日历页面", () => {
   });
 
   it("同一天任务按时间和优先级稳定排序", async () => {
+    vi.setSystemTime(new Date("2026-06-12T10:00:00.000Z"));
     const repository = fakeRepository({
       agenda: [
         task({ id: "late", title: "下午任务", dueAt: "2026-06-12T07:00:00.000Z" }),
@@ -100,14 +101,19 @@ describe("日历页面", () => {
       ],
     });
 
-    renderWithRepository(Calendar, repository);
+    try {
+      renderWithRepository(Calendar, repository);
 
-    const day = await screen.findByLabelText("2026-06-12 日程");
-    const titles = within(day).getAllByText(/^(高优先级任务|低优先级任务|下午任务)$/).map((item) => item.textContent);
-    expect(titles).toEqual(["高优先级任务", "低优先级任务", "下午任务"]);
+      const day = await screen.findByLabelText("2026-06-12 日程");
+      const titles = within(day).getAllByText(/^(高优先级任务|低优先级任务|下午任务)$/).map((item) => item.textContent);
+      expect(titles).toEqual(["高优先级任务", "低优先级任务", "下午任务"]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("拖拽到日期格会改期并刷新", async () => {
+    vi.setSystemTime(new Date("2026-06-12T10:00:00.000Z"));
     const repository = fakeRepository({
       agenda: [
         task({
@@ -118,22 +124,27 @@ describe("日历页面", () => {
       ],
     });
 
-    renderWithRepository(Calendar, repository);
+    try {
+      renderWithRepository(Calendar, repository);
 
-    const taskButton = await screen.findByRole("button", { name: /拖拽任务/ });
-    const targetDay = await screen.findByLabelText("2026-06-13 日程");
-    await fireEvent.dragStart(taskButton);
-    await fireEvent.drop(targetDay);
+      const taskButton = await screen.findByRole("button", { name: /拖拽任务/ });
+      const targetDay = await screen.findByLabelText("2026-06-13 日程");
+      await fireEvent.dragStart(taskButton);
+      await fireEvent.drop(targetDay);
 
-    await waitFor(() =>
-      expect(repository.updateTask).toHaveBeenCalledWith("drag-task", {
-        dueAt: "2026-06-13T02:30:00.000Z",
-      }),
-    );
-    expect(repository.listAgenda).toHaveBeenCalledTimes(2);
+      await waitFor(() =>
+        expect(repository.updateTask).toHaveBeenCalledWith("drag-task", {
+          dueAt: "2026-06-13T02:30:00.000Z",
+        }),
+      );
+      expect(repository.listAgenda).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("拖拽更新失败显示中文错误且不关闭详情抽屉", async () => {
+    vi.setSystemTime(new Date("2026-06-12T10:00:00.000Z"));
     const repository = fakeRepository({
       agenda: [
         task({
@@ -145,17 +156,21 @@ describe("日历页面", () => {
     });
     vi.mocked(repository.updateTask).mockRejectedValueOnce(new Error("改期失败"));
 
-    renderWithRepository(Calendar, repository);
+    try {
+      renderWithRepository(Calendar, repository);
 
-    await fireEvent.click(await screen.findByText("失败任务"));
-    expect(await screen.findByRole(drawerRole, { name: "任务详情" })).toBeInTheDocument();
+      await fireEvent.click(await screen.findByText("失败任务"));
+      expect(await screen.findByRole(drawerRole, { name: "任务详情" })).toBeInTheDocument();
 
-    const sourceDay = await screen.findByLabelText("2026-06-12 日程");
-    await fireEvent.dragStart(within(sourceDay).getByRole("button", { name: /失败任务/ }));
-    await fireEvent.drop(await screen.findByLabelText("2026-06-13 日程"));
+      const sourceDay = await screen.findByLabelText("2026-06-12 日程");
+      await fireEvent.dragStart(within(sourceDay).getByRole("button", { name: /失败任务/ }));
+      await fireEvent.drop(await screen.findByLabelText("2026-06-13 日程"));
 
-    expect(await screen.findByText("错误：改期失败")).toBeInTheDocument();
-    expect(screen.getByRole(drawerRole, { name: "任务详情" })).toBeInTheDocument();
+      expect(await screen.findByText("错误：改期失败")).toBeInTheDocument();
+      expect(screen.getByRole(drawerRole, { name: "任务详情" })).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("点击任务仍能打开详情抽屉并保存后刷新", async () => {

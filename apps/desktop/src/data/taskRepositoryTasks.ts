@@ -435,8 +435,13 @@ export function createTaskRepositoryTasks(
         try {
           if (input.type === "complete") {
             await repository().setStatus(taskId, "completed");
+          } else if (input.type === "patch") {
+            await repository().updateTask(taskId, input.patch);
           } else if (input.type === "reschedule") {
-            await repository().updateTask(taskId, { startAt: input.startAt ?? null, dueAt: input.dueAt ?? null });
+            await repository().updateTask(taskId, {
+              ...("startAt" in input ? { startAt: input.startAt ?? null } : {}),
+              ...("dueAt" in input ? { dueAt: input.dueAt ?? null } : {}),
+            });
           } else if (input.type === "move") {
             await repository().updateTask(taskId, { listId: input.listId, categoryId: input.categoryId ?? null });
           } else if (input.type === "tag") {

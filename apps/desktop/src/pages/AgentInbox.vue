@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
-import { Bot, Check, RefreshCw, RotateCcw, X } from "lucide-vue-next";
+import { useRouter } from "vue-router";
+import { Bot, Check, RefreshCw, RotateCcw, Search, X } from "lucide-vue-next";
 import { TODO_AGENT_TOOL_DEFINITIONS, type AgentAuditRecord, type AgentInboxSnapshot, type AgentPendingAction } from "../agent/actions";
 import { buildAgentTaskContextSnapshot } from "../agent/context";
 import { enqueueAgentRunnerSuggestions } from "../agent/suggestions";
@@ -14,10 +15,11 @@ import {
   type AgentRunnerTriggerResult,
 } from "../agentRuntime";
 import { useAgentRuntimeSnapshot } from "../composables/useAgentRuntimeSnapshot";
-import { buildAgentReviewReport, formatReviewMinutes, type AgentReviewReport } from "../agent/reviewReport";
+import { buildAgentReviewReport, formatReviewMinutes, type AgentReviewReport, type AgentReviewSuggestion } from "../agent/reviewReport";
 
 
 const repository = useTaskRepository();
+const router = useRouter();
 const runtime = useAgentRuntimeSnapshot();
 const inbox = ref<AgentInboxSnapshot>({ pendingActions: [], audits: [] });
 const reviewReport = ref<AgentReviewReport | null>(null);
@@ -25,6 +27,7 @@ const loading = ref(true);
 const busyId = ref<string | null>(null);
 const error = ref<string | null>(null);
 const runnerResult = ref<AgentRunnerTriggerResult | null>(null);
+const reviewActionResult = ref<string | null>(null);
 let refreshTimer: ReturnType<typeof setInterval> | null = null;
 
 const status = runtime.status;
@@ -141,6 +144,38 @@ async function triggerScan() {
   }
 }
 
+async function runReviewSuggestion(suggestion: AgentReviewSuggestion) {
+  reviewActionResult.value = null;
+  if (suggestion.actionKind === "search" && suggestion.searchQuery) {
+    await router.push({ path: "/search", query: compactSearchQuery(suggestion.searchQuery) });
+    return;
+  }
+  if (suggestion.actionKind !== "draft" || !suggestion.draftOperations?.length) return;
+  const busyKey = `review-${suggestion.id}`;
+  busyId.value = busyKey;
+  error.value = null;
+  try {
+    const envelopeId = `review-${suggestion.id}-${reviewReport.value?.generatedAt ?? new Date().toISOString()}`;
+    for (const operation of suggestion.draftOperations) {
+      await repository.createAgentPendingActionFromTool(
+        { type: "task.batchUpdate", operation },
+        {
+          trigger: "manual_scan",
+          envelopeId,
+          summary: `复盘建议：${suggestion.title}`,
+          taskIds: operation.taskIds,
+        },
+      );
+    }
+    reviewActionResult.value = `已生成 ${suggestion.draftOperations.length} 条待确认草稿。`;
+    await refreshRuntimeBacklog();
+  } catch (e) {
+    error.value = String(e);
+  } finally {
+    busyId.value = null;
+  }
+}
+
 async function runAction(id: string, execute: () => Promise<unknown>) {
   busyId.value = id;
   error.value = null;
@@ -181,6 +216,14 @@ function formatDate(value: string | null) {
   }).format(new Date(value));
 }
 
+function compactSearchQuery(query: NonNullable<AgentReviewSuggestion["searchQuery"]>) {
+  return Object.fromEntries(
+    Object.entries(query)
+      .filter(([, value]) => value !== "" && value !== null && value !== undefined && value !== false)
+      .map(([key, value]) => [key, String(value)]),
+  );
+}
+
 </script>
 
 <template>
@@ -214,6 +257,9 @@ function formatDate(value: string | null) {
       </p>
       <p v-if="runnerResult" class="agent-notice">
         {{ runnerResult.diagnostic }}
+      </p>
+      <p v-if="reviewActionResult" class="agent-notice">
+        {{ reviewActionResult }}
       </p>
 
       <section v-if='reviewReport' class='agent-panel agent-review'>
@@ -251,8 +297,21 @@ function formatDate(value: string | null) {
             <h3>下周建议</h3>
             <ul class='agent-review__list'>
               <li v-for='suggestion in reviewReport.nextWeekSuggestions' :key='suggestion.id'>
-                <strong>{{ suggestion.title }}</strong>
+                <div class='agent-review__item-head'>
+                  <strong>{{ suggestion.title }}</strong>
+                  <button
+                    v-if='suggestion.actionKind !== "none" && suggestion.actionLabel'
+                    type='button'
+                    :disabled='busyId === `review-${suggestion.id}`'
+                    @click='runReviewSuggestion(suggestion)'
+                  >
+                    <Search v-if='suggestion.actionKind === "search"' :size='14' aria-hidden='true' />
+                    <Check v-else :size='14' aria-hidden='true' />
+                    {{ suggestion.actionLabel }}
+                  </button>
+                </div>
                 <span>{{ suggestion.detail }}</span>
+                <span v-if='suggestion.targetTaskIds.length > 0'>匹配 {{ suggestion.targetTaskIds.length }} 个任务</span>
               </li>
             </ul>
           </div>
@@ -616,6 +675,19 @@ function formatDate(value: string | null) {
   gap: 2px;
   padding: 5px 0;
   border-bottom: 1px solid var(--border-soft);
+  font-size: 12px;
+}
+
+.agent-review__item-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.agent-review__item-head button {
+  height: 24px;
+  padding: 0 7px;
   font-size: 12px;
 }
 

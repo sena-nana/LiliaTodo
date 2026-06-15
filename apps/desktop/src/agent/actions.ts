@@ -1,4 +1,5 @@
 import {
+  type BatchTaskOperation,
   DEFAULT_TASK_LIST_ID,
   type CreateTaskCategoryInput,
   type CreateTaskInput,
@@ -15,6 +16,7 @@ export const AGENT_ACTION_TYPES = [
   "task.delete",
   "task.move",
   "task.reparent",
+  "task.batchUpdate",
   "taskList.create",
   "taskCategory.create",
 ] as const;
@@ -48,6 +50,7 @@ export type AgentToolInput =
   | { type: "task.delete"; taskId: string }
   | { type: "task.move"; taskId: string; listId: string; categoryId?: string | null }
   | { type: "task.reparent"; taskId: string; parentId: string | null; childOrder?: number }
+  | { type: "task.batchUpdate"; operation: BatchTaskOperation }
   | { type: "taskList.create"; input: CreateTaskListInput }
   | { type: "taskCategory.create"; input: CreateTaskCategoryInput };
 
@@ -143,6 +146,9 @@ export const TODO_AGENT_TOOL_DEFINITIONS: AgentToolDefinition[] = [
     parentId: "string|null",
     childOrder: "number",
   }),
+  tool("task.batchUpdate", "批量更新任务", "复用现有批量操作能力，批量完成、改期、移动、打标签或删除任务。", "high", {
+    operation: "BatchTaskOperation",
+  }),
   tool("taskList.create", "创建清单", "创建新的任务清单。", "low", {
     name: "string",
     color: "string|null",
@@ -183,6 +189,8 @@ export function summarizeAgentAction(action: AgentToolInput) {
       return `移动任务 ${action.taskId} 到清单 ${action.listId}`;
     case "task.reparent":
       return `调整任务 ${action.taskId} 的父子关系`;
+    case "task.batchUpdate":
+      return summarizeBatchOperation(action.operation);
     case "taskList.create":
       return `创建清单「${action.input.name.trim()}」`;
     case "taskCategory.create":
@@ -193,7 +201,7 @@ export function summarizeAgentAction(action: AgentToolInput) {
 export function dryRunAgentAction(action: AgentToolInput): AgentDryRunResult {
   const affectedTaskIds = affectedTasksForAction(action);
   return {
-    reversible: action.type !== "task.delete",
+    reversible: action.type !== "task.delete" && action.type !== "task.batchUpdate",
     requiresConfirmation: true,
     affectedTaskIds,
     impact: impactForAction(action, affectedTaskIds.length),
@@ -203,6 +211,9 @@ export function dryRunAgentAction(action: AgentToolInput): AgentDryRunResult {
 export function riskForAction(action: AgentToolInput): AgentRiskLevel {
   if (action.type === "task.delete" || action.type === "task.complete" || action.type === "task.move" || action.type === "task.reparent") {
     return "high";
+  }
+  if (action.type === "task.batchUpdate") {
+    return action.operation.taskIds.length >= 5 || action.operation.type === "delete" ? "high" : "medium";
   }
   if (action.type === "task.update" || action.type === "task.restore") {
     return "medium";
@@ -241,6 +252,8 @@ export function buildUndoAction(
             patch: taskToUpdatePatch(task),
           };
     }
+    case "task.batchUpdate":
+      return null;
     default:
       return null;
   }
@@ -288,6 +301,8 @@ function affectedTasksForAction(action: AgentToolInput) {
     case "taskList.create":
     case "taskCategory.create":
       return [];
+    case "task.batchUpdate":
+      return action.operation.taskIds;
     default:
       return [action.taskId];
   }
@@ -303,9 +318,41 @@ function impactForAction(action: AgentToolInput, affectedCount: number) {
       return "将新增 1 个分类。";
     case "task.delete":
       return "将删除 1 个任务，执行前必须单独确认，审计中标记为不可撤销。";
+    case "task.batchUpdate":
+      return impactForBatchOperation(action.operation);
     default:
       return `将影响 ${Math.max(affectedCount, 1)} 个任务，确认后写入本地任务库。`;
   }
+}
+
+function summarizeBatchOperation(operation: BatchTaskOperation) {
+  const count = operation.taskIds.length;
+  switch (operation.type) {
+    case "complete":
+      return `批量完成 ${count} 个任务`;
+    case "patch":
+      return `批量更新 ${count} 个任务：${summarizePatch(operation.patch)}`;
+    case "reschedule": {
+      const fields: string[] = [];
+      if ("startAt" in operation) fields.push("开始时间");
+      if ("dueAt" in operation) fields.push("截止时间");
+      return `批量改期 ${count} 个任务：${fields.length > 0 ? fields.join("、") : "清空时间"}`;
+    }
+    case "move":
+      return `批量移动 ${count} 个任务`;
+    case "tag":
+      return `批量更新 ${count} 个任务标签`;
+    case "delete":
+      return `批量删除 ${count} 个任务`;
+  }
+}
+
+function impactForBatchOperation(operation: BatchTaskOperation) {
+  const count = operation.taskIds.length;
+  if (operation.type === "delete") {
+    return `将删除 ${count} 个任务，执行前必须确认，审计中标记为不可撤销。`;
+  }
+  return `将影响 ${count} 个任务，确认后写入本地任务库并进入同步链路。`;
 }
 
 function summarizePatch(patch: UpdateTaskInput) {

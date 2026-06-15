@@ -146,6 +146,24 @@ describe("页面 MVP 行为", () => {
     );
   });
 
+  it("搜索页会从 URL 查询参数初始化筛选条件", async () => {
+    const repository = fakeRepository({
+      searchResults: [task({ id: "url-search", title: "URL 筛选结果" })],
+    });
+
+    await renderAppAt("/search?status=active&timeMode=scheduled&timeTo=2026-06-12T12%3A00%3A00.000Z&includeDeleted=false", repository);
+
+    expect(await screen.findByText("URL 筛选结果")).toBeInTheDocument();
+    await waitFor(() =>
+      expect(repository.searchTasks).toHaveBeenLastCalledWith(expect.objectContaining({
+        statuses: ["active"],
+        timeMode: "scheduled",
+        timeTo: "2026-06-12T12:00:00.000Z",
+        includeDeleted: false,
+      })),
+    );
+  });
+
 
   it("搜索页支持保存、应用和删除自定义筛选视图", async () => {
     const repository = fakeRepository({

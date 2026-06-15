@@ -1,6 +1,6 @@
 import { fireEvent, screen, waitFor } from "@testing-library/vue";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { invokeMock, renderWithRepository, resetPageTestMocks } from "./pageTestUtils";
+import { invokeMock, renderAppAt, renderWithRepository, resetPageTestMocks } from "./pageTestUtils";
 import AgentInbox from "../src/pages/AgentInbox.vue";
 import { fakeTaskRepository as fakeRepository, taskCategoryFixture, taskListFixture, taskFixture as task } from "./taskFixtures";
 
@@ -11,6 +11,61 @@ it('Agent 收件箱显示只读复盘报告', async () => {
   renderWithRepository(AgentInbox, repository);
   expect(await screen.findByRole('heading', { name: '复盘报告' })).toBeInTheDocument();
   expect(repository.updateTask).not.toHaveBeenCalled();
+});
+
+it('Agent 收件箱复盘建议可以跳转到搜索结果', async () => {
+  const repository = fakeRepository({
+    activeTasks: [
+      task({ id: "overdue-1", title: "逾期待处理", dueAt: "2026-01-01T00:00:00.000Z" }),
+    ],
+    agentInbox: { pendingActions: [], audits: [] },
+    searchResults: [task({ id: "overdue-1", title: "逾期待处理", dueAt: "2026-01-01T00:00:00.000Z" })],
+  });
+
+  await renderAppAt("/agent-inbox", repository);
+
+  await fireEvent.click(await screen.findByRole("button", { name: /查看任务/ }));
+
+  expect(await screen.findByText("搜索结果 1 条")).toBeInTheDocument();
+  await waitFor(() =>
+    expect(repository.searchTasks).toHaveBeenLastCalledWith(expect.objectContaining({
+      statuses: ["active"],
+      timeMode: "scheduled",
+      includeDeleted: false,
+    })),
+  );
+});
+
+it('Agent 收件箱复盘建议可以生成批量待确认草稿', async () => {
+  const repository = fakeRepository({
+    activeTasks: [
+      task({ id: "missing-start-1", title: "只有截止时间", dueAt: "2099-01-02T18:00:00.000Z", startAt: null }),
+    ],
+    agentInbox: { pendingActions: [], audits: [] },
+  });
+
+  renderWithRepository(AgentInbox, repository);
+
+  await fireEvent.click(await screen.findByRole("button", { name: /生成草稿/ }));
+
+  await waitFor(() =>
+    expect(repository.createAgentPendingActionFromTool).toHaveBeenCalledWith(
+      {
+        type: "task.batchUpdate",
+        operation: expect.objectContaining({
+          type: "patch",
+          taskIds: ["missing-start-1"],
+          patch: { startAt: expect.any(String) },
+        }),
+      },
+      expect.objectContaining({
+        trigger: "manual_scan",
+        summary: "复盘建议：给截止任务补开始时间",
+        taskIds: ["missing-start-1"],
+      }),
+    ),
+  );
+  expect(await screen.findByText("已生成 1 条待确认草稿。")).toBeInTheDocument();
 });
 
 describe("pages.agent", () => {
