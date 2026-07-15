@@ -19,7 +19,7 @@ describe("工作区验证脚本", () => {
       "verify:schema": "node node_modules/typescript/bin/tsc -p packages/schema/tsconfig.json",
       "verify:contracts": "node node_modules/typescript/bin/tsc -p packages/contracts/tsconfig.json",
       verify:
-        "yarn verify:desktop:test && yarn verify:desktop:build && yarn verify:tauri && yarn verify:schema && yarn verify:contracts",
+        "yarn typecheck:node-scripts && yarn verify:desktop:test && yarn verify:desktop:build && yarn verify:tauri && yarn verify:schema && yarn verify:contracts",
     });
     expect(packageJson.scripts["verify:api"]).toBeUndefined();
   });
@@ -32,7 +32,7 @@ describe("工作区验证脚本", () => {
     const packageJson = JSON.parse(readFileSync(packageJsonPath, "utf-8"));
 
     expect(packageJson.workspaces).toEqual(["apps/desktop", "packages/*"]);
-    expect(packageJson.packageManager).toBe("yarn@4.14.1");
+    expect(packageJson.packageManager).toMatch(/^yarn@4\.17\.1\+sha512\./);
   });
 
   it("桌面端 Tauri dev 脚本使用 LiliaTodo 动态端口变量", () => {
@@ -64,7 +64,7 @@ describe("工作区验证脚本", () => {
     });
   });
 
-  it("包管理器检查接受 Yarn 4 并拒绝其他入口", () => {
+  it("工具链检查接受项目固定版本并拒绝其他 Yarn 版本", () => {
     const desktopRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
     const cleanEnv = { ...process.env };
     for (const key of Object.keys(cleanEnv)) {
@@ -73,25 +73,24 @@ describe("工作区验证脚本", () => {
       }
     }
 
-    const ok = spawnSync("node", ["scripts/check-package-manager.mjs"], {
+    const ok = spawnSync("node", ["scripts/check-toolchain.ts"], {
       cwd: desktopRoot,
       env: {
         ...cleanEnv,
-        npm_config_user_agent: "yarn/4.14.1 npm/? node/?",
+        npm_config_user_agent: "yarn/4.17.1 npm/? node/26.5.0",
       },
       encoding: "utf-8",
     });
     expect(ok.status).toBe(0);
 
-    const bad = spawnSync("node", ["scripts/check-package-manager.mjs"], {
+    const bad = spawnSync("node", ["scripts/check-toolchain.ts"], {
       cwd: desktopRoot,
       env: {
         ...cleanEnv,
-        npm_config_user_agent: "npm/11.0.0 node/?",
+        npm_config_user_agent: "yarn/4.14.1 npm/? node/26.5.0",
       },
       encoding: "utf-8",
     });
     expect(bad.status).toBe(1);
-    expect(bad.stderr).toContain("LiliaTodo 需要通过 Corepack 使用 Yarn 4。");
   });
 });

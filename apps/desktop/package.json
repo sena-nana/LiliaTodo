@@ -3,20 +3,23 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
+  "engines": {
+    "node": ">=26.0.0 <27"
+  },
   "scripts": {
-    "check:package-manager": "node scripts/check-package-manager.mjs",
-    "predev": "node scripts/check-package-manager.mjs",
+    "check:toolchain": "node scripts/check-toolchain.ts",
+    "predev": "node scripts/check-toolchain.ts",
     "dev": "vite",
-    "prebuild": "node scripts/check-package-manager.mjs",
+    "prebuild": "node scripts/check-toolchain.ts",
     "build": "vue-tsc --noEmit && vite build",
-    "pretest": "node scripts/check-package-manager.mjs",
+    "pretest": "node scripts/check-toolchain.ts",
     "test": "vitest run",
     "preview": "vite preview",
-    "pretauri": "node scripts/check-package-manager.mjs",
+    "pretauri": "node scripts/check-toolchain.ts",
     "tauri": "tauri",
-    "pretauri:dev": "node scripts/check-package-manager.mjs",
+    "pretauri:dev": "node scripts/check-toolchain.ts",
     "tauri:dev": "node scripts/tauri-dev.mjs",
-    "pretauri:build": "node scripts/check-package-manager.mjs",
+    "pretauri:build": "node scripts/check-toolchain.ts",
     "tauri:build": "tauri build"
   },
   "dependencies": {
@@ -27,7 +30,7 @@
     "@tauri-apps/plugin-sql": "^2.4.0",
     "@tauri-apps/plugin-store": "^2.4.3",
     "lucide-vue-next": "^1.0.0",
-    "vue": "^3.5.35",
+    "vue": "^3.5.39",
     "vue-router": "^5.1.0"
   },
   "devDependencies": {
@@ -35,12 +38,13 @@
     "@testing-library/dom": "^10.4.1",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/vue": "^8.1.0",
-    "@vitejs/plugin-vue": "^6.0.7",
-    "@vue/compiler-sfc": "^3.5.35",
+    "@types/node": "^26.1.1",
+    "@vitejs/plugin-vue": "^6.0.8",
+    "@vue/compiler-sfc": "^3.5.39",
     "jsdom": "^29.1.1",
     "typescript": "^6.0.3",
-    "vite": "^8.0.16",
-    "vitest": "^4.1.8",
-    "vue-tsc": "^3.3.4"
+    "vite": "^8.1.4",
+    "vitest": "^4.1.10",
+    "vue-tsc": "^3.3.7"
   }
 }

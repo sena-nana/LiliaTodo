@@ -2,22 +2,28 @@
   "name": "liliatodo-workspace",
   "private": true,
   "version": "0.1.0",
+  "type": "module",
+  "engines": {
+    "node": ">=26.0.0 <27"
+  },
   "workspaces": [
     "apps/desktop",
     "packages/*"
   ],
   "scripts": {
-    "check:package-manager": "node apps/desktop/scripts/check-package-manager.mjs",
+    "preinstall": "node apps/desktop/scripts/check-toolchain.ts",
+    "check:toolchain": "node apps/desktop/scripts/check-toolchain.ts",
     "tauri": "yarn --cwd apps/desktop tauri",
     "tauri:dev": "yarn --cwd apps/desktop tauri:dev",
     "tauri:build": "yarn --cwd apps/desktop tauri:build",
-    "predocs:dev": "yarn check:package-manager",
+    "predocs:dev": "yarn check:toolchain",
     "docs:dev": "vitepress dev docs",
-    "predocs:build": "yarn check:package-manager",
+    "predocs:build": "yarn check:toolchain",
     "docs:build": "vitepress build docs",
-    "predocs:preview": "yarn check:package-manager",
+    "predocs:preview": "yarn check:toolchain",
     "docs:preview": "vitepress preview docs",
-    "verify": "yarn verify:desktop:test && yarn verify:desktop:build && yarn verify:tauri && yarn verify:schema && yarn verify:contracts",
+    "verify": "yarn typecheck:node-scripts && yarn verify:desktop:test && yarn verify:desktop:build && yarn verify:tauri && yarn verify:schema && yarn verify:contracts",
+    "typecheck:node-scripts": "node node_modules/typescript/bin/tsc -p tsconfig.node-scripts.json",
     "verify:desktop:test": "yarn --cwd apps/desktop test",
     "verify:desktop:build": "yarn --cwd apps/desktop build",
     "verify:tauri": "cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml",
@@ -25,7 +31,9 @@
     "verify:contracts": "node node_modules/typescript/bin/tsc -p packages/contracts/tsconfig.json"
   },
   "devDependencies": {
+    "@types/node": "^26.1.1",
+    "typescript": "^6.0.3",
     "vitepress": "^1.6.4"
   },
-  "packageManager": "yarn@4.14.1"
+  "packageManager": "yarn@4.17.1+sha512.ccbfabf7d7b6b32075088be9386fb9a2e00bb6887ef07fa56effabc890a56d53da1ccc4128d62db245fcbd3961b236d75335bdf7d5320ed6eafb7588b7ad4697"
 }

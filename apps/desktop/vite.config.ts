@@ -3,11 +3,8 @@ import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
 import vue from "@vitejs/plugin-vue";
 
-// @ts-expect-error process 是 Node.js 全局对象
 const host = process.env.TAURI_DEV_HOST;
-// @ts-expect-error process 是 Node.js 全局对象
 const liliatodoDevPort = Number.parseInt(process.env.LILIATODO_TAURI_DEV_PORT ?? "", 10);
-// @ts-expect-error process 是 Node.js 全局对象
 const strictPort = process.env.LILIATODO_TAURI_DEV_STRICT_PORT === "1";
 const port = Number.isInteger(liliatodoDevPort) ? liliatodoDevPort : 1420;
 
@@ -37,6 +34,7 @@ export default defineConfig(async () => ({
   },
   test: {
     environment: "jsdom",
+    execArgv: ["--no-experimental-webstorage"],
     setupFiles: [fileURLToPath(new URL("./tests/setupTests.ts", import.meta.url))],
   },
 }));
