@@ -16,14 +16,16 @@ LiliaTodo/
 
 ## 本地运行
 
-本仓库通过 Corepack 使用 Yarn 4.14.1。建议从仓库根目录运行命令。
+本仓库使用 Node.js 26.5.0，并通过 Corepack 0.35.0 固定 Yarn 4.17.1。建议从仓库根目录运行命令。
 
 ```bash
+npm install --global corepack@0.35.0
 corepack enable
-corepack prepare yarn@4.14.1 --activate
-yarn install
+corepack yarn install
 yarn tauri:dev
 ```
+
+`.env.yarn` 会为 Yarn 命令启用可移植的 Node 模块编译缓存；Node 26 也会直接执行仓库内部的 `check-toolchain.ts`，其类型由 `yarn typecheck:node-scripts` 验证。
 
 `yarn tauri:dev` 会进入 `apps/desktop`，自动寻找可用本地端口，再把对应 `devUrl` 传给 Tauri。
 

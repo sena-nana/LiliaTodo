@@ -10,7 +10,8 @@ LiliaTodo 是基于 Tauri 2、Vue 3 和 TypeScript 的桌面端任务工具。
 ## 本地预览
 
 ```bash
+npm install --global corepack@0.35.0
 corepack enable
-corepack yarn install
+corepack yarn install --immutable
 corepack yarn docs:dev
 ```

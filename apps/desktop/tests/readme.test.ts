@@ -22,7 +22,7 @@ describe("桌面端 README 文档", () => {
     expect(content).toContain("WebDAV 同步（坚果云优先）");
     expect(content).toContain("手动验收");
     expect(content).toContain("当前限制");
-    expect(content).toContain("npm run verify");
+    expect(content).toContain("yarn verify");
     expect(content).toContain("http://localhost:1420");
   });
 
@@ -57,7 +57,7 @@ describe("桌面端 README 文档", () => {
     const content = readme();
 
     expect(content).toContain("docs/local-sync-acceptance.md");
-    expect(content).toContain("npm run tauri dev");
+    expect(content).toContain("yarn tauri dev");
     expect(content).toContain("日 / 周 / 月视图");
     expect(content).toContain("拖拽改期");
     expect(content).toContain("Agent runtime 可手动启动、停止和触发扫描");

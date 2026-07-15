@@ -51,6 +51,7 @@ hs_err_pid*
 .env.*
 !.env.example
 !.env.*.example
+!.env.yarn
 *.pem
 *.key
 *.crt

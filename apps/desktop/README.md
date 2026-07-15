@@ -6,8 +6,9 @@
 
 | 组件 | 已验证版本 |
 |---|---|
-| Node.js | 24.13.0 |
-| npm | 11.6.2 |
+| Node.js | 26.5.0 |
+| Corepack | 0.35.0 |
+| Yarn | 4.17.1 |
 | Rust / cargo | 1.93.1 |
 | Tauri CLI | 2.x（随 npm 依赖安装） |
 
@@ -16,21 +17,25 @@ Windows 上首次运行需要 **Microsoft Edge WebView2 Runtime**（Win10 1803+ 
 ## 安装
 
 ```bash
-npm install
+npm install --global corepack@0.35.0
+corepack enable
+corepack yarn install
 ```
+
+项目通过 `.env.yarn` 为 Yarn 命令启用 Node 模块编译缓存，缓存目录不会提交到版本库。
 
 ## 命令
 
 | 命令 | 作用 |
 |---|---|
-| `npm run dev` | 仅启动 Vite 前端（http://localhost:1420） |
-| `npm run test` | 运行 Vitest 单元与页面测试 |
-| `npm run build` | TypeScript 检查 + Vite 生产构建 |
-| `npm run tauri dev` | 启动 Tauri 桌面壳（带 WebView 窗口） |
-| `npm run tauri build` | 打包 Windows 安装器 |
+| `yarn dev` | 仅启动 Vite 前端（http://localhost:1420） |
+| `yarn test` | 运行 Vitest 单元与页面测试 |
+| `yarn build` | TypeScript 检查 + Vite 生产构建 |
+| `yarn tauri dev` | 启动 Tauri 桌面壳（带 WebView 窗口） |
+| `yarn tauri build` | 打包 Windows 安装器 |
 | `cargo check`（在 `src-tauri/`） | 仅校验 Rust 端是否能编译 |
 | `.\apps\desktop\node_modules\.bin\tsc.cmd -p packages\contracts\tsconfig.json`（在仓库根目录） | 校验共享契约包 |
-| `npm run verify`（在仓库根目录） | 串行运行桌面端测试与构建、Tauri 检查、contracts/API TypeScript 检查 |
+| `yarn verify`（在仓库根目录） | 串行运行 Node 脚本类型检查、桌面端测试与构建、Tauri 检查、schema/contracts TypeScript 检查 |
 
 ## 路由
 
@@ -74,12 +79,12 @@ npm install
 ## 手动验收
 
 - WebDAV 同步验收清单：`docs/local-sync-acceptance.md`。
-- 运行 `npm run tauri dev`，打开设置页，配置 WebDAV 凭据后点击“立即同步”。
+- 运行 `yarn tauri dev`，打开设置页，配置 WebDAV 凭据后点击“立即同步”。
 - 在同一台机器创建若干任务和清单，确认上传 ops 数与“待同步”归零。
 - 在第二台机器（或同一机器换 SQLite 数据库副本）配同一组凭据，点击“立即同步”，确认能拉到对端任务和清单；归档清单后再次同步，确认对端清单归档且原清单任务回到收件箱。
 - 在设置页显式开启“自动后台同步”，确认启动恢复、周期同步与本地变更 idle 防抖会触发同步；关闭开关或清除凭据后不再后台触发。
 - 打开 Agent 收件箱，确认手动扫描只产生待确认操作，确认后才执行并写入审计记录；关闭自动触发后不应再由任务写入生成自动 envelope。
-- Vite 浏览器冒烟（`npm run dev`）只能验证路由与表单可访问性，不能完成完整 SQLite + plugin-http 链路。
+- Vite 浏览器冒烟（`yarn dev`）只能验证路由与表单可访问性，不能完成完整 SQLite + plugin-http 链路。
 
 ## 当前限制
 
