@@ -39,24 +39,18 @@ jobs:
           } else {
             $ref = $tag
           }
-          if (-not $ref) {
-            $ref = $tag
-          }
-          if (-not $tag) {
-            throw "Release tag is required."
-          }
+          if (-not $ref) { $ref = $tag }
+          if (-not $tag) { throw "Release tag is required." }
           "tag=$tag" >> $env:GITHUB_OUTPUT
-          if ($ref) {
-            "ref=$ref" >> $env:GITHUB_OUTPUT
-          }
+          if ($ref) { "ref=$ref" >> $env:GITHUB_OUTPUT }
 
       - name: Checkout
         uses: actions/checkout@v6
         with:
           ref: ${{ steps.release_ref.outputs.ref || github.ref }}
 
-      - name: Set up Node.js and Yarn
-        uses: sena-nana/LiliaUI/.github/actions/setup-node-yarn@8cdf9fce6f86b903a475ac852bce0627f237baf5
+      - name: Set up Node.js and pnpm
+        uses: sena-nana/LiliaUI/.github/actions/setup-node-pnpm@aa0c1df985de80420764ca5d952afa29f47c4ea8
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
@@ -73,7 +67,7 @@ jobs:
             ${{ runner.os }}-cargo-
 
       - name: Verify MomoTodo
-        run: corepack yarn verify
+        run: pnpm verify
 
   publish-windows:
     name: Publish Windows bundle
@@ -87,8 +81,8 @@ jobs:
         with:
           ref: ${{ needs.verify.outputs.ref || github.ref }}
 
-      - name: Set up Node.js and Yarn
-        uses: sena-nana/LiliaUI/.github/actions/setup-node-yarn@8cdf9fce6f86b903a475ac852bce0627f237baf5
+      - name: Set up Node.js and pnpm
+        uses: sena-nana/LiliaUI/.github/actions/setup-node-pnpm@aa0c1df985de80420764ca5d952afa29f47c4ea8
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
@@ -110,7 +104,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           projectPath: apps/desktop
-          tauriScript: corepack yarn tauri
+          tauriScript: pnpm tauri
           tagName: ${{ needs.verify.outputs.tag }}
           releaseName: MomoTodo ${{ needs.verify.outputs.tag }}
           releaseDraft: true
