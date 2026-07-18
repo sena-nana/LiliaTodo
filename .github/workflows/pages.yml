@@ -24,11 +24,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
-      - name: Set up Node.js and Yarn
-        uses: sena-nana/LiliaUI/.github/actions/setup-node-yarn@8cdf9fce6f86b903a475ac852bce0627f237baf5
+      - name: Set up Node.js and pnpm
+        uses: sena-nana/LiliaUI/.github/actions/setup-node-pnpm@aa0c1df985de80420764ca5d952afa29f47c4ea8
 
       - name: Build docs
-        run: corepack yarn docs:build
+        run: pnpm docs:build
 
       - name: Configure Pages
         uses: actions/configure-pages@v6
