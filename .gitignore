@@ -38,8 +38,8 @@ $RECYCLE.BIN/
 *.log
 logs/
 npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
+pnpm-debug.log*
+pnpm-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 crash.log
@@ -51,8 +51,7 @@ hs_err_pid*
 .env.*
 !.env.example
 !.env.*.example
-!.env.yarn
-*.pem
+!.env.pnpm *.pem
 *.key
 *.crt
 *.p12
@@ -65,8 +64,7 @@ secrets.local.*
 node_modules/
 **/node_modules/
 .npm/
-.yarn/
-.pnp.*
+.pnpm/
 .pnpm-store/
 .cache/
 .parcel-cache/

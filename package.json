@@ -4,7 +4,8 @@
   "version": "0.1.0",
   "type": "module",
   "engines": {
-    "node": ">=26.0.0 <27"
+    "node": ">=26.0.0 <27",
+    "pnpm": ">=11.0.0 <12"
   },
   "workspaces": [
     "apps/desktop",
@@ -13,19 +14,19 @@
   "scripts": {
     "preinstall": "node apps/desktop/scripts/check-toolchain.ts",
     "check:toolchain": "node apps/desktop/scripts/check-toolchain.ts",
-    "tauri": "yarn --cwd apps/desktop tauri",
-    "tauri:dev": "yarn --cwd apps/desktop tauri:dev",
-    "tauri:build": "yarn --cwd apps/desktop tauri:build",
-    "predocs:dev": "yarn check:toolchain",
+    "tauri": "pnpm --dir apps/desktop tauri",
+    "tauri:dev": "pnpm --dir apps/desktop tauri:dev",
+    "tauri:build": "pnpm --dir apps/desktop tauri:build",
+    "predocs:dev": "pnpm check:toolchain",
     "docs:dev": "vitepress dev docs",
-    "predocs:build": "yarn check:toolchain",
+    "predocs:build": "pnpm check:toolchain",
     "docs:build": "vitepress build docs",
-    "predocs:preview": "yarn check:toolchain",
+    "predocs:preview": "pnpm check:toolchain",
     "docs:preview": "vitepress preview docs",
-    "verify": "yarn typecheck:node-scripts && yarn verify:desktop:test && yarn verify:desktop:build && yarn verify:tauri && yarn verify:schema && yarn verify:contracts",
+    "verify": "pnpm typecheck:node-scripts && pnpm verify:desktop:test && pnpm verify:desktop:build && pnpm verify:tauri && pnpm verify:schema && pnpm verify:contracts",
     "typecheck:node-scripts": "node node_modules/typescript/bin/tsc -p tsconfig.node-scripts.json",
-    "verify:desktop:test": "yarn --cwd apps/desktop test",
-    "verify:desktop:build": "yarn --cwd apps/desktop build",
+    "verify:desktop:test": "pnpm --dir apps/desktop test",
+    "verify:desktop:build": "pnpm --dir apps/desktop build",
     "verify:tauri": "cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml",
     "verify:schema": "node node_modules/typescript/bin/tsc -p packages/schema/tsconfig.json",
     "verify:contracts": "node node_modules/typescript/bin/tsc -p packages/contracts/tsconfig.json"
@@ -35,5 +36,5 @@
     "typescript": "^6.0.3",
     "vitepress": "^1.6.4"
   },
-  "packageManager": "yarn@4.17.1+sha512.ccbfabf7d7b6b32075088be9386fb9a2e00bb6887ef07fa56effabc890a56d53da1ccc4128d62db245fcbd3961b236d75335bdf7d5320ed6eafb7588b7ad4697"
+  "packageManager": "pnpm@11.14.0"
 }

@@ -31,7 +31,7 @@ describe("WebDAV 同步验收清单", () => {
     expect(checklist).toContain("失败路径");
     expect(checklist).toContain("回归护栏");
     expect(checklist).toContain("http://localhost:1420/settings");
-    expect(checklist).toContain("yarn tauri dev");
+    expect(checklist).toContain("pnpm tauri dev");
     expect(checklist).toContain("立即同步");
     expect(checklist).toContain("WebDAV 同步（坚果云优先）");
     expect(checklist).toContain("同步结果 message");

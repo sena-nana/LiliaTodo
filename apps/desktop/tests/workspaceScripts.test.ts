@@ -13,13 +13,13 @@ describe("工作区验证脚本", () => {
     const packageJson = JSON.parse(readFileSync(packageJsonPath, "utf-8"));
 
     expect(packageJson.scripts).toMatchObject({
-      "verify:desktop:test": "yarn --cwd apps/desktop test",
-      "verify:desktop:build": "yarn --cwd apps/desktop build",
+      "verify:desktop:test": "pnpm --dir apps/desktop test",
+      "verify:desktop:build": "pnpm --dir apps/desktop build",
       "verify:tauri": "cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml",
       "verify:schema": "node node_modules/typescript/bin/tsc -p packages/schema/tsconfig.json",
       "verify:contracts": "node node_modules/typescript/bin/tsc -p packages/contracts/tsconfig.json",
       verify:
-        "yarn typecheck:node-scripts && yarn verify:desktop:test && yarn verify:desktop:build && yarn verify:tauri && yarn verify:schema && yarn verify:contracts",
+        "pnpm typecheck:node-scripts && pnpm verify:desktop:test && pnpm verify:desktop:build && pnpm verify:tauri && pnpm verify:schema && pnpm verify:contracts",
     });
     expect(packageJson.scripts["verify:api"]).toBeUndefined();
   });
@@ -32,7 +32,7 @@ describe("工作区验证脚本", () => {
     const packageJson = JSON.parse(readFileSync(packageJsonPath, "utf-8"));
 
     expect(packageJson.workspaces).toEqual(["apps/desktop", "packages/*"]);
-    expect(packageJson.packageManager).toMatch(/^yarn@4\.17\.1\+sha512\./);
+    expect(packageJson.packageManager).toMatch(/^pnpm@4\.17\.1\+sha512\./);
   });
 
   it("桌面端 Tauri dev 脚本使用 LiliaTodo 动态端口变量", () => {
@@ -64,7 +64,7 @@ describe("工作区验证脚本", () => {
     });
   });
 
-  it("工具链检查接受项目固定版本并拒绝其他 Yarn 版本", () => {
+  it("工具链检查接受项目固定版本并拒绝其他 pnpm 版本", () => {
     const desktopRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
     const cleanEnv = { ...process.env };
     for (const key of Object.keys(cleanEnv)) {
@@ -77,7 +77,7 @@ describe("工作区验证脚本", () => {
       cwd: desktopRoot,
       env: {
         ...cleanEnv,
-        npm_config_user_agent: "yarn/4.17.1 npm/? node/26.5.0",
+        npm_config_user_agent: "pnpm/4.17.1 npm/? node/26.5.0",
       },
       encoding: "utf-8",
     });
@@ -87,7 +87,7 @@ describe("工作区验证脚本", () => {
       cwd: desktopRoot,
       env: {
         ...cleanEnv,
-        npm_config_user_agent: "yarn/4.14.1 npm/? node/26.5.0",
+        npm_config_user_agent: "pnpm/4.14.1 npm/? node/26.5.0",
       },
       encoding: "utf-8",
     });
