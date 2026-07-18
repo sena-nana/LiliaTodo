@@ -7,12 +7,12 @@
 ## 前置准备
 
 - 拥有可访问的 WebDAV 账号（首选坚果云，使用应用密码而非主密码）。
-- 已运行 `corepack yarn install`，可启动 `yarn tauri dev`。
+- 已运行 `pnpm install`，可启动 `pnpm tauri dev`。
 - 准备两台机器或同一机器上的两份独立 SQLite 数据库副本，用于验证多端同步。
 
 ## Vite 冒烟（仅可访问性）
 
-- 运行 `yarn dev`。
+- 运行 `pnpm dev`。
 - 打开 `http://localhost:1420/settings`。
 - 确认 `WebDAV 同步（坚果云优先）` 卡片可见，表单字段（Base URL / 根目录 / 用户名 / 应用密码 / 设备 ID）均可键盘聚焦。
 - 确认页面已不再显示 `本地同步模拟` 按钮或 `远程同步配置（旧 HTTP 通路）` 卡片。
@@ -20,7 +20,7 @@
 
 ## Tauri WebView 完整 SQLite + WebDAV 流程
 
-- 运行 `yarn tauri dev`。
+- 运行 `pnpm tauri dev`。
 - 进入设置页，填写 WebDAV 凭据（Base URL、用户名、应用密码、设备 ID）并保存。
 - 确认提示 `已保存到本机安全存储`；再次打开设置页应自动回填除密码外的字段。
 - 创建或编辑若干任务，再新增一个清单并在该清单内放入至少一个任务，让 `待同步` 大于 0。
